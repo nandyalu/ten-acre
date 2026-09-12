@@ -631,6 +631,33 @@ def build_prompt(
         lines.append("You hold nothing. The whole account is in cash.")
     lines.append("")
 
+    # **Both of these sit above the signal table, and that placement was
+    # measured (2026-09-12).** They were between the two tables, at 42% and 47%
+    # of the prompt, and four probe runs against the live book referenced
+    # neither — the model read the clock, the account and the tables, and
+    # skimmed the prose between them. They also both change how the tables
+    # below should be read, which is an argument for being above them anyway.
+    if outcomes:
+        lines += [
+            "",
+            "## What you just did, a moment ago, in this pass",
+            "",
+            "**You ordered these yourself, earlier in this same pass, and they have "
+            "already happened.** They are not suggestions and not history from an "
+            "older pass — they are the result of your own last answer, and anything "
+            "you paid for is already paid for. Do not order them again. Read them "
+            "before the tables below, because they may change what those mean.",
+            "",
+            *(f"- {line}" for line in outcomes),
+        ]
+
+    # **What the rules noticed, as facts.** News about the world rather than an
+    # answer to something the agent said, which is why it sits with the account
+    # and the holdings rather than with the refusals and readings.
+    watchdog_lines = describe_watchdog(alerts or [], earnings or [])
+    if watchdog_lines:
+        lines += watchdog_lines
+
     if signals:
         # **A table, not a sentence.** The prose version ran "now $107.10,
         # suggested entry $106.24" together, and the agent's own reasoning
@@ -721,33 +748,6 @@ def build_prompt(
     recent_wakeups = describe_recent_wakeups(wakeups or [])
     if recent_wakeups:
         lines += ["", *recent_wakeups]
-
-    # **What the rules noticed, as facts.** Placed with the account and the
-    # holdings rather than with the replies below, because it is news about the
-    # world rather than an answer to something the agent said.
-    watchdog_lines = describe_watchdog(alerts or [], earnings or [])
-    if watchdog_lines:
-        lines += watchdog_lines
-
-    # **What its own orders did, earlier in this same pass.** Placed with the
-    # readings and the refusals because all three are replies to something the
-    # agent said rather than new facts about the world.
-    #
-    # Before 2026-09-12 an order left the pass and its result arrived, if at
-    # all, in whatever pass came next. A buy that the broker refused the
-    # bracket on, a research order that came back a Sell — the agent learned
-    # both far too late to do anything about them, and by then the reasoning
-    # that chose them was gone. See the 2026-09-12 entry in JOURNEY.md.
-    if outcomes:
-        lines += [
-            "",
-            "## What happened when you acted, in this same pass",
-            "",
-            "You already did the following. These are done — do not place them again.",
-            "Decide what, if anything, they change.",
-            "",
-            *(f"- {line}" for line in outcomes),
-        ]
 
     # What it asked to read on the previous turn. Placed with the refusals
     # because both are replies to something it said, not new facts about the
@@ -1859,16 +1859,37 @@ def _earnings_due() -> list[tuple[str, str]]:
 
 
 def _recent_alerts() -> list[dict]:
-    """What the watchdog saw, newest first.
+    """What the watchdog saw **since the agent last looked**, newest first.
 
     **The agent could not see any of this until 2026-09-12.** The watchdog
     alerted on a sharp move and then commissioned an analysis itself, so the
     only trace that reached the agent was a signal it had not asked for. The
     tracked-ticker table shows "moved since the last analysis", which cannot
     tell a 5% fall this morning from a 5% drift over three weeks.
+
+    **The window is the previous pass, and the first version had none.** It
+    took the newest eight rows whatever their age, so a Saturday pass was shown
+    Thursday's and Friday's moves under a heading that says "noticed" — and
+    four probe runs against the live book ignored the section completely. A
+    section that claims to say what has happened since you last looked has to
+    mean it. With no previous pass to measure from, 24 hours is the fallback.
     """
+    runs = db.get_agent_runs(limit=1)
+    since = getattr(runs[0], "ran_at", None) if runs else None
+    if since is None:
+        since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=datetime.timezone.utc)
     out: list[dict] = []
-    for row in db.get_recent_alerts(limit=_ALERTS_SHOWN):
+    for row in db.get_recent_alerts(limit=_ALERTS_SHOWN * 4):
+        raised = getattr(row, "created_at", None)
+        if raised is not None:
+            if raised.tzinfo is None:
+                raised = raised.replace(tzinfo=datetime.timezone.utc)
+            if raised < since:
+                continue
+        if len(out) >= _ALERTS_SHOWN:
+            break
         at = getattr(row, "created_at", None)
         if at is not None and at.tzinfo is None:
             at = at.replace(tzinfo=datetime.timezone.utc)
@@ -1891,10 +1912,11 @@ def describe_watchdog(alerts: list[dict], earnings: list[tuple[str, str]]) -> li
     if alerts:
         lines += [
             "",
-            "## What was noticed",
+            "## What was noticed since your last pass",
             "",
-            "Rules spotted these; nothing was done about them and nothing was analysed.",
-            "Decide whether any is worth acting on, or worth paying to study.",
+            "**These happened while you were away.** Rules spotted them; nothing was "
+            "done about any of them and nothing was analysed. Decide whether any is "
+            "worth acting on, or worth paying to study.",
             "",
             "| When (ET) | What |",
             "|---|---|",
@@ -2890,7 +2912,9 @@ def _research_and_report(tickers: list[str]) -> list[str]:
     except Exception as exc:
         log.exception("In-pass research failed for %s", tickers)
         return [f"{t}: the analysis did not finish — {exc}" for t in tickers]
-    return [analysis_reader.read(t) for t in tickers]
+    charge = research.get_price()
+    paid = f"You paid ${charge:,.2f} for this a moment ago" if charge else "You ordered this a moment ago"
+    return [f"{paid}, and it has now finished. {analysis_reader.read(t)}" for t in tickers]
 
 
 def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker) -> list[str]:

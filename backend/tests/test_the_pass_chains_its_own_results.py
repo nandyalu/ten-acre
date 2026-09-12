@@ -111,7 +111,11 @@ def test_research_runs_in_the_pass_and_its_verdict_comes_back(quiet, monkeypatch
     agent.run_once()
 
     assert ran == [["INTC"]]
-    assert seen[1] == ["INTC analysis: Overweight because ..."]
+    # Prefixed with what it cost and when, because four probe runs read the
+    # analysis and then treated it as just another analyst signal rather than
+    # as their own spend from a moment earlier.
+    assert "INTC analysis: Overweight because ..." in seen[1][0]
+    assert "a moment ago" in seen[1][0]
 
 
 def test_a_failed_analysis_is_reported_rather_than_losing_the_pass(quiet, monkeypatch):

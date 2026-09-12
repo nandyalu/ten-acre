@@ -728,8 +728,9 @@ One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
 11. **What it asked to read**, when the previous turn asked for an analysis.
     Placed with the refusals, because both are replies to something the agent
     said rather than new facts about the world.
-12. **What the rules noticed** — the watchdog's own alerts, and which tracked
-    tickers report earnings soon. Facts, with nothing done about them.
+12. **What the rules noticed since the last pass** — the watchdog's own
+    alerts, bounded by the previous pass rather than by a count, and which
+    tracked tickers report earnings soon. Facts, with nothing done about them.
 13. **What its own orders did, earlier in this same pass** — the fill and what
     is resting under it, the analysis it commissioned and what that analysis
     concluded, the untrack, the refusal. Same placement and the same reason.
@@ -965,6 +966,18 @@ record would be of a strategy nobody chose.
   move worth *analysing* at midday is worth nothing by morning; nothing
   analyses now. The earnings check runs pre-market and under that gate could
   never have woken anyone.
+- **"What you just did" and "What was noticed" sit above the signal table, and
+  that placement was measured.** They were between the two tables, at 42% and
+  47% of the prompt, and four probe runs against the live book referenced
+  neither — the model read the clock, the account and the tables and skimmed
+  the prose between them. Moved above the tables, the next four runs quoted the
+  alert figures verbatim: `$37.38`, `40.34` and `7.9%` appear nowhere else in
+  the prompt. **Probe the prompt by reading the reasoning, not by assuming a
+  section is read because it renders.**
+- **Alerts are bounded by the previous pass, not by a count.** The first
+  version took the newest eight whatever their age, so a Saturday pass was
+  shown Thursday's moves under a heading saying "noticed". With no previous
+  pass, 24 hours is the fallback.
 - **A pass is a loop: act, see what happened, be asked again (2026-09-12).**
   `run_once` rebuilds the book, the prices and the signals on every turn,
   because a buy changed the cash and a research order put a new analysis in the

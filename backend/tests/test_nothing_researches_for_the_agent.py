@@ -143,3 +143,69 @@ def test_unreadable_stored_earnings_do_not_break_a_pass(monkeypatch):
     monkeypatch.setattr(agent.db, "get_setting", lambda key: "not json")
 
     assert agent._earnings_due() == []
+
+
+# --- what the probe runs taught (2026-09-12) ------------------------------------
+
+
+def test_alerts_older_than_the_last_pass_are_dropped(monkeypatch):
+    """**Found by reading the model's own reasoning.** The first version took
+    the newest eight alerts whatever their age, so a Saturday pass was shown
+    Thursday's and Friday's moves under a heading saying "noticed" — and four
+    probe runs against the live book ignored the section completely."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    def alert(hours_ago, text):
+        return types.SimpleNamespace(
+            created_at=now - datetime.timedelta(hours=hours_ago), message=text
+        )
+
+    monkeypatch.setattr(
+        agent.db, "get_agent_runs",
+        lambda limit=1: [types.SimpleNamespace(ran_at=now - datetime.timedelta(hours=3))],
+    )
+    monkeypatch.setattr(
+        agent.db, "get_recent_alerts",
+        lambda limit=8: [alert(1, "fresh"), alert(48, "two days old")],
+    )
+
+    assert [a["text"] for a in agent._recent_alerts()] == ["fresh"]
+
+
+def test_with_no_previous_pass_it_falls_back_to_a_day(monkeypatch):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1: [])
+    monkeypatch.setattr(
+        agent.db, "get_recent_alerts",
+        lambda limit=8: [
+            types.SimpleNamespace(created_at=now - datetime.timedelta(hours=2), message="today"),
+            types.SimpleNamespace(created_at=now - datetime.timedelta(hours=30), message="yesterday"),
+        ],
+    )
+
+    assert [a["text"] for a in agent._recent_alerts()] == ["today"]
+
+
+def test_what_the_agent_just_did_sits_above_the_signal_table():
+    """Placement was measured, not guessed. Both sections were between the two
+    tables, at 42% and 47% of the prompt, and no probe run referenced either."""
+    prompt = agent.build_prompt(
+        _book(), [_signal_row()], {"AAA": 10.0},
+        outcomes=["AAA: bought 1 at about $10.00."],
+        alerts=[{"at": "12 Sep 9:31 AM", "text": "AAA moved -6% today."}],
+    )
+
+    did = prompt.index("## What you just did")
+    noticed = prompt.index("## What was noticed")
+    table = prompt.index("Recent analyst signals")
+
+    assert did < noticed < table
+
+
+def _signal_row():
+    return types.SimpleNamespace(
+        ticker="AAA", decision="Hold", signal_date=datetime.date(2026, 9, 11),
+        created_at=None, price_at_signal=10.0, entry_price=None, stop_loss=None,
+        price_target=None, win_probability=None, risk_reward=None,
+        expected_value_r=None, id=1, model=None, trigger=None,
+    )
