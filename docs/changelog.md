@@ -6,6 +6,11 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-12
+
+- **Infrastructure** — A decision pass can run an analysis and wait for it. `agent.run_once` is synchronous and runs on a worker thread, so the scheduler installs a bridge at startup that hands the work to the main event loop and blocks until it lands. A deployment with no scheduler — a script, a test — has no bridge and is told so, rather than hanging.
+- **Infrastructure** — A skipped pass no longer spends the agent's 30-minute trigger cooldown. It was stamped before the attempt, so a pass blocked by the lock still suppressed every later trigger for half an hour.
+
 ## 2026-09-11
 
 - **Data** — A signal's `created_at` is when the analysis started, for every row. It had meant the finish on rows written by `record_signal` and the start on rows recovered from `trace_id`, about sixteen minutes apart on this hardware, with nothing marking the seam at 2026-09-09. The start won because it is the instant that was really observed — `trace_id` encodes it to the second — where a finish has to be computed from it. `backfill_signal_timestamps.py` resets every row carrying a trace_id and is safe to re-run; on the live book it corrected 18 rows, left 31 already-correct ones alone, and found none it could not recover. This is also in [the journey](journey.md), because it changes what the record means.

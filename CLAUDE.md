@@ -728,7 +728,10 @@ One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
 11. **What it asked to read**, when the previous turn asked for an analysis.
     Placed with the refusals, because both are replies to something the agent
     said rather than new facts about the world.
-12. **The rules** (below), then the JSON shape to answer in.
+12. **What its own orders did, earlier in this same pass** — the fill and what
+    is resting under it, the analysis it commissioned and what that analysis
+    concluded, the untrack, the refusal. Same placement and the same reason.
+13. **The rules** (below), then the JSON shape to answer in.
 
 ### Telling the agent when a note was answered
 
@@ -811,12 +814,14 @@ The rules block:
   to say Sell first. [...] A resting stop is a floor under a position, not a
   reason to leave it alone.
 - Nothing is analysed automatically, holdings included. Use side `research`
-  [...] to have something looked at, new or already tracked — it runs right
-  after this pass, and there is no daily count on how many you may commission,
-  only cash.
-- A stock that moves sharply while the market is open is analysed on the spot
-  whether you asked for it or not, so a volatile name may come back the same
-  day regardless.
+  [...] to have something looked at, new or already tracked — **it runs inside
+  this pass**: you wait while it runs, and are then shown what it decided and
+  the analyst's own reasoning, with a chance to act on it before you finish.
+  There is no daily count on how many you may commission, only cash.
+- A **tracked** stock that moves sharply while the market is open is analysed
+  on the spot whether you asked for it or not [...] This never happens for a
+  ticker you do not track — nothing watches those, so if you want one looked at
+  you have to ask.
 - **A signal line is a verdict, not the case for it.** The reasoning behind it
   is on record and reading it costs nothing [...] **Read one before you act on
   it.**
@@ -914,6 +919,31 @@ record would be of a strategy nobody chose.
   back as a broker failure that the next prompt shows. **Do not add a
   timing gate here again** — the two gates in `run_once` are the sandbox
   boundary and the on/off switch, and neither is about the clock.
+- **A pass is a loop: act, see what happened, be asked again (2026-09-12).**
+  `run_once` rebuilds the book, the prices and the signals on every turn,
+  because a buy changed the cash and a research order put a new analysis in the
+  table the next turn has to see. It ends when an answer does nothing — which
+  is also what "no orders, wake me later" looks like — or at `_MAX_ACT_TURNS`
+  (3). The read allowance is **one dict shared across those turns**, so six
+  reads a pass cannot become eighteen.
+- **An answer repeating the previous turn's orders ends the pass.** Acting is
+  not reading: executing a repeat would buy twice, and screening only catches
+  the second buy once the cash has run out, which is far too late. The prompt
+  also says what has already been done and not to place it again; the guard is
+  what makes that safe rather than hopeful.
+- **Research runs inside the pass, and the scheduler supplies the bridge.**
+  `run_once` is synchronous on a worker thread; an analysis is async work owned
+  by the main loop. `scheduler._research_for_agent` is installed on the agent by
+  `register_jobs` and blocks on `run_coroutine_threadsafe`, which keeps
+  `agent.py` synchronous and free of a scheduler import. **The cost is that
+  `_pass_lock` is held for the whole analysis**, about sixteen minutes, and that
+  is deliberate — see the 2026-09-12 entry in JOURNEY.md.
+- **Never ask the agent again from inside a pass.** That was the old shape and
+  it never once worked: the pass dispatched its research, then called
+  `_maybe_run_agent` while still holding `_pass_lock`, whose first line is
+  `if _pass_lock.locked(): return`. Seventeen analyses across two days produced
+  no pass at all. The prompt had promised "you are asked again automatically",
+  which made it a lie the agent planned around.
 - **A read earns one follow-up turn, and it is the same one a refusal uses.**
   `read` never reaches `screen` — it moves no cash, no shares and no watchlist
   slot — so it is split out in `_decide` before screening, because it changes

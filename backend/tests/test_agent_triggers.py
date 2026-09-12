@@ -225,25 +225,32 @@ def test_a_filled_take_profit_is_announced_as_a_target_hit(monkeypatch):
 # --- research the agent asked to see today -------------------------------------
 
 
-def test_research_asked_for_now_is_analysed_now(monkeypatch):
+def test_research_the_agent_asked_for_runs_in_the_same_pass(monkeypatch):
     """The whole point of letting the agent choose. A stock can move enough in
     a day to be worth acting on, so "now" has to actually mean now — not a
     field that is recorded and then waits for the morning like everything else.
+
+    Since 2026-09-12 it runs inside the pass rather than after it, so the agent
+    sees what it paid for while the reasoning that wanted it is still in front
+    of it.
     """
     dispatched = {}
+    loop_holder = {}
 
     async def fake_run_analyses(tickers, on_failure=None, trigger=None):
         dispatched["tickers"] = list(tickers)
         dispatched["trigger"] = trigger
         return []
 
-    monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
-    monkeypatch.setattr(scheduler, "_maybe_run_agent", _noop)
+    async def drive():
+        loop_holder["loop"] = asyncio.get_running_loop()
+        monkeypatch.setattr(scheduler, "_main_loop", loop_holder["loop"])
+        monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
+        # The bridge blocks, so it has to be called off the loop's own thread —
+        # which is exactly where run_once runs.
+        await asyncio.to_thread(scheduler._research_for_agent, ["INTC", "PLTR"])
 
-    class Run:
-        research_now = ["INTC", "PLTR"]
-
-    asyncio.run(scheduler._dispatch_immediate_research(Run()))
+    asyncio.run(drive())
 
     assert dispatched["tickers"] == ["INTC", "PLTR"]
     # Stored on every signal it produces, so the next prompt can say the
@@ -251,9 +258,14 @@ def test_research_asked_for_now_is_analysed_now(monkeypatch):
     assert dispatched["trigger"] == "commissioned"
 
 
-def test_the_agent_is_asked_again_once_they_land(monkeypatch):
-    """An answer nobody looks at until tomorrow is the delay the agent was
-    trying to avoid, so the dispatch has to re-ask."""
+def test_the_in_pass_runner_does_not_ask_the_agent_again(monkeypatch):
+    """It must not, and this is the bug it retires.
+
+    The old path asked the agent again from inside ``_pass_lock``, which the
+    very pass that ordered the research still held — so every one of those
+    wakes was dropped by ``if _pass_lock.locked(): return``. The pass is shown
+    the result directly now, so there is nobody to wake.
+    """
     asked = []
 
     async def fake_run_analyses(tickers, on_failure=None, trigger=None):
@@ -262,33 +274,25 @@ def test_the_agent_is_asked_again_once_they_land(monkeypatch):
     async def fake_maybe_run_agent():
         asked.append(True)
 
-    monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
-    monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
+    async def drive():
+        monkeypatch.setattr(scheduler, "_main_loop", asyncio.get_running_loop())
+        monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
+        monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
+        await asyncio.to_thread(scheduler._research_for_agent, ["INTC"])
 
-    class Run:
-        research_now = ["INTC"]
+    asyncio.run(drive())
 
-    asyncio.run(scheduler._dispatch_immediate_research(Run()))
-
-    assert asked == [True]
+    assert asked == []
 
 
-def test_nothing_is_dispatched_when_nothing_was_asked_for(monkeypatch):
-    """The overnight default must cost no GPU at all."""
-    called = []
+def test_the_runner_says_so_rather_than_hanging_with_no_loop(monkeypatch):
+    """A script or a test has no running app. Raising is caught by the caller
+    and reported to the model as a failed analysis; hanging would take the
+    whole pass with it."""
+    monkeypatch.setattr(scheduler, "_main_loop", None)
 
-    async def fake_run_analyses(tickers, on_failure=None, trigger=None):
-        called.append(tickers)
-        return []
-
-    monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
-
-    class Run:
-        research_now = []
-
-    asyncio.run(scheduler._dispatch_immediate_research(Run()))
-
-    assert called == []
+    with pytest.raises(RuntimeError):
+        scheduler._research_for_agent(["INTC"])
 
 
 async def _noop():

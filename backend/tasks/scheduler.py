@@ -116,6 +116,46 @@ async def _evaluate_pending_signals() -> None:
         await notify(_format_outcome_line(signal, evaluation, window.last_close))
 
 
+# The loop every async job runs on. Captured in register_jobs, which app.py
+# calls from inside its lifespan coroutine, so a worker thread can hand work
+# back to it and wait for the answer. None outside a running app — a script or
+# a test — and _research_for_agent says so rather than hanging.
+_main_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _research_for_agent(tickers: list[str]) -> None:
+    """Run the analyses a decision pass just commissioned, and block until done.
+
+    **This is what lets a synchronous pass wait for its own research.**
+    `agent.run_once` is sync and runs on a worker thread; an analysis is async
+    work owned by the main loop. Installed on the agent at startup so that
+    module stays synchronous, with no import of this one.
+
+    It does not ask the agent again afterwards, and must not: the pass that
+    ordered this is still running and is about to be shown the result itself.
+    That is the whole point of chaining — see the 2026-09-12 entry in
+    JOURNEY.md — and it also retires a bug. The old path asked the agent again
+    from inside `_pass_lock`, which the very pass that ordered the research
+    still held, so every one of those wakes was dropped by
+    `if _pass_lock.locked(): return`.
+    """
+    if _main_loop is None:
+        raise RuntimeError("No event loop is running; research cannot be dispatched here")
+    for ticker in tickers:
+        log.info("Running the analysis the agent asked for: %s", ticker)
+    future = asyncio.run_coroutine_threadsafe(
+        analysis.run_analyses(
+            list(tickers),
+            on_failure=lambda ticker: notify(
+                f"Analysis failed for {ticker} — check the logs."
+            ),
+            trigger="commissioned",
+        ),
+        _main_loop,
+    )
+    future.result()
+
+
 async def _run_triggered_analyses(reasons: dict[str, str], trigger: str) -> None:
     """``reasons`` maps ticker to why it was triggered, for the log.
 
@@ -190,44 +230,22 @@ async def _maybe_run_agent() -> None:
     if _last_agent_run is not None and now - _last_agent_run < _AGENT_COOLDOWN:
         log.info("Agent ran %s ago — inside the cooldown, skipping", now - _last_agent_run)
         return
-    _last_agent_run = now
+    # **Stamped only once a pass is really going to happen.** It used to be set
+    # here, before the two calls below, so a pass that was then skipped — by the
+    # lock, or by an alarm that had already fired — still spent the full thirty
+    # minutes. On a busy morning that silently suppressed every later trigger.
+    #
     # Pull the pending alarm forward rather than running beside it. Firing a
     # one-off also deletes it, so the time the agent is about to supersede
     # cannot arrive later and ask a question it has already answered.
-    if not wake_agent_now():
-        await _run_agent_pass("Event-driven")
-
-
-async def _dispatch_immediate_research(run) -> None:
-    """Run every analysis the agent just commissioned.
-
-    **Why the agent gets to choose this at all.** A stock can move enough in a
-    day to be worth taking the profit or cutting the loss, and an agent that
-    cannot ask to look until tomorrow morning cannot act on that. The timing is
-    a tool, not a lever on the experiment — see "What the experiment is for" in
-    CLAUDE.md.
-
-    Every commission dispatches this way since 2026-09-08, when the sweep that
-    used to cover the rest of the watchlist "for free" was removed — there is
-    no more "tomorrow" path for a research order to fall back to.
-
-    The pass itself cannot do this. ``run_once`` is synchronous and an analysis
-    is minutes of async work, so the pass records what it wants and this
-    dispatches it.
-
-    ``_run_triggered_analyses`` already asks the agent again once the analyses
-    land, which is the point — the answers are worth nothing if nobody looks at
-    them soon. The 30-minute cooldown on that path is what stops a research
-    order from re-planning the book on a loop.
-    """
-    # getattr, because tests stand in for AgentRun with a small fake and a
-    # dispatch that crashes on one would take the whole pass with it.
-    if not getattr(run, "research_now", None):
+    if wake_agent_now():
+        _last_agent_run = now
         return
-    await _run_triggered_analyses(
-        {ticker: "the agent asked to see this today" for ticker in run.research_now},
-        trigger="commissioned",
-    )
+    if _pass_lock.locked():
+        log.info("A pass is already running; not spending the cooldown on a skip")
+        return
+    _last_agent_run = now
+    await _run_agent_pass("Event-driven")
 
 
 # The last calendar date a final pass ran, so it happens once a session. Held in
@@ -444,7 +462,6 @@ async def _run_agent_pass_locked(label: str) -> None:
     # agent saying it is short of something, which is the point of having it.
     if run.acted or run.rejected or run.failed or run.notes:
         await notify(embed=agent.format_run_embed(run))
-    await _dispatch_immediate_research(run)
 
 
 async def _agent_wakeup_job() -> None:
@@ -745,6 +762,13 @@ def register_jobs() -> None:
     from the database is what keeps the agent running across a redeploy, and
     skipping it would leave an agent that never wakes and reports nothing
     wrong."""
+    global _main_loop
+    # register_jobs is called from app.py's lifespan, which is a coroutine, so
+    # the running loop is the one every async job will use. A worker thread
+    # running a decision pass hands its research back to it — see
+    # _research_for_agent.
+    _main_loop = asyncio.get_running_loop()
+    agent.set_research_runner(_research_for_agent)
     scheduler.add_task(task_name="alert_watchdog", func=alert_watchdog, interval=900)
     # Same 15-minute cadence as alert_watchdog. The public site is a snapshot,
     # not a live view, and a 1-2 week holding horizon has no need for

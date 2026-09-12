@@ -63,7 +63,7 @@ def test_the_prompt_no_longer_offers_a_choice_of_when(researchable):
     )
 
     assert '"when"' not in prompt
-    assert "runs right after this pass" in prompt
+    assert "runs inside this pass" in prompt
     # The shape is what the model copies, so a dropped field must not linger there.
     assert '{"ticker": "INTC", "side": "research", "reason": "why"}' in prompt
 

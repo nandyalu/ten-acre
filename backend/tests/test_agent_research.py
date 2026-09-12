@@ -45,7 +45,7 @@ def test_the_menu_reaches_the_prompt_with_its_price(charging):
 
     prompt = agent.build_prompt(_book(), [], {}, menu=menu, price=0.05)
 
-    assert "order costs $0.05 and runs right after this pass" in prompt
+    assert "order costs $0.05 and runs inside this pass" in prompt
     assert "AAA" in prompt and "$12.50" in prompt and "+3.2% today" in prompt
 
 

@@ -126,7 +126,7 @@ def test_a_menu_renders_for_a_book_that_holds_something(watching):
         watchlist=["GOOG", "NVDA"], max_watchlist=4,
     )
 
-    assert "order costs $0.05 and runs right after this pass" in prompt
+    assert "order costs $0.05 and runs inside this pass" in prompt
     assert "now $344.00 each" in prompt
 
 
@@ -145,7 +145,7 @@ def test_signals_do_not_rebind_the_research_price_either(watching):
         price=0.05, watchlist=["NVDA"], max_watchlist=4,
     )
 
-    assert "order costs $0.05 and runs right after this pass" in prompt
+    assert "order costs $0.05 and runs inside this pass" in prompt
     assert "| $180.00 |" in prompt
 
 
@@ -355,7 +355,7 @@ def test_a_free_deployment_still_shows_the_watchlist(watching):
         _book(), [], {}, watchlist=["AAA", "BBB"], max_watchlist=12, price=0.0,
     )
 
-    assert "costs $0.00 and runs right after this pass" in prompt
+    assert "costs $0.00 and runs inside this pass" in prompt
     assert "You track 2 of at most 12 tickers" in prompt
 
 

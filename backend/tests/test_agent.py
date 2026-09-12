@@ -2296,7 +2296,12 @@ def test_the_research_rule_and_the_measured_timing_agree():
     )
 
     assert "about an hour from now" not in prompt
-    assert "asked again automatically" in prompt, "it must say it need not schedule the return"
+    # Since 2026-09-12 the research runs inside the pass, so the promise is no
+    # longer "you will be woken" but "you will be shown it before you finish".
+    # Either way the point is the same: the agent must not schedule its own
+    # return for an answer that is coming to it anyway.
+    assert "runs inside this pass" in prompt, "it must say the answer arrives in this pass"
+    assert "asked again automatically" not in prompt, "that promise was never kept"
 
 
 def test_only_one_analysis_duration_is_ever_stated():

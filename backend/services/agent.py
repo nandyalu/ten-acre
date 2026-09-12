@@ -257,8 +257,9 @@ def describe_analysis_timing(
         median = ordered[len(ordered) // 2]
         lines.append(
             f"An analysis takes about {median:.0f} minutes here — recently between "
-            f"{ordered[0]:.0f} and {ordered[-1]:.0f}. You are asked again automatically "
-            "when one you ordered lands, so a wakeup you set is for something else."
+            f"{ordered[0]:.0f} and {ordered[-1]:.0f}. A \"research\" order runs inside this "
+            "pass: you wait that long and are then shown what it found, before you finish. "
+            "So a wakeup you set is for something else."
         )
     if running:
         here = (now or datetime.datetime.now(datetime.timezone.utc))
@@ -464,6 +465,7 @@ def build_prompt(
     running_analyses: dict | None = None,
     changes: list[dict] | None = None,
     readings: list[str] | None = None,
+    outcomes: list[str] | None = None,
 ) -> str:
     """Everything the model gets. Written as plain figures rather than a table
     of jargon, because the numbers are the whole input and a misread one is a
@@ -674,6 +676,26 @@ def build_prompt(
     if recent_wakeups:
         lines += ["", *recent_wakeups]
 
+    # **What its own orders did, earlier in this same pass.** Placed with the
+    # readings and the refusals because all three are replies to something the
+    # agent said rather than new facts about the world.
+    #
+    # Before 2026-09-12 an order left the pass and its result arrived, if at
+    # all, in whatever pass came next. A buy that the broker refused the
+    # bracket on, a research order that came back a Sell — the agent learned
+    # both far too late to do anything about them, and by then the reasoning
+    # that chose them was gone. See the 2026-09-12 entry in JOURNEY.md.
+    if outcomes:
+        lines += [
+            "",
+            "## What happened when you acted, in this same pass",
+            "",
+            "You already did the following. These are done — do not place them again.",
+            "Decide what, if anything, they change.",
+            "",
+            *(f"- {line}" for line in outcomes),
+        ]
+
     # What it asked to read on the previous turn. Placed with the refusals
     # because both are replies to something it said, not new facts about the
     # world, and it should read them as such.
@@ -723,9 +745,10 @@ def build_prompt(
         lines += [
             "",
             f"Nothing is analysed automatically, holdings included. A \"research\" order "
-            f"costs ${price:,.2f} and runs right after this pass. A bad choice of what "
-            "to study is a loss like any other, so spend it where you actually want a "
-            "fresh look — not because it is free to ask.",
+            f"costs ${price:,.2f} and runs inside this pass — you are shown what it found "
+            "and can act on it before you finish. A bad choice of what to study is a loss "
+            "like any other, so spend it where you actually want a fresh look — not "
+            "because it is free to ask.",
         ]
 
     if watchlist and max_watchlist:
@@ -847,20 +870,22 @@ def build_prompt(
         *(
             [
                 "- Nothing is analysed automatically, holdings included. To have something",
-                "  looked at, use side \"research\" with a ticker and no quantity. It runs",
-                "  right after this pass. **You are asked again automatically once it",
-                "  lands** — you do not need to set a wakeup for it, and the timing line",
-                "  above says how long one takes here. A new ticker must come from the",
+                "  looked at, use side \"research\" with a ticker and no quantity. **It runs",
+                "  inside this pass**: you wait while it runs, and are then shown what it",
+                "  decided and the analyst\'s own reasoning, with a chance to act on it",
+                "  before you finish. You do not need to set a wakeup for it. The timing",
+                "  line above says how long one takes here. A new ticker must come from the",
                 "  candidate list above; one you already track can be re-researched as",
                 "  often as you judge it worth $0.05. A second look the same day is",
-                "  often the right call, not a wasteful one — the timing line above says",
-                "  how long one takes, and it is the only figure that does.",
+                "  often the right call, not a wasteful one.",
                 "  Choosing what to study is the only way anything changes,",
                 "  and paying to study something you then ignore is how the money leaves",
                 "  this account.",
-                "- A stock that moves sharply while the market is open is analysed on the",
-                "  spot whether you asked for it or not, so a volatile name may come back",
-                "  the same day regardless.",
+                "- A **tracked** stock that moves sharply while the market is open is",
+                "  analysed on the spot whether you asked for it or not, so a volatile name",
+                "  you already track may come back the same day regardless. This never",
+                "  happens for a ticker you do not track — nothing watches those, so if you",
+                "  want one looked at you have to ask.",
             ]
             if (watchlist or menu)
             else []
@@ -1374,6 +1399,11 @@ def _price_map(tickers) -> dict[str, float | None]:
 # think, read two more, decide" and refuse an unbounded chain.
 _MAX_READS_PER_PASS = 6
 _MAX_READ_TURNS = 3
+# **How many times the agent may act and then be asked again in one pass.**
+# Acting is not free the way reading is — each turn can move real money — so
+# this is tighter than the read budget. Three covers the case it exists for:
+# commission research, see the verdict and act on it, then see the fill.
+_MAX_ACT_TURNS = 3
 
 
 # **Rules that never change, moved here on 2026-09-10.** They were rebuilt into
@@ -1714,7 +1744,8 @@ def _recent_broker_failures() -> list[dict]:
     return out
 
 
-def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=None, menu=None):
+def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=None,
+            menu=None, outcomes=None, budget=None):
     """(reasoning, accepted, rejected), with one correction pass.
 
     A refused order is information the model never sees otherwise: it proposed
@@ -1762,7 +1793,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         watchlist=watchlist, max_watchlist=_max_watchlist(),
         failures=recent_failures, unsettled_cash=unsettled, wakeups=recent_wakeups,
         analysis_minutes=analysis_minutes, running_analyses=running_analyses,
-        changes=recent_changes,
+        changes=recent_changes, outcomes=outcomes,
     )
     answer = _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
@@ -1783,7 +1814,13 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # Reads no longer share the refusal retry's budget. They are different
     # things: one is the agent gathering what it needs to decide, the other is
     # Python telling it the decision it gave cannot be executed.
-    read_budget, turn_budget = _MAX_READS_PER_PASS, _MAX_READ_TURNS
+    # **One budget for the whole pass, not one per act-turn.** `budget` is a
+    # dict the caller owns and this mutates, so an agent that acts and is asked
+    # again cannot start reading from a full allowance each time — six reads a
+    # pass would become eighteen across three turns.
+    if budget is None:
+        budget = {"reads": _MAX_READS_PER_PASS, "turns": _MAX_READ_TURNS}
+    read_budget, turn_budget = budget["reads"], budget["turns"]
     wants, proposed = _split_reads(proposed)
     read_any = bool(wants)
     while wants and read_budget > 0 and turn_budget > 0:
@@ -1801,7 +1838,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              watchlist=watchlist, max_watchlist=_max_watchlist(),
                              failures=recent_failures, unsettled_cash=unsettled,
                              wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
-                             running_analyses=running_analyses, changes=recent_changes,
+                             running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
                              readings=readings)
         answer = _ask(shown)
         spend = spend + _Spend.of(answer)
@@ -1809,6 +1846,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         read_reasoning, proposed = parse_decision(answer)
         reasoning = read_reasoning or reasoning
         wants, proposed = _split_reads(proposed)
+    budget["reads"], budget["turns"] = read_budget, turn_budget
     if wants:
         # Out of budget with more asked for. Dropped rather than answered:
         # this is the loop the bound exists to stop, and the pass still has a
@@ -1828,7 +1866,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                          watchlist=watchlist, max_watchlist=_max_watchlist(),
                          failures=recent_failures, unsettled_cash=unsettled,
                          wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
-                         running_analyses=running_analyses, changes=recent_changes)
+                         running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes)
     retry_answer = _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))
@@ -2610,6 +2648,183 @@ def _as_float(value) -> float | None:
         return None
 
 
+# **How a synchronous pass runs an analysis and waits for it.** `run_once` is
+# sync and runs on a worker thread; an analysis is async work belonging to the
+# main event loop. The scheduler owns that knowledge and installs the bridge at
+# startup, so this module stays synchronous and testable, and a deployment with
+# no scheduler (a script, a test) simply has no runner and says so.
+_research_runner = None
+
+
+def set_research_runner(runner) -> None:
+    """Install the callable that runs analyses and blocks until they land.
+
+    Takes a list of tickers and returns nothing; raising is fine, and the
+    caller reports the failure to the model rather than losing the pass.
+    """
+    global _research_runner
+    _research_runner = runner
+
+
+def _research_and_report(tickers: list[str]) -> list[str]:
+    """Run the analyses the agent just commissioned, and hand back what they said.
+
+    **This is the point of chaining.** The agent asked to have something looked
+    at because it could not decide without it; ending the pass there and asking
+    again later means the answer arrives with the reasoning that wanted it
+    already gone. It now waits, sees the verdict and the analyst's own case for
+    it, and decides in the same breath.
+
+    Each line carries the same trimmed rationale the `read` tool returns, so
+    the agent does not have to spend a turn reading what it just paid for.
+    """
+    if _research_runner is None:
+        log.warning("No research runner installed; %s will not run in this pass", tickers)
+        return [
+            f"{t}: could not be analysed in this pass — nothing is set up to run it here."
+            for t in tickers
+        ]
+    log.info("Running %s and waiting for the result, in the same pass", ", ".join(tickers))
+    try:
+        _research_runner(list(tickers))
+    except Exception as exc:
+        log.exception("In-pass research failed for %s", tickers)
+        return [f"{t}: the analysis did not finish — {exc}" for t in tickers]
+    return [analysis_reader.read(t) for t in tickers]
+
+
+def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker) -> list[str]:
+    """Carry out what survived screening, and say what happened to each order.
+
+    **The returned lines go back to the model in the same pass.** Until
+    2026-09-12 an order left the pass and its result arrived, if at all, in
+    whatever pass came next — so the agent placed a buy and learned whether it
+    filled hours later, against a book it could no longer remember deciding on.
+    A person placing an order watches it fill. See the 2026-09-12 entry in
+    JOURNEY.md.
+
+    A note produces no line. It is a message to the people who maintain this
+    app, not an action with a result, and reporting it back to the model would
+    only invite it to answer itself.
+
+    Research produces one line per ticker and runs last, together, because
+    ``analysis.run_analyses`` dispatches a batch across the GPUs and one at a
+    time would serialise them.
+    """
+    outcomes: list[str] = []
+    research_wanted: list[str] = []
+    for order in accepted:
+        if order["side"] == "note":
+            # Recorded and reported; nothing else happens. Placed before the
+            # broker paths so a note can never reach one of them.
+            run.notes.append(order["reason"])
+            log.info("Note from the agent: %s", order["reason"])
+            continue
+        if order["side"] == "research":
+            _commission_research(order, run)
+            research_wanted.append(order["ticker"])
+            continue
+        if order["side"] == "untrack":
+            _untrack(order, run)
+            outcomes.append(f"{order['ticker']}: no longer tracked.")
+            continue
+        if order["side"] == "adjust":
+            outcome = adjust_exits(order["ticker"], order.get("stop"), order.get("target"))
+            log.info("Adjust %s: %s", order["ticker"], outcome["message"])
+            if outcome["ok"]:
+                run.adjusted.append(outcome["message"])
+                outcomes.append(f"{order['ticker']}: {outcome['message']}")
+            else:
+                run.failed.append((order, outcome["message"]))
+                outcomes.append(f"{order['ticker']}: NOT adjusted — {outcome['message']}")
+            continue
+        try:
+            result = _place(order, prices.get(order["ticker"]), stops, targets)
+        except Exception as exc:  # broker refusal, network, bad symbol
+            log.exception("Order failed for %s", order["ticker"])
+            run.failed.append((order, str(exc)))
+            outcomes.append(
+                f"{order['ticker']}: the broker would NOT take your "
+                f"{order['side']} of {order['quantity']} — {exc}"
+            )
+            continue
+        db.record_agent_trade(
+            ticker=order["ticker"],
+            side=order["side"],
+            quantity=order["quantity"],
+            client_order_id=result["client_order_id"],
+            placed_at=result["placed_at"],
+            reason=str(order.get("reason") or "")[:500] or None,
+            signal_id=signal_by_ticker.get(order["ticker"]),
+        )
+        run.placed.append(order)
+        outcomes.append(_describe_fill(order, result, prices, stops, targets))
+        if order["side"] == "buy":
+            if result.get("exits") is not None:
+                _record_exits(order["ticker"], result["exits"])
+            else:
+                _arm_exits(
+                    order,
+                    stops.get(order["ticker"]),
+                    targets.get(order["ticker"]),
+                    client_order_id=result["client_order_id"],
+                )
+        # A sell has already cleared its own resting exits, before the order
+        # went out — the broker refuses it otherwise. See _place.
+    if research_wanted:
+        outcomes.extend(_research_and_report(research_wanted))
+    return outcomes
+
+
+def _describe_fill(order, result, prices, stops, targets) -> str:
+    """One line saying what an order did, for the model's next turn.
+
+    Says what is resting under a buy, because that is the part the agent
+    cannot otherwise see until the following pass — and a bracket refused
+    against unsettled cash is routine here, not an edge case.
+    """
+    ticker = order["ticker"]
+    price = prices.get(ticker)
+    at = f" at about ${price:,.2f}" if price else ""
+    if order["side"] != "buy":
+        return f"{ticker}: sold {order['quantity']}{at}."
+    stop, target = stops.get(ticker), targets.get(ticker)
+    if result.get("exits") is not None:
+        under = "The broker took the stop and target with it."
+    elif stop or target:
+        under = "The broker refused the bracket, so the exits were armed separately."
+    else:
+        under = "NOTHING is resting under it — no usable stop or target was on the signal."
+    levels = []
+    if stop:
+        levels.append(f"stop ${stop:,.2f}")
+    if target:
+        levels.append(f"target ${target:,.2f}")
+    tail = f" ({', '.join(levels)})" if levels else ""
+    return f"{ticker}: bought {order['quantity']}{at}. {under}{tail}"
+
+
+def _fold_in(run, decision, reasoning, rejected, book) -> None:
+    """Merge a later turn of the same pass into the run being built.
+
+    One pass is one row, however many turns it took. Tokens and seconds add up
+    because every turn was really spent; the prompt, the answer and the
+    thinking are the latest, because that is the turn the pass ended on; and
+    refusals accumulate, because a refusal in an earlier turn happened whether
+    or not the agent went on to do something else.
+    """
+    run.reasoning = reasoning or run.reasoning
+    run.prompt = getattr(decision, "prompt", "") or run.prompt
+    run.response = getattr(decision, "response", "") or run.response
+    run.thinking = getattr(decision, "thinking", None) or run.thinking
+    run.prompt_tokens = (run.prompt_tokens or 0) + getattr(decision, "prompt_tokens", 0)
+    run.completion_tokens = (run.completion_tokens or 0) + getattr(decision, "completion_tokens", 0)
+    run.seconds = (run.seconds or 0.0) + getattr(decision, "seconds", 0.0)
+    run.turns = list(run.turns or []) + list(getattr(decision, "turns", []) or [])
+    run.rejected = list(run.rejected or []) + list(rejected or [])
+    run.book = book
+
+
 def run_once() -> AgentRun:
     """One decision pass: settle fills, build the book, ask the model, screen
     the answer, place what survives.
@@ -2649,124 +2864,119 @@ def run_once() -> AgentRun:
     if settled:
         log.info("Settled %d pending order(s) before deciding", len(settled))
 
-    signals = _recent_signals()
-    book = agent_book.build_book(price_lookup=get_current_price)
-    # The full watchlist, not just signal/holding tickers — since 2026-09-08
-    # the prompt shows a live price for every tracked ticker, held or not, so
-    # the agent can judge staleness for a name nothing has auto-analysed.
-    watchlist = sorted(db.get_watchlist())
-    prices = _price_map([s.ticker for s in signals] + [h.ticker for h in book.holdings] + watchlist)
-    book = agent_book.build_book(price_lookup=prices.get)
-
-    # What its own past decisions did. Signal decisions are joined in so the
-    # history can say "you bought this on a Hold", which is the pattern worth
-    # naming.
-    decisions = {s.id: s.decision for s in db.get_recent_signals(limit=200) if s.id}
-    closed = agent_book.closed_trades(decisions=decisions)
-    # Only fetched when research is actually charged for. Without a price the
-    # agent has no scarcity to reason about, and a menu it can take from for
-    # free would just be a longer watchlist someone else chose.
-    menu = _candidate_menu() if research.is_charging() else None
-    decision = _decide(
-        book, signals, prices, closed=closed,
-        regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
-    )
-
-    reasoning, accepted, rejected = decision
-    # getattr, because Decision unpacks like the tuple it replaced and a caller
-    # may still hand back a plain one — several tests patch _decide that way.
-    # Accepting both is the point of keeping __iter__.
-    run = AgentRun(reasoning=reasoning, rejected=rejected, book=book,
-                   prompt=getattr(decision, "prompt", ""),
-                   response=getattr(decision, "response", ""),
-                   thinking=getattr(decision, "thinking", None),
-                   prompt_tokens=getattr(decision, "prompt_tokens", 0),
-                   completion_tokens=getattr(decision, "completion_tokens", 0),
-                   seconds=getattr(decision, "seconds", 0.0),
-                   turns=list(getattr(decision, "turns", []) or []))
-    # What it asked for and what it got, kept apart. `next_wakeup` is the
-    # clamped, usable instant the scheduler acts on; `wakeup_asked` is the raw
-    # request. When they differ the agent aimed somewhere the market is shut,
-    # and that is worth being able to read afterwards.
-    run.wakeup_asked = parse_wakeup(getattr(decision, "response", ""))
-    run.next_wakeup = market_clock.clamp_wakeup(run.wakeup_asked)
-    # **The newest signal per ticker, chosen explicitly.** These three used to
-    # be dict comprehensions over the signal list, and a dict comprehension
-    # keeps the *last* value it sees. The list arrives newest-first, so the
-    # oldest signal won every time a ticker had been analysed twice.
+    # **The pass is a loop now, not a single question (2026-09-12).** The agent
+    # acts, sees what its own orders did, and is asked again — the way a person
+    # placing an order watches it fill, and the way it already works for a read.
+    # It ends when an answer does nothing, which is also what "no action, just
+    # tell me when to wake you" looks like.
     #
-    # On 2026-08-28 the agent bought SMCI and rested the exits from the
-    # 27th — a stop of 34.16 and a target of 45.21 — when that morning's
-    # analysis had said 34.04 and 49.51. The target was $4.30 out on a
-    # 260-share position, and nothing reported it, because both numbers are
-    # real levels from real signals.
-    latest = _newest_signal_per_ticker(signals)
-    signal_by_ticker = {t: s.id for t, s in latest.items()}
-    # The stop the analysis named, per ticker. Already checked for
-    # plausibility when the signal was recorded (see analysis._trade_plan_levels),
-    # with an ATR-derived fallback, so a level here is one worth resting on.
-    stops = {t: s.stop_loss for t, s in latest.items() if s.stop_loss}
-    # The level the analysis expects it to reach. Same provenance as the stop:
-    # stated by the trader, discarded if implausible against the traded price.
-    targets = {t: s.price_target for t, s in latest.items() if s.price_target}
-    for order in accepted:
-        if order["side"] == "note":
-            # Recorded and reported; nothing else happens. Placed before the
-            # broker paths so a note can never reach one of them.
-            run.notes.append(order["reason"])
-            log.info("Note from the agent: %s", order["reason"])
-            continue
-        if order["side"] == "research":
-            _commission_research(order, run)
-            continue
-        if order["side"] == "untrack":
-            _untrack(order, run)
-            continue
-        if order["side"] == "adjust":
-            outcome = adjust_exits(order["ticker"], order.get("stop"), order.get("target"))
-            log.info("Adjust %s: %s", order["ticker"], outcome["message"])
-            if outcome["ok"]:
-                run.adjusted.append(outcome["message"])
-            else:
-                run.failed.append((order, outcome["message"]))
-            continue
-        try:
-            result = _place(order, prices.get(order["ticker"]), stops, targets)
-        except Exception as exc:  # broker refusal, network, bad symbol
-            log.exception("Order failed for %s", order["ticker"])
-            run.failed.append((order, str(exc)))
-            continue
-        db.record_agent_trade(
-            ticker=order["ticker"],
-            side=order["side"],
-            quantity=order["quantity"],
-            client_order_id=result["client_order_id"],
-            placed_at=result["placed_at"],
-            reason=str(order.get("reason") or "")[:500] or None,
-            signal_id=signal_by_ticker.get(order["ticker"]),
+    # Everything below the loop head is rebuilt on every turn on purpose: a buy
+    # changed the cash, a sell changed the holdings, and a research order put a
+    # new analysis in the signal table that the next turn has to be able to see.
+    run = None
+    outcomes: list[str] = []
+    # One read allowance for the whole pass — see _decide.
+    budget = {"reads": _MAX_READS_PER_PASS, "turns": _MAX_READ_TURNS}
+    last_signature = None
+    for act_turn in range(_MAX_ACT_TURNS):
+        signals = _recent_signals()
+        book = agent_book.build_book(price_lookup=get_current_price)
+        # The full watchlist, not just signal/holding tickers — since 2026-09-08
+        # the prompt shows a live price for every tracked ticker, held or not, so
+        # the agent can judge staleness for a name nothing has auto-analysed.
+        watchlist = sorted(db.get_watchlist())
+        prices = _price_map(
+            [s.ticker for s in signals] + [h.ticker for h in book.holdings] + watchlist
         )
-        run.placed.append(order)
-        if order["side"] == "buy":
-            if result.get("exits") is not None:
-                _record_exits(order["ticker"], result["exits"])
-            else:
-                _arm_exits(
-                    order,
-                    stops.get(order["ticker"]),
-                    targets.get(order["ticker"]),
-                    client_order_id=result["client_order_id"],
-                )
-        # A sell has already cleared its own resting exits, before the order
-        # went out — the broker refuses it otherwise. See _place.
+        book = agent_book.build_book(price_lookup=prices.get)
 
-    # Settle again on the way out, and re-read the book. A market order placed
-    # in session hours fills in well under a second, but nothing would notice
-    # until the next scheduled pass — so the Discord post and the dashboard
-    # would both spend a day reporting cash that has already been spent, beside
-    # an order marked "waiting to fill" that filled immediately.
-    if run.placed:
-        settle_pending()
-        run.book = agent_book.build_book(price_lookup=prices.get)
+        # What its own past decisions did. Signal decisions are joined in so the
+        # history can say "you bought this on a Hold", which is the pattern worth
+        # naming.
+        decisions = {s.id: s.decision for s in db.get_recent_signals(limit=200) if s.id}
+        closed = agent_book.closed_trades(decisions=decisions)
+        # Only fetched when research is actually charged for. Without a price the
+        # agent has no scarcity to reason about, and a menu it can take from for
+        # free would just be a longer watchlist someone else chose.
+        menu = _candidate_menu() if research.is_charging() else None
+        decision = _decide(
+            book, signals, prices, closed=closed,
+            regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
+            outcomes=outcomes, budget=budget,
+        )
+
+        reasoning, accepted, rejected = decision
+        # getattr, because Decision unpacks like the tuple it replaced and a caller
+        # may still hand back a plain one — several tests patch _decide that way.
+        # Accepting both is the point of keeping __iter__.
+        if run is None:
+            run = AgentRun(reasoning=reasoning, rejected=rejected, book=book,
+                           prompt=getattr(decision, "prompt", ""),
+                           response=getattr(decision, "response", ""),
+                           thinking=getattr(decision, "thinking", None),
+                           prompt_tokens=getattr(decision, "prompt_tokens", 0),
+                           completion_tokens=getattr(decision, "completion_tokens", 0),
+                           seconds=getattr(decision, "seconds", 0.0),
+                           turns=list(getattr(decision, "turns", []) or []))
+        else:
+            _fold_in(run, decision, reasoning, rejected, book)
+        # What it asked for and what it got, kept apart. `next_wakeup` is the
+        # clamped, usable instant the scheduler acts on; `wakeup_asked` is the raw
+        # request. When they differ the agent aimed somewhere the market is shut,
+        # and that is worth being able to read afterwards.
+        run.wakeup_asked = parse_wakeup(getattr(decision, "response", ""))
+        run.next_wakeup = market_clock.clamp_wakeup(run.wakeup_asked)
+        # **The newest signal per ticker, chosen explicitly.** These three used to
+        # be dict comprehensions over the signal list, and a dict comprehension
+        # keeps the *last* value it sees. The list arrives newest-first, so the
+        # oldest signal won every time a ticker had been analysed twice.
+        #
+        # On 2026-08-28 the agent bought SMCI and rested the exits from the
+        # 27th — a stop of 34.16 and a target of 45.21 — when that morning's
+        # analysis had said 34.04 and 49.51. The target was $4.30 out on a
+        # 260-share position, and nothing reported it, because both numbers are
+        # real levels from real signals.
+        latest = _newest_signal_per_ticker(signals)
+        signal_by_ticker = {t: s.id for t, s in latest.items()}
+        # The stop the analysis named, per ticker. Already checked for
+        # plausibility when the signal was recorded (see analysis._trade_plan_levels),
+        # with an ATR-derived fallback, so a level here is one worth resting on.
+        stops = {t: s.stop_loss for t, s in latest.items() if s.stop_loss}
+        # The level the analysis expects it to reach. Same provenance as the stop:
+        # stated by the trader, discarded if implausible against the traded price.
+        targets = {t: s.price_target for t, s in latest.items() if s.price_target}
+        # **An answer that repeats the last one is a loop, and it moves money.**
+        # The prompt says what has already been done and not to place it again,
+        # but a small model can still hand back the same list, and executing it
+        # twice would buy twice. Screening would catch the second buy only when
+        # the cash had run out, which is far too late to rely on.
+        signature = [(o.get("side"), o.get("ticker"), o.get("quantity")) for o in accepted]
+        if signature and signature == last_signature:
+            log.info("The answer repeats the previous turn's orders; ending the pass")
+            break
+        last_signature = signature
+        did = _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker)
+        # Settle again on the way out, and re-read the book. A market order placed
+        # in session hours fills in well under a second, but nothing would notice
+        # until the next scheduled pass — so the Discord post and the dashboard
+        # would both spend a day reporting cash that has already been spent, beside
+        # an order marked "waiting to fill" that filled immediately.
+        if run.placed:
+            settle_pending()
+            run.book = agent_book.build_book(price_lookup=prices.get)
+        if not did:
+            # Nothing happened that the agent could react to. A pass that only
+            # left a note lands here too, and should: a note is a message to the
+            # people who maintain this app, not an order with a result.
+            break
+        outcomes = outcomes + did
+        log.info(
+            "Asking again after acting (%d of %d act-turns used)",
+            act_turn + 1, _MAX_ACT_TURNS,
+        )
+    else:
+        log.info("Act-turn budget spent; the pass ends here")
+
     _record_run(run)
     return run
 
@@ -2805,14 +3015,17 @@ def _skip(why: str) -> "AgentRun":
 
 
 def _commission_research(order: dict, run: "AgentRun") -> None:
-    """Pay for an analysis and run it right after this pass.
+    """Pay for an analysis and run it inside this pass.
 
     **There is no sweep to wait for any more (2026-09-08).** Every
     commission — a brand new candidate or a fresh look at something already
-    tracked, held or not — is dispatched the same way "research now" already
-    was: straight after this pass finishes, via
-    scheduler._dispatch_immediate_research, and the agent is asked again
-    within the hour, while the market is still open.
+    tracked, held or not — runs immediately.
+
+    **And it runs inside this pass since 2026-09-12**, via
+    ``_research_and_report``, which waits for it and hands the verdict and the
+    analyst's reasoning back to the agent on its next turn. The old shape
+    dispatched it after the pass and asked the agent again afterwards, which
+    meant the answer arrived with the reasoning that wanted it already gone.
 
     Tracking is a side effect kept for a not-yet-tracked ticker, not the
     mechanism any more — nothing reads the watchlist to decide what to
