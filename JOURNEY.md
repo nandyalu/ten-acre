@@ -51,6 +51,12 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-12 — five decisions had been silently dropped by the parser, and three of them were the agent asking for something.** It was noticed because the agent's note said it had researched NVDA and no analysis had run. Reading back through all 52 stored answers: two notes, and three research orders. A note is the agent telling us a tool is missing, so a silent drop there loses the one message that was meant to reach a person.
+
+Two different faults. The model sometimes puts an order **beside** `orders` rather than inside it — a top-level `"research"` or `"note"` key — and the parser only ever read `payload["orders"]`. And run 44 closed a JSON string with an apostrophe instead of a quote, so the whole answer parsed to nothing and its two research orders read in the record as an idle pass the agent chose.
+
+**Only `research` and `note` are salvaged, and only repairs that cannot change a meaning are applied.** A bare `"sell": "AVGO"` says nothing about how many shares, and a parser that guesses there places a trade nobody chose. Runs 9, 36, 44 and 46 are therefore idle passes in the record that were not idle — the agent asked, and nothing heard it.
+
 **2026-09-12 — the agent is told why it is awake, and can leave a note for its own future self.** Four things start a pass — its own chosen time, something noticed while it slept, the last call before the close, a change to the app — and it was told none of them; the labels existed as log lines. `next_wakeup_note` is the other half: the agent has no memory between passes, so everything it works out is otherwise gone. The prompt carries prices and positions, never conclusions.
 
 **It is a handover, not a justification.** The rule tells it what the next prompt will already contain, so it does not spend the note restating a price. Probed across seven runs: five quoted the note back and reasoned against it — "Did AVGO break $366.16? $361.99 is slightly below" — which is the thing it could not do before.

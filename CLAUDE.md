@@ -1057,6 +1057,16 @@ record would be of a strategy nobody chose.
   it learns it may sell to fund a buy, and untrack to fund a research. The
   advice in that retry is matched to the refusal — cash advice does not help a
   full watchlist, and the first live probe produced exactly that mistake.
+- **The parser reads orders the model put beside `orders`, and repairs two
+  malformations.** Five decisions were dropped silently across 52 stored
+  answers — two notes and three research orders — and it surfaced only because
+  the agent's own note mentioned research that never ran. The model sometimes
+  answers `{"research": [...]}` or `{"note": "..."}` with no `orders` key, and
+  run 44 closed a string with an apostrophe (`…the thesis'`) so the whole
+  answer parsed to nothing. **Only `research` and `note` are salvaged**: a bare
+  `"sell": "AVGO"` does not say how many shares, and guessing places a trade
+  nobody chose. Only repairs that cannot change a meaning are applied, and
+  anything else stays a clean loss.
 - **A `note` is accepted before any check that could refuse it**, so an account
   with no cash left can still leave one. It moves no cash, no shares and no
   watchlist slot, and **it does not count as acting** — a pass that only left a

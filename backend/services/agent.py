@@ -1070,6 +1070,38 @@ def _unwrapped(lines: list[str]) -> list[str]:
     return out
 
 
+# A string closed with an apostrophe instead of a quote, which is what run 44
+# did: `"reason": "…to evaluate the thesis'`. The closing quote is simply
+# missing, so the raw newline after it lands inside the string and json calls
+# it an invalid control character. Unambiguous to spot — a string whose content
+# really ended in an apostrophe would be written `…thesis\'"`, with the quote
+# still there — so the apostrophe can only be the mistyped quote.
+_UNCLOSED_STRING = re.compile(r"""(:\s*"[^"\n]*)'(\s*[,\}\]]?\s*)$""", re.M)
+# A comma before a closing brace or bracket. JSON forbids it; removing one
+# cannot change what the document means.
+_TRAILING_COMMA = re.compile(r",(\s*[\}\]])")
+
+
+def _repaired(raw: str):
+    """One more try at a document json refused, or None.
+
+    **Only repairs actually seen in this book, and only ones that cannot change
+    a meaning.** A pass that guesses at a malformed answer is worse than a pass
+    that skips: run 44 asked to research two tickers and lost both, which is a
+    day of the experiment, but a repair that invented an order would be a trade
+    nobody chose. Anything not listed here stays a loss.
+    """
+    fixed = _TRAILING_COMMA.sub(r"\1", _UNCLOSED_STRING.sub(r'\1"\2', raw))
+    if fixed == raw:
+        return None
+    try:
+        payload = json.loads(fixed)
+    except ValueError:
+        return None
+    log.warning("Agent reply needed repairing before it would parse")
+    return payload if isinstance(payload, dict) else None
+
+
 def parse_decision(text: str) -> tuple[str, list[dict]]:
     """(reasoning, orders) from the model's reply.
 
@@ -1088,14 +1120,70 @@ def parse_decision(text: str) -> tuple[str, list[dict]]:
     try:
         payload = json.loads(brace.group(0))
     except ValueError:
-        log.warning("Agent reply was not parseable JSON: %s", text[:300])
-        return "", []
+        payload = _repaired(brace.group(0))
+        if payload is None:
+            log.warning("Agent reply was not parseable JSON: %s", text[:300])
+            return "", []
     if not isinstance(payload, dict):
         return "", []
     orders = payload.get("orders")
     if not isinstance(orders, list):
         orders = []
-    return str(payload.get("reasoning") or ""), [o for o in orders if isinstance(o, dict)]
+    orders = [o for o in orders if isinstance(o, dict)]
+    return str(payload.get("reasoning") or ""), orders + _salvage(payload)
+
+
+# **Only the two sides that move no money.** A `"research"` or a `"note"` read
+# out of the wrong place costs five cents or a line of text, and both are
+# screened afterwards anyway. A `"sell": "AVGO"` at the top level does not say
+# how many shares, and guessing at that is how a parser places an order nobody
+# asked for. Those stay strict: if a buy or a sell is not in `orders`, it did
+# not happen.
+_SALVAGED = {
+    "research": ("research", ("research",)),
+    "note": ("note", ("note", "notes", "memo")),
+}
+# Values a model writes when it means "nothing here". Left out rather than
+# turned into an empty note.
+_EMPTY = {"", "none", "null", "[]", "{}", "n/a", "-"}
+
+
+def _salvage(payload: dict) -> list[dict]:
+    """Orders the model put beside ``orders`` instead of inside it.
+
+    **The parser is tolerant on purpose, and this is the same reason.** On
+    2026-09-12 the agent answered `{"research": [{"ticker": "NVDA", ...}]}` with
+    no `orders` key at all, and the analysis it asked for was dropped without a
+    word. Reading back through fifty stored answers found two notes lost the
+    same way — and a note is the agent telling the people who maintain it that
+    something is missing, which makes a silent drop the worst kind.
+
+    One in fifty is rare enough to be invisible and often enough to matter.
+    """
+    found: list[dict] = []
+    for side, keys in _SALVAGED.values():
+        for key in keys:
+            if key in payload and key != "orders":
+                found += _as_orders(payload[key], side)
+    return found
+
+
+def _as_orders(value, side: str) -> list[dict]:
+    """One top-level value, as however many orders it is really carrying."""
+    if isinstance(value, list):
+        return [o for item in value for o in _as_orders(item, side)]
+    if isinstance(value, dict):
+        order = {**value, "side": side}
+        if side == "note" and not str(order.get("reason") or "").strip():
+            order["reason"] = str(value.get("note") or value.get("message") or "").strip()
+        return [order] if (side != "note" or order.get("reason")) else []
+    text = str(value or "").strip()
+    if text.lower() in _EMPTY:
+        return []
+    if side == "note":
+        return [{"side": "note", "reason": text}]
+    # A bare string for a ticker-shaped side is the ticker.
+    return [{"side": side, "ticker": text.upper()}]
 
 
 _WAKEUP_NOTE_MAX_CHARS = 300
