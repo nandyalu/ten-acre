@@ -51,6 +51,10 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-12 — the clock had no holidays, and a whole day of the experiment went on refusals because of it.** On Labor Day, Monday 2026-09-07, the first line of every prompt read "the market closes in 5h 28m, at 4:00 PM". The agent believed it, as it should, and placed five orders across three passes that the venue refused. The line now names the reason it is shut and when it opens again, skips holidays when working out the next open, and knows about the three half-days a year.
+
+**Five of the six market-closed refusals in the whole record were that one day**; the sixth was a Saturday. The calendar is computed from the published NYSE rules rather than fetched or listed, so it cannot go stale.
+
 **2026-09-12 — five decisions had been silently dropped by the parser, and three of them were the agent asking for something.** It was noticed because the agent's note said it had researched NVDA and no analysis had run. Reading back through all 52 stored answers: two notes, and three research orders. A note is the agent telling us a tool is missing, so a silent drop there loses the one message that was meant to reach a person.
 
 Two different faults. The model sometimes puts an order **beside** `orders` rather than inside it — a top-level `"research"` or `"note"` key — and the parser only ever read `payload["orders"]`. And run 44 closed a JSON string with an apostrophe instead of a quote, so the whole answer parsed to nothing and its two research orders read in the record as an idle pass the agent chose.

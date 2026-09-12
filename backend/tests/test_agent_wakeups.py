@@ -214,8 +214,11 @@ def test_a_pass_that_asked_for_nothing_falls_back_to_the_next_open(monkeypatch):
         lambda limit: [_Run(next_wakeup=None, ran_at=datetime.datetime(2026, 9, 4, 20, 0))],
     )
 
-    # The next open after Friday evening is Monday, so by Monday morning it is due.
-    assert agent.wakeup_due(datetime.datetime(2026, 9, 7, 10, 0, tzinfo=ET)) is not None
+    # **The Monday here is Labor Day**, which this test used to use as its
+    # "next open" until the clock learned about holidays on 2026-09-12. The
+    # next open after that Friday evening is the Tuesday.
+    assert agent.wakeup_due(datetime.datetime(2026, 9, 7, 10, 0, tzinfo=ET)) is None
+    assert agent.wakeup_due(datetime.datetime(2026, 9, 8, 10, 0, tzinfo=ET)) is not None
 
 
 def test_the_fallback_does_not_fire_early(monkeypatch):

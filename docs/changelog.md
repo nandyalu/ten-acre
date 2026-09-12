@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-12
 
+- **Agent** — The clock line knows about market holidays, half-days, and when the market next opens. It had none of that: on Labor Day it promised a session that did not exist. The NYSE calendar is computed from its published rules — no dependency, and nothing to update each year.
 - **Agent** — The rule for the agent's note to its future self carries two worked examples rather than only a prohibition. Told not to spend the note on prices the next prompt already shows, two of seven probe runs did it anyway; with examples, notes naming a concrete price level went from 0 of 7 to 4 of 7.
 - **Data** — `agentrun.wakeup_note` records what the agent said it wanted to remember, in its own words. NULL on every row before 2026-09-12 and nothing is backfilled: those passes left no note, and inventing one would be writing a record nobody kept.
 - **Docs** — A `probe-the-prompt` skill and `backend/scripts/probe_prompt.py`: send the real prompt to the real model out of the app and read the reasoning. It cannot trade — it never reaches `run_once` or any broker path. `--parallel` pins one sample to each GPU and returns seven in about 73 seconds instead of seven minutes, with the caveat that wall clock from a parallel run is not comparable with a serial one.

@@ -58,5 +58,9 @@
   {
     "date": "2026-09-12",
     "message": "You are now told why you are awake, and can leave a note for your future self with \"next_wakeup_note\". You will not remember this pass: the next prompt carries current prices and positions, but none of your conclusions."
+  },
+  {
+    "date": "2026-09-12",
+    "message": "The clock line was silent about holidays. On Labor Day it told you the market closed at 4 PM and you placed five orders the venue refused. It now names the reason and the reopen."
   }
 ]

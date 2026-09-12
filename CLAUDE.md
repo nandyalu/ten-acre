@@ -1057,6 +1057,19 @@ record would be of a strategy nobody chose.
   it learns it may sell to fund a buy, and untrack to fund a research. The
   advice in that retry is matched to the refusal — cash advice does not help a
   full watchlist, and the first live probe produced exactly that mistake.
+- **The clock knows the NYSE calendar, and it is computed rather than listed.**
+  `market_clock.describe()` had no holidays at all, so on Labor Day 2026-09-07
+  it read "the market closes in 5h 28m, at 4:00 PM" and the agent placed five
+  orders across three passes that the venue refused — **five of the six
+  market-closed refusals in the whole record are that one day**, and the sixth
+  is a Saturday. `market_holidays()` derives all ten closures from the
+  published rules (including Good Friday from Easter, and the
+  Saturday-to-Friday / Sunday-to-Monday observance), `early_closes()` covers
+  the three half-days, and `next_open()` skips both. **No dependency and no
+  table**: a table is a copy of the rules that goes stale the year nobody
+  updates it. The line now names the reason and the reopen, and the model's
+  reasoning restates it — *"The market is closed until Monday, 14 September
+  2026 at 9:30 AM ET."*
 - **The parser reads orders the model put beside `orders`, and repairs two
   malformations.** Five decisions were dropped silently across 52 stored
   answers — two notes and three research orders — and it surfaced only because
