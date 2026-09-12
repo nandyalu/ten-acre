@@ -1591,10 +1591,15 @@ _FIXED_RULES = [
     "not remember this pass. Next time you are given the same kind of prompt "
     "you have now — the clock, your cash, your holdings, the signals, all of it "
     "current — plus why you were woken and this note, and nothing else from "
-    "today. Prices and positions will be in that prompt already, so do not "
-    "spend the note on them. Spend it on what you worked out and could not "
-    "otherwise recover: what you were waiting to see, what you had already "
-    "ruled out and why, what would change your mind. One or two sentences.",
+    "today.",
+    "- **The note is for what the next prompt cannot tell you.** It will already "
+    "show your cash, your positions and every price, so a note about those is a "
+    "wasted one. Write down instead what you worked out and could not recover: "
+    "what you are waiting to see, what you ruled out and why, what would change "
+    "your mind. Not \"my cash is low\" — the next prompt says your cash. "
+    "Rather \"ruled out HPE at a $59.83 entry, worth another look under $56\", "
+    "or \"holding AVGO until it breaks $366.16; sell if it closes below $354\". "
+    "One or two sentences, and only if you have something worth carrying.",
     "- You may ask for any time, including before the open, after the close and "
     "at the weekend. Research and planning work at any hour. Orders do not — "
     "the broker rejects one outright while the market is shut, and you will "

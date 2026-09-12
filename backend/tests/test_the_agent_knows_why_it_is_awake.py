@@ -97,7 +97,12 @@ def test_the_rule_tells_the_agent_what_it_will_and_will_not_get():
 
     assert "next_wakeup_note" in prompt
     assert "You will not remember this pass" in prompt
-    assert "do not spend the note on them" in prompt.lower()
+    # **A worked example, not a prohibition.** Two of seven probe runs spent
+    # the note restating the cash balance, which the next prompt shows anyway,
+    # against a rule that only told them not to.
+    assert "a wasted one" in prompt
+    assert 'Not "my cash is low"' in prompt
+    assert "ruled out HPE at a $59.83 entry" in prompt
 
 
 # --- the wiring ----------------------------------------------------------------

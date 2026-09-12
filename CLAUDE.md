@@ -693,6 +693,14 @@ One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
    the same pass with no alerts, so the prompt pointed at nothing and seven
    probe runs read straight past it. `build_prompt` adds the pointer, because
    only it knows whether the section is there.
+
+   **A worked example beats a prohibition.** The rule told the agent not to
+   spend the note on prices the next prompt already carries, and two of seven
+   runs wrote "my cash is critically low" anyway. Adding two examples of a good
+   note — *"ruled out HPE at a $59.83 entry, worth another look under $56"* —
+   moved notes naming a concrete price level from **0 of 7 to 4 of 7**, and
+   notes stating a condition from 3 to 5. It did not stop the balance-restating
+   (still 2 of 7); it raised the floor of everything else.
 2. **The regime line** when one is available — VIX, SPY against its 200-day
    average, the yield curve, as one sentence.
 3. **Recent changes to the app**, when any were written down in the last three
