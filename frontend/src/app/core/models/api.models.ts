@@ -29,9 +29,10 @@ export interface Signal {
   price_at_evaluation: number | null;
   outcome: 'pass' | 'fail' | null;
   evaluated_at: string | null;
-  // When the analysis actually finished, to the second. Null on rows that
-  // predate the column and had no trace to recover it from — `signal_date`
-  // alone is a calendar date and cannot place a signal within a day.
+  // When the analysis started, to the second. Null on rows that predate the
+  // column and had no trace to recover it from — `signal_date` alone is a
+  // calendar date and cannot place a signal within a day, which matters
+  // because several analyses a day is normal here.
   created_at: string | null;
   message_id: string | null;
   benchmark_price_at_signal: number | null;

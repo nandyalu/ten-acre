@@ -94,14 +94,18 @@ class Signal(SQLModel, table=True):
     win_probability: float | None = None  # 0-100, the model's own estimate
     risk_reward: float | None = None  # reward ÷ risk, computed from entry/stop/target
     expected_value_r: float | None = None  # p×rr − (1−p), in R-multiples; signed
-    # When the analysis actually finished, to the second — added 2026-09-08 so
-    # a signal can be placed on an intraday chart instead of smeared across
-    # whichever daily candle its date falls on. `signal_date` alone was never
-    # enough for that; it is a calendar date with no time of day. NULL means
-    # the row predates this column: for those, backend/scripts/backfill_
-    # signal_timestamps.py recovers a best-effort time from the run's trace
-    # file (trace_id) where LLM_TRACE_DIR logging was on, and leaves it NULL
-    # where no trace exists rather than guessing a time nobody recorded.
+    # When the analysis *started*, to the second — added 2026-09-08 so a signal
+    # can be placed on an intraday chart instead of smeared across whichever
+    # daily candle its date falls on. `signal_date` alone was never enough for
+    # that; it is a calendar date with no time of day.
+    #
+    # **Start, not finish, and it meant both until 2026-09-11.** record_signal
+    # stored the finish while backfilled rows held the start, roughly sixteen
+    # minutes apart on this hardware. The start won because it is the instant
+    # actually observed — trace_id encodes it — where a finish has to be
+    # computed. backend/scripts/backfill_signal_timestamps.py resets every row
+    # that carries a trace_id. NULL means no trace existed to recover one
+    # from, never a guessed time.
     created_at: datetime.datetime | None = None
 
 

@@ -30,7 +30,7 @@ def list_signals(ticker: str | None = None, status: str | None = None, limit: in
     elif status == "resolved":
         rows = db.get_resolved_signals(ticker)
     else:
-        rows = db.get_recent_signals(ticker, limit=limit)
+        rows = db.get_recent_signals(ticker, limit=limit, by_time=True)
     # Sorted before the slice, and for every branch, because the three
     # disagreed: "pending" came back in whatever order the rows sat in,
     # "resolved" came back oldest first — so asking for the newest 20 resolved

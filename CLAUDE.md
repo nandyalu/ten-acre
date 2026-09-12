@@ -922,11 +922,29 @@ record would be of a strategy nobody chose.
   look at one more thing" becomes the whole pass. The refusals from a pass that
   read still stand and still reach the next prompt.
 - **A read resolves by ticker and an optional date, and sorts locally.**
-  `db.get_recent_signals` orders by `signal_date` alone, which is a calendar
-  date, so two analyses of one ticker on one day come back in row order —
-  asking for INTC's 2026-09-08 analysis returned the 19:06 one over the 19:18
-  one. `analysis_reader` sorts by date, then `created_at`, then id. Do not fix
-  this in the query: every other caller reads that ordering.
+  `db.get_recent_signals` orders by `signal_date` alone by default, which is a
+  calendar date, so two analyses of one ticker on one day come back in row
+  order — asking for INTC's 2026-09-08 analysis returned the 19:06 one over the
+  19:18 one. `analysis_reader` sorts by date, then `created_at`, then id, using
+  `signals.newest_first` — one copy of that key, shared with the research page,
+  which had the same fault for the same reason. **Do not change the query's
+  default ordering: every other caller reads it.**
+- **Sorting after the fetch is not enough when a LIMIT is involved**, which is
+  the one case that needs the query. A day here holds up to eleven analyses, so
+  a limit landing inside a day keeps whichever rows the table offers first — the
+  day's *oldest* — and the newest are never fetched at all, so no later sort can
+  recover them. Measured on the live book 2026-09-11: `limit=10` returned
+  2026-09-10's four oldest and dropped its seven newest. `get_recent_signals`
+  therefore takes an opt-in `by_time=True` that adds `created_at` and `id` to
+  the ORDER BY. Opt-in, not the default, for the reason above.
+- **`Signal.created_at` is when the analysis *started*, for every row.** It
+  meant the finish on rows written by `record_signal` and the start on rows
+  recovered from `trace_id`, about sixteen minutes apart, until 2026-09-11. The
+  start won because it is the instant actually observed — `trace_id` encodes it
+  — where a finish has to be computed. `propagate_ticker` puts it in
+  `final_state["started_at"]` and `record_signal` passes it down;
+  `backend/scripts/backfill_signal_timestamps.py` resets every row that carries
+  a trace_id and is safe to re-run. See the 2026-09-11 entry in JOURNEY.md.
 - **A refused order is fed back once** and the model asked again, which is how
   it learns it may sell to fund a buy, and untrack to fund a research. The
   advice in that retry is matched to the refusal — cash advice does not help a

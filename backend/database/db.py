@@ -88,6 +88,7 @@ def record_signal(
     completion_tokens: int | None = None,
     llm_calls: int | None = None,
     trace_id: str | None = None,
+    created_at: datetime.datetime | None = None,
     entry_price: float | None = None,
     stop_loss: float | None = None,
     win_probability: float | None = None,
@@ -101,7 +102,11 @@ def record_signal(
     row = Signal(
         ticker=ticker,
         signal_date=datetime.date.today(),
-        created_at=datetime.datetime.now(datetime.timezone.utc),
+        # When the analysis *started*, supplied by the caller that ran it.
+        # The fallback is the record time, and it is reached only by a caller
+        # with no run behind it — a test, a replayed final_state. See the
+        # 2026-09-11 entry in JOURNEY.md for why start rather than finish.
+        created_at=created_at or datetime.datetime.now(datetime.timezone.utc),
         decision=decision,
         rationale=rationale,
         time_horizon_text=time_horizon_text,
@@ -171,6 +176,22 @@ def get_signals_missing_created_at(*, _session: Session = None) -> list[Signal]:
     return list(_session.exec(select(Signal).where(Signal.created_at.is_(None))).all())
 
 
+@read_session
+def get_signals_with_trace(*, _session: Session = None) -> list[Signal]:
+    """Every row carrying a ``trace_id``, oldest first.
+
+    The trace id encodes the UTC second the run started, so these are the rows
+    whose ``created_at`` can be set to the start exactly rather than derived.
+    The input to backfill_signal_timestamps.py since 2026-09-11, when
+    ``created_at`` was defined as the start for every row.
+    """
+    return list(
+        _session.exec(
+            select(Signal).where(Signal.trace_id.is_not(None)).order_by(Signal.id)
+        ).all()
+    )
+
+
 @write_session
 def set_signal_created_at(signal_id: int, created_at: datetime.datetime, *, _session: Session = None) -> None:
     row = _session.get(Signal, signal_id)
@@ -182,12 +203,35 @@ def set_signal_created_at(signal_id: int, created_at: datetime.datetime, *, _ses
 
 
 @read_session
-def get_recent_signals(ticker: str | None = None, limit: int = 10, *, _session: Session = None) -> list[Signal]:
+def get_recent_signals(
+    ticker: str | None = None,
+    limit: int = 10,
+    by_time: bool = False,
+    *,
+    _session: Session = None,
+) -> list[Signal]:
+    """The most recent signals, newest first.
+
+    ``by_time`` decides what "recent" means when the limit falls inside a day.
+    ``signal_date`` is a calendar date, so by itself it cannot rank a day that
+    holds eleven analyses — the LIMIT then keeps whichever rows the table hands
+    over first, which is the day's *oldest*. Measured on the live book: asking
+    for 10 returned 2026-09-10's four oldest and dropped its seven newest
+    outright, so no amount of sorting afterwards could recover them.
+
+    It is opt-in rather than the default because every other caller reads the
+    existing ordering, and this is not the change to move them.
+    """
     query = select(Signal)
     if ticker:
         query = query.where(Signal.ticker == ticker)
-    query = query.order_by(Signal.signal_date.desc()).limit(limit)
-    return list(_session.exec(query).all())
+    if by_time:
+        query = query.order_by(
+            Signal.signal_date.desc(), Signal.created_at.desc(), Signal.id.desc()
+        )
+    else:
+        query = query.order_by(Signal.signal_date.desc())
+    return list(_session.exec(query.limit(limit)).all())
 
 
 @read_session

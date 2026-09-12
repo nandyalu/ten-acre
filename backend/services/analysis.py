@@ -366,7 +366,8 @@ async def propagate_ticker(
             _build_graph, model, tracker, provider, recorder
         )
         started = time.monotonic()
-        _in_flight[ticker] = datetime.datetime.now(datetime.timezone.utc)
+        started_at = datetime.datetime.now(datetime.timezone.utc)
+        _in_flight[ticker] = started_at
         try:
             final_state, decision = await asyncio.to_thread(
                 graph.propagate, ticker, trade_date, horizon=horizon
@@ -379,6 +380,11 @@ async def propagate_ticker(
         # caller's job, and it needs the id to join this run's trace file to
         # the grade the signal eventually receives.
         final_state["trace_id"] = recorder.run_id if recorder else None
+        # When the work began. Stored as the signal's `created_at`, because
+        # that is the instant actually observed — the finish is only ever
+        # arithmetic on it, and an analysis takes about sixteen minutes here,
+        # so the two are far apart. See the 2026-09-11 entry in JOURNEY.md.
+        final_state["started_at"] = started_at
         # Billed here rather than after the signal is recorded, because the
         # work happened either way. An analysis that produced nothing — a
         # delisted ticker, an unparseable answer — still cost what it cost,
@@ -577,6 +583,10 @@ def record_signal(
     # is what lets a later filter keep only the traces of runs that graded
     # correct — see docs/model-training.md.
     trace_id = final_state.get("trace_id")
+    # When the run began. Absent for the same reasons as the two above — a
+    # replayed final_state, a test — and db.record_signal then falls back to
+    # the record time, which is the only instant such a caller has.
+    started_at = final_state.get("started_at")
     params = horizon_params(horizon)
     evaluation_date = datetime.date.today() + datetime.timedelta(
         days=parse_time_horizon_days(
@@ -602,6 +612,7 @@ def record_signal(
         completion_tokens=usage.completion_tokens or None,
         llm_calls=usage.llm_calls or None,
         trace_id=trace_id,
+        created_at=started_at,
         entry_price=levels["entry_price"],
         stop_loss=_resolve_stop_loss(ticker, decision, levels["stop_loss"], price),
         win_probability=levels["win_probability"],

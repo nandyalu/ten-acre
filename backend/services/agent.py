@@ -923,7 +923,7 @@ def build_prompt(
 
 
 def _analysed_at(signal) -> str:
-    """When an analysis ran, to the minute, in Eastern.
+    """When an analysis started, to the minute, in Eastern.
 
     **The date alone could not order two analyses of one ticker on one day**,
     and on 2026-09-10 that is exactly what the agent hit: two INTC rows, one at
@@ -931,7 +931,9 @@ def _analysed_at(signal) -> str:
     was current. It spent a paragraph guessing.
 
     `created_at` is UTC and null on rows written before 2026-09-08, which fall
-    back to the bare date rather than inventing a time.
+    back to the bare date rather than inventing a time. It is when the analysis
+    *started*, for every row, since 2026-09-11 — it had meant the finish on
+    newer rows and the start on older ones, about sixteen minutes apart.
     """
     created = getattr(signal, "created_at", None)
     if not created:

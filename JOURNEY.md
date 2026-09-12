@@ -51,6 +51,10 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-11 — `created_at` on a signal means when the analysis started, for every row.** It had meant two things at once: `record_signal` stored the finish, while the rows recovered by `backfill_signal_timestamps` carried the start decoded from `trace_id`. The split is exact and provable — rows up to 31 equal their trace start to the second, rows from 32 equal start plus `duration_seconds` — so the seam sat at 2026-09-09 with nothing marking it.
+
+**Start, not finish, because it is the instant that was actually observed.** The old rows hold a real recorded start; correcting them to a finish would mean writing a timestamp nobody watched a clock for. The new rows can be moved to the start exactly, since every row keeps the `trace_id` that encodes it. The agent reads this field too — `_analysed_at` puts it in the prompt — so an analysis it is told about now dates from when the work began, roughly 16 minutes earlier than before on this hardware.
+
 **2026-09-10 — the agent reported the timing contradiction itself, twice, and it was still half there after the first fix.** Two notes, at 09:30 and 15:53: "the top text says about 2 minutes, while the rules say about 20 minutes and that it lands about an hour later". The first pass at this removed "about an hour" and left "about twenty minutes" — a second hardcoded figure in the same rule. **One duration is stated in the prompt now, the measured one**, and the JSON example was still showing `"45 minutes"` under an instruction to use an ISO datetime.
 
 **This is the note action doing exactly what it exists for.** The agent could not act on the contradiction and said so instead, precisely enough to fix — including the part the first fix missed.

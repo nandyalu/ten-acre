@@ -91,8 +91,8 @@ class SignalOut(OrmModel):
     win_probability: float | None
     risk_reward: float | None
     expected_value_r: float | None
-    # When the analysis actually finished, to the second. NULL on rows that
-    # predate the column and had no trace_id to recover it from — see
+    # When the analysis started, to the second. NULL on rows that predate the
+    # column and had no trace_id to recover it from — see
     # backend/scripts/backfill_signal_timestamps.py. `signal_date` alone is a
     # calendar date and cannot place a signal within a day on a chart.
     created_at: datetime | None = None

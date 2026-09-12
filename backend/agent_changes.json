@@ -42,5 +42,9 @@
   {
     "date": "2026-09-10",
     "message": "You can now read up to 6 analyses before deciding, asking again after reading up to 3 times, and you can list several reads in one answer to get them together. The single read was a restriction with no reason behind it but the fear of a reading loop; the two budgets answer that directly, so the rationing is gone. Read what you need before you commit money — this is the one place spending is encouraged. Reading still does not count as acting, and the budget does run out."
+  },
+  {
+    "date": "2026-09-11",
+    "message": "The time shown in the Analysed column is when an analysis started, for every signal. It used to mean the start on older rows and the finish on newer ones, about sixteen minutes apart on this hardware, with nothing marking the seam — so a recent analysis read as more recent than it was, and two rows from different weeks were not comparable. One meaning now. An analysis still takes about the time the line above the table states, so add that to the Analysed time to know when the result landed."
   }
 ]
