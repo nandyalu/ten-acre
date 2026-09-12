@@ -51,6 +51,12 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-12 — the agent is told, beside the order rules, that a closed market refuses a buy or a sell but still takes an `adjust`.** The clock line has always said the session is shut and that was never enough: three probe runs wrote "the market is closed" and placed an order in the same breath, one of them explaining that orders "will not execute until market open" — a fair guess, and wrong, because this broker refuses rather than queues.
+
+**The `adjust` exemption came from the record, not from reasoning.** An earlier wording had the broker refusing adjusts too. On Labor Day run 15 adjusted two exits at 09:31 while runs 16, 17 and 18 had five buys and sells refused over the following six hours; no adjust has ever been refused in nine failures.
+
+**The behavioural claim is unproven.** Seven probe samples with the rule placed no buys or sells, but the baseline placed none either — across every baseline run it is 2 of 11. What is established is that the correction is read: six of seven restate it in their own words. Whether the live book's closed-market failures stop growing is the measurement.
+
 **2026-09-12 — the clock had no holidays, and a whole day of the experiment went on refusals because of it.** On Labor Day, Monday 2026-09-07, the first line of every prompt read "the market closes in 5h 28m, at 4:00 PM". The agent believed it, as it should, and placed five orders across three passes that the venue refused. The line now names the reason it is shut and when it opens again, skips holidays when working out the next open, and knows about the three half-days a year.
 
 **Five of the six market-closed refusals in the whole record were that one day**; the sixth was a Saturday. The calendar is computed from the published NYSE rules rather than fetched or listed, so it cannot go stale.

@@ -873,6 +873,10 @@ The rules block:
   above and nothing else happens [...] selling into it is often the better
   answer: an analysis takes the time stated above, and the price will have
   moved again by the time it lands.
+- **The market is closed right now, so a buy or a sell you place will not
+  execute.** [...] **Moving a stop or a target with `adjust` does work**,
+  because that rests at the broker rather than trading now. *(pass — appears
+  only when the session is shut.)*
 - **A signal line is a verdict, not the case for it.** The reasoning behind it
   is on record and reading it costs nothing [...] **Read one before you act on
   it.**
@@ -1070,6 +1074,37 @@ record would be of a strategy nobody chose.
   updates it. The line now names the reason and the reopen, and the model's
   reasoning restates it — *"The market is closed until Monday, 14 September
   2026 at 9:30 AM ET."*
+- **A closed session stops a buy and a sell; `adjust` still works, and that was
+  checked rather than assumed.** The clock line was never enough on its own —
+  three probe runs wrote "the market is closed" and placed an order in the same
+  breath, and one stated the belief behind it: *"any buys/sells placed now will
+  not execute until market open"*, which is a fair guess and wrong, because this
+  broker refuses rather than queues. The rule now sits beside the order rules
+  and only when `watchdog.is_us_market_hours()` is false.
+
+  **The `adjust` exemption is the load-bearing part.** An earlier wording had
+  the broker refusing "a buy, a sell or an adjust" and the record contradicts
+  it: on Labor Day run 15 adjusted two exits at 09:31 while runs 16, 17 and 18
+  had five buys and sells refused over the next six hours. **No adjust has ever
+  been refused** in nine broker failures. An exit rests rather than trading now,
+  so there is nothing to reject — and it is the one useful thing left to do with
+  a position going into a long weekend. Do not re-broaden it.
+
+  **The behavioural claim is unproven and should not be repeated as fact.**
+  Seven probe samples with the rule placed no buys or sells — but the baseline
+  placed none either, and across every baseline run it is 2 of 11. What the
+  probe does show is that the correction is *read*: six of seven restate it,
+  one as *"Orders will not execute, except for `adjust` (stop/target)."* The
+  measurement that matters is whether the live book's closed-market failures,
+  six of nine to date, stop growing.
+- **`is_us_market_hours()` knows holidays and half-days.** It answered True all
+  afternoon on Labor Day, and its five callers all mean "is the session
+  genuinely open" — one refuses a reset needing a market order, one queues an
+  exit-arm, one takes a live quote instead of the last close. Each was wrong in
+  the same direction that day. The calendar lives in
+  `backend/services/market_calendar.py`, which **imports nothing from this
+  project on purpose**: `market_clock` already imports `watchdog`, so a calendar
+  inside either one puts a cycle between them.
 - **The parser reads orders the model put beside `orders`, and repairs two
   malformations.** Five decisions were dropped silently across 52 stored
   answers — two notes and three research orders — and it surfaced only because

@@ -900,6 +900,36 @@ def build_prompt(
     lines += [
         "",
         "Rules:",
+        # **What the closed session actually stops, stated beside the orders
+        # rather than only in the clock line (2026-09-12).** The first line of
+        # every prompt has always said the market is shut and the agent read it
+        # and ordered anyway: three probe runs wrote "the market is closed" and
+        # placed a buy or a sell in the same breath, and six of the nine broker
+        # failures on the live book are exactly that. One run showed the belief
+        # behind it — "any buys/sells placed now will not execute until market
+        # open" — which is a reasonable guess and wrong here, because this
+        # broker refuses rather than queues.
+        #
+        # **Adjust is exempt, and that was checked rather than assumed.** An
+        # earlier wording had the broker refusing "a buy, a sell or an adjust",
+        # which the record contradicts: on Labor Day run 15 adjusted two exits
+        # at 09:31 and runs 16, 17 and 18 had five buys and sells refused over
+        # the next six hours. No adjust has ever been refused. An exit rests at
+        # the broker instead of trading now, so there is nothing to reject —
+        # and it is the one useful thing left to do with a position going into
+        # a long weekend.
+        *(
+            []
+            if watchdog.is_us_market_hours()
+            else [
+                "- **The market is closed right now, so a buy or a sell you place will not "
+                "execute.** The broker refuses an order to trade outside the session: it is "
+                "not queued for the open, it does not rest, it comes back as a failure and "
+                "nothing happens. **Moving a stop or a target with `adjust` does work**, "
+                "because that rests at the broker rather than trading now. Research, reading "
+                "an analysis and choosing your next wakeup all work at any hour too.",
+            ]
+        ),
         # A balance at or below zero used to render as "must cost $-8.00 or
         # less in total", which is not an instruction anybody can follow. State
         # the condition, what it prevents, and what changes it.

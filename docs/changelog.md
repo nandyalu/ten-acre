@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-12
 
+- **Agent** — `is_us_market_hours()` knows about holidays and the three half-days a year. It answered True all Labor Day afternoon, and its five callers all mean "is the session genuinely open" — one refuses a reset that needs a market order, one queues an exit-arm rather than attempting it, one takes a live quote instead of the last completed close. The NYSE calendar moved into its own module that imports nothing from the project, because the two modules that need it already import each other.
 - **Agent** — The clock line knows about market holidays, half-days, and when the market next opens. It had none of that: on Labor Day it promised a session that did not exist. The NYSE calendar is computed from its published rules — no dependency, and nothing to update each year.
 - **Agent** — The rule for the agent's note to its future self carries two worked examples rather than only a prohibition. Told not to spend the note on prices the next prompt already shows, two of seven probe runs did it anyway; with examples, notes naming a concrete price level went from 0 of 7 to 4 of 7.
 - **Data** — `agentrun.wakeup_note` records what the agent said it wanted to remember, in its own words. NULL on every row before 2026-09-12 and nothing is backfilled: those passes left no note, and inventing one would be writing a record nobody kept.

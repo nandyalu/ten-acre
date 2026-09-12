@@ -109,3 +109,61 @@ def test_the_close_is_early_on_a_half_day():
 
 def test_minutes_to_close_respects_the_early_close():
     assert market_clock.minutes_to_close(at(2026, 12, 24, 12, 30)) == 30
+
+
+# --- what a closed session actually stops (2026-09-12) ---------------------------
+
+
+def _book():
+    from backend.services import agent_book
+    return agent_book.Book(budget=1000.0, cash=500.0, realized_pnl=0.0, holdings=[])
+
+
+def test_a_closed_market_says_so_beside_the_orders(monkeypatch):
+    """**The clock line was never enough.** Three probe runs wrote "the market
+    is closed" and placed a buy or a sell in the same breath, and six of the
+    nine broker failures on the live book are exactly that."""
+    monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda *a, **k: False)
+
+    prompt = agent.build_prompt(_book(), [], {})
+
+    assert "a buy or a sell you place will not execute" in prompt
+    assert "not queued for the open" in prompt, "the belief one run actually stated"
+
+
+def test_adjust_is_exempt_because_the_record_says_so(monkeypatch):
+    """**Checked, not assumed.** An earlier wording had the broker refusing "a
+    buy, a sell or an adjust". On Labor Day run 15 adjusted two exits at 09:31
+    while runs 16, 17 and 18 had five buys and sells refused over the next six
+    hours. No adjust has ever been refused: an exit rests at the broker rather
+    than trading now, and it is the one useful thing left to do with a position
+    going into a long weekend."""
+    monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda *a, **k: False)
+
+    prompt = agent.build_prompt(_book(), [], {})
+
+    assert "`adjust` does work" in prompt
+
+
+def test_an_open_market_gets_no_such_rule(monkeypatch):
+    monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda *a, **k: True)
+
+    prompt = agent.build_prompt(_book(), [], {})
+
+    assert "will not execute" not in prompt
+
+
+def test_the_session_check_knows_about_holidays():
+    """Its five callers all mean "is the session genuinely open", and each was
+    wrong in the same direction on Labor Day."""
+    from backend.services import watchdog
+
+    assert not watchdog.is_us_market_hours(at(2026, 9, 7, 11, 0)), "Labor Day"
+    assert watchdog.is_us_market_hours(at(2026, 9, 14, 11, 0)), "an ordinary Monday"
+
+
+def test_the_session_check_ends_early_on_a_half_day():
+    from backend.services import watchdog
+
+    assert watchdog.is_us_market_hours(at(2026, 12, 24, 12, 0))
+    assert not watchdog.is_us_market_hours(at(2026, 12, 24, 14, 0))

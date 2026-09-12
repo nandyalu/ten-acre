@@ -22,6 +22,8 @@ this loop's existing 15-minute cadence and tracked-ticker list rather than
 adding a second schedule for the same job.
 """
 import datetime
+
+from backend.services import market_calendar
 import logging
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
@@ -50,12 +52,23 @@ _VOLUME_BASELINE_DAYS = 30
 
 
 def is_us_market_hours(now: datetime.datetime | None = None) -> bool:
-    """Regular NYSE session, weekdays 9:30–16:00 ET. Holidays aren't modeled —
-    on those days the stale-bar guard in scan_for_alerts keeps things quiet."""
+    """Whether the regular NYSE session is open right now.
+
+    **Holidays count, and they did not until 2026-09-12.** On Labor Day this
+    answered True all afternoon, and every caller means "is the session
+    genuinely open": one refuses a reset that needs a market order, one queues
+    an exit-arm instead of attempting it, one takes a live quote rather than
+    the last completed close. Each was wrong on that day in the same direction.
+
+    The close is early on the three half-days a year, so the end of the session
+    comes from the calendar rather than a constant.
+    """
     now = (now or datetime.datetime.now(US_MARKET_TZ)).astimezone(US_MARKET_TZ)
-    if now.weekday() >= 5:
+    if not market_calendar.is_trading_day(now.date()):
         return False
-    return _MARKET_OPEN <= now.time() <= _MARKET_CLOSE
+    end = market_calendar._EARLY_CLOSE if now.date() in market_calendar.early_closes(
+        now.year) else _MARKET_CLOSE
+    return _MARKET_OPEN <= now.time() <= end
 
 
 # --- Config (BotSetting-backed, see /alertconfig) ------------------------------
