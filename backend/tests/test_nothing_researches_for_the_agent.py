@@ -73,8 +73,8 @@ def test_the_earnings_check_records_and_wakes(monkeypatch):
     stored = {}
     woken = []
 
-    async def fake_maybe_run_agent():
-        woken.append(True)
+    async def fake_maybe_run_agent(label="Event-driven"):
+        woken.append(label)
 
     monkeypatch.setattr(scheduler.watchdog, "earnings_due", lambda: [("NVDA", datetime.date(2026, 9, 16))])
     monkeypatch.setattr(scheduler.agent, "store_earnings_dates", lambda up: stored.update(up=list(up)))
@@ -90,7 +90,9 @@ def test_the_earnings_check_records_and_wakes(monkeypatch):
     asyncio.run(scheduler._earnings_check_job())
 
     assert stored["up"] == [("NVDA", datetime.date(2026, 9, 16))]
-    assert woken == [True]
+    # Its own reason, not the alert one: the earnings path reaches the same
+    # pass with no alerts to show, so a shared wording pointed at nothing.
+    assert woken == ["Earnings"]
 
 
 # --- and the agent is told what was seen ---------------------------------------

@@ -54,5 +54,9 @@
   {
     "date": "2026-09-12",
     "message": "Nothing is analysed for you any more. A sharp move or a volume spike used to start an analysis and charge it to your research budget without asking; ten of those happened. What the rules see is only reported to you now."
+  },
+  {
+    "date": "2026-09-12",
+    "message": "You are now told why you are awake, and can leave a note for your future self with \"next_wakeup_note\". You will not remember this pass: the next prompt carries current prices and positions, but none of your conclusions."
   }
 ]

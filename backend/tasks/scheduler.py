@@ -182,7 +182,7 @@ async def _settle_agent_fills() -> None:
             await notify(agent.format_stop_fill(fill))
 
 
-async def _maybe_run_agent() -> None:
+async def _maybe_run_agent(label: str = "Event-driven") -> None:
     """Let the agent act on fresh intraday signals, but only when it could
     actually trade on them.
 
@@ -226,7 +226,7 @@ async def _maybe_run_agent() -> None:
         log.info("A pass is already running; not spending the cooldown on a skip")
         return
     _last_agent_run = now
-    await _run_agent_pass("Event-driven")
+    await _run_agent_pass(label)
 
 
 # The last calendar date a final pass ran, so it happens once a session. Held in
@@ -414,6 +414,25 @@ async def _alarm_job() -> None:
     await _run_agent_pass("Alarm")
 
 
+# What each wake path means in the agent's own reading. The labels were log
+# lines only until 2026-09-12: four different reasons for a pass, and the agent
+# was told none of them, so it could not tell its own chosen time from a move
+# it slept through.
+_WOKE_BECAUSE = {
+    "Alarm": "You asked to be woken now.",
+    "Wakeup": "You asked to be woken around now.",
+    "Event-driven": "Something was noticed while you were away. You did not ask for this pass.",
+    "Earnings": "A company you track reports earnings soon. You did not ask for this pass.",
+    "Final": "This is the last pass before the close. Anything you want done today has to be done now.",
+    "Change": "The app changed and you are being told about it. You did not ask for this pass.",
+}
+# **No reason here promises a section.** One did — "see what it was, below" —
+# and the earnings path reaches the same pass with no alerts to show, so the
+# prompt pointed at nothing. build_prompt adds the pointer, because only it
+# knows whether the section exists. Found by probing: seven runs read past a
+# line that promised something the prompt did not contain.
+
+
 async def _run_agent_pass(label: str) -> None:
     """One decision pass, and everything that follows from it.
 
@@ -430,7 +449,7 @@ async def _run_agent_pass(label: str) -> None:
 
 async def _run_agent_pass_locked(label: str) -> None:
     try:
-        run = await asyncio.to_thread(agent.run_once)
+        run = await asyncio.to_thread(agent.run_once, _WOKE_BECAUSE.get(label))
     except Exception:
         log.exception("%s agent run failed", label)
         # Without an alarm the agent never runs again, so a failed pass still
@@ -690,7 +709,7 @@ async def _earnings_check_job() -> None:
     await asyncio.to_thread(agent.store_earnings_dates, upcoming)
     if upcoming:
         log.info("Reporting soon: %s", ", ".join(f"{t} {d}" for t, d in upcoming))
-        await _maybe_run_agent()
+        await _maybe_run_agent("Earnings")
 
 
 def earnings_check() -> None:

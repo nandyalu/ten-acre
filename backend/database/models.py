@@ -213,6 +213,12 @@ class AgentRun(SQLModel, table=True):
     # which is different from asking for the default — the scheduler's fallback
     # is a fact about the scheduler, not a decision the agent made.
     next_wakeup: datetime.datetime | None = None
+    # **The agent's note to itself, carried to the pass that wakeup starts.**
+    # It has no memory between passes, so the only thing that crosses from one
+    # to the next is what the prompt carries. Without this it could set a time
+    # to check something and arrive with no record of what it meant to check.
+    # NULL on a pass that named no reason, and on every row before 2026-09-12.
+    wakeup_note: str | None = None
     reasoning: str = ""
     placed: int = 0
     rejected: int = 0

@@ -811,6 +811,7 @@ def record_agent_run(
     response: str | None = None,
     orders: str | None = None,
     next_wakeup: datetime.datetime | None = None,
+    wakeup_note: str | None = None,
     thinking: str | None = None,
     turns: str | None = None,
     prompt_tokens: int | None = None,
@@ -822,6 +823,7 @@ def record_agent_run(
     row = AgentRun(
         ran_at=ran_at,
         next_wakeup=next_wakeup,
+        wakeup_note=wakeup_note,
         reasoning=(reasoning or "")[:4000],
         placed=placed,
         rejected=rejected,

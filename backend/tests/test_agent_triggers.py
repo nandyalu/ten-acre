@@ -35,8 +35,10 @@ def agent_stub(monkeypatch):
         next_wakeup = None
         skipped = None
 
-    def run_once():
-        runs.append(datetime.datetime.now(datetime.timezone.utc))
+    def run_once(woke_because=None):
+        # The reason is threaded from the scheduler since 2026-09-12, so the
+        # agent can tell its own chosen time from a move it slept through.
+        runs.append((datetime.datetime.now(datetime.timezone.utc), woke_because))
         return Run()
 
     monkeypatch.setattr(scheduler.agent, "run_once", run_once)

@@ -51,6 +51,10 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-12 — the agent is told why it is awake, and can leave a note for its own future self.** Four things start a pass — its own chosen time, something noticed while it slept, the last call before the close, a change to the app — and it was told none of them; the labels existed as log lines. `next_wakeup_note` is the other half: the agent has no memory between passes, so everything it works out is otherwise gone. The prompt carries prices and positions, never conclusions.
+
+**It is a handover, not a justification.** The rule tells it what the next prompt will already contain, so it does not spend the note restating a price. Probed across seven runs: five quoted the note back and reasoned against it — "Did AVGO break $366.16? $361.99 is slightly below" — which is the thing it could not do before.
+
 **2026-09-12 — nothing is analysed unless the agent asks for it and pays for it.** A sharp move or a volume spike used to commission an analysis on the spot, and the pre-market earnings check did the same for anything reporting soon. Both chose what the agent should study, and both were billed to the agent's own research budget — ten such charges on the live book, none of them asked for. The watchdog reports now: what it saw is a table in the prompt, and the agent decides whether any of it is worth $0.05 and sixteen minutes.
 
 **The timing is the argument, not the principle alone.** A pass takes about a minute and an analysis sixteen. A sharp move is exactly the moment selling may beat studying, and the agent was not asked until sixteen minutes of research it had not ordered had finished — describing a price that had moved again. It can still order that research, and since this morning it runs inside the pass.

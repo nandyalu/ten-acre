@@ -63,9 +63,26 @@ def build_prompts() -> dict:
         alerts=agent._recent_alerts(),
         earnings=agent._earnings_due(),
     )
+    # A woken pass, with a note the previous one left. Without these the probe
+    # cannot see whether the agent reads either.
+    # The scheduler's real wording, never a copy of it. A probe that hardcodes
+    # the prompt it is testing stops testing the prompt.
+    from backend.tasks.scheduler import _WOKE_BECAUSE
+
+    woke = _WOKE_BECAUSE["Event-driven"]
     out = {
         "system": agent.SYSTEM_PROMPT,
         "turn1": agent.build_prompt(book, signals, prices, **common),
+        "woken": agent.build_prompt(
+            book, signals, prices,
+            woke_because=woke,
+            # The alert bound hides anything older than the last pass, which is
+            # correct and leaves this variant with nothing to point at. The raw
+            # rows stand in, so the section under test actually exists.
+            wakeup_note=agent._last_wakeup_note()
+            or "Waiting to see whether AVGO breaks $366.16 after the open; ruled out HPE and INTC on entry price, not worth re-reading.",
+            **(common | {"alerts": _raw_alerts()}),
+        ),
     }
     # Turn 2: what the agent sees after research it ordered has landed inside
     # this same pass. No runner is installed, so nothing is analysed — the
@@ -80,6 +97,23 @@ def build_prompts() -> dict:
             **common,
         )
         out["held"] = held
+    return out
+
+
+def _raw_alerts() -> list[dict]:
+    """Every recent alert, ignoring the "since your last pass" bound.
+
+    That bound is right in the app and leaves this probe variant with an empty
+    section on a quiet day — so the thing under test would not be in the prompt.
+    """
+    import datetime as _dt
+    out = []
+    for row in db.get_recent_alerts(limit=8):
+        at = getattr(row, "created_at", None)
+        out.append({
+            "at": at.strftime("%-d %b %-I:%M %p") if at else "",
+            "text": str(getattr(row, "message", "") or "").lstrip("\U0001F4CA\U0001F514\u26A0\uFE0F ").strip(),
+        })
     return out
 
 

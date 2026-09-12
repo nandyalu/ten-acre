@@ -682,6 +682,17 @@ One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
 1. **The clock** — the Eastern time, the date, and how long until the close.
    First, because everything below is read against it and because the agent
    chooses its own next wakeup, which is a question about the time.
+1b. **Why it is awake, and the note the last pass left for this one.** Four
+   things start a pass — its own chosen time, something noticed while it slept,
+   the last call before the close, a change to the app — and it was told none of
+   them until 2026-09-12; the labels were log lines. `next_wakeup_note` is the
+   other half: the agent has no memory between passes, and the prompt carries
+   prices and positions but never conclusions, so this is the one place it can
+   hand something to its own future self. **No wake reason may promise a
+   section** — one said "see what it was, below" and the earnings path reaches
+   the same pass with no alerts, so the prompt pointed at nothing and seven
+   probe runs read straight past it. `build_prompt` adds the pointer, because
+   only it knows whether the section is there.
 2. **The regime line** when one is available — VIX, SPY against its 200-day
    average, the yield curve, as one sentence.
 3. **Recent changes to the app**, when any were written down in the last three

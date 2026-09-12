@@ -511,6 +511,8 @@ def build_prompt(
     readings: list[str] | None = None,
     outcomes: list[str] | None = None,
     researched_now: set | None = None,
+    woke_because: str | None = None,
+    wakeup_note: str | None = None,
     alerts: list[dict] | None = None,
     earnings: list | None = None,
 ) -> str:
@@ -554,8 +556,12 @@ def build_prompt(
         f"If you name no next_wakeup, you will next be asked at "
         f"{market_clock.next_open().astimezone(market_clock.US_MARKET_TZ).strftime('%Y-%m-%dT%H:%M')} "
         "Eastern, the following open. Name a time if you want a different one.",
-        "",
     ]
+    # **Directly under the clock, because it changes how the rest is read.**
+    # Its own chosen time and a move it slept through call for different
+    # answers, and until 2026-09-12 the agent was told neither.
+    lines += describe_wakeup(woke_because, wakeup_note, has_news=bool(alerts))
+    lines.append("")
     if regime_line:
         lines += [regime_line, ""]
     recent_changes = describe_recent_changes(changes or [])
@@ -994,7 +1000,8 @@ def build_prompt(
         'see, a tool you do not have, a rule that contradicts another — say so '
         'with side "note". It reaches the people who maintain you. Nothing '
         'acts on it automatically, so it is a message and not a request.',
-        '{"reasoning": "one or two sentences", "next_wakeup": "2026-09-11T09:00", "orders": '
+        '{"reasoning": "one or two sentences", "next_wakeup": "2026-09-11T09:00", '
+        '"next_wakeup_note": "what you want to remember from this pass", "orders": '
         '[{"ticker": "AAPL", "side": "buy", "quantity": 2, "reason": "why"},',
         ' {"ticker": "MSFT", "side": "adjust", "stop": 410.5, "reason": "why"},',
         # Shown only where there is something to research — a menu of new
@@ -1089,6 +1096,44 @@ def parse_decision(text: str) -> tuple[str, list[dict]]:
     if not isinstance(orders, list):
         orders = []
     return str(payload.get("reasoning") or ""), [o for o in orders if isinstance(o, dict)]
+
+
+_WAKEUP_NOTE_MAX_CHARS = 300
+
+
+def parse_wakeup_note(text: str) -> str | None:
+    """The agent's note to its own future self, from its answer.
+
+    **Not a justification for the wakeup — a handover.** The agent has no
+    memory between passes. Everything it worked out this pass is gone by the
+    next one unless the prompt carries it, and the prompt carries prices and
+    positions, not conclusions. This is the one place it can write down what it
+    wants to remember: what it was watching, what it decided to wait for, what
+    it had already ruled out.
+
+    Read with the same tolerance as the rest of the answer — a model that
+    wraps JSON in prose often enough to need parse_decision's leniency needs it
+    here too.
+    """
+    if not text:
+        return None
+    fenced = re.search(r"```(?:json)?\s*(.+?)```", text, re.S)
+    brace = re.search(r"\{.*\}", fenced.group(1) if fenced else text, re.S)
+    if not brace:
+        return None
+    try:
+        payload = json.loads(brace.group(0))
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    note = (
+        payload.get("next_wakeup_note")
+        or payload.get("next_wakeup_reason")
+        or payload.get("wakeup_reason")
+    )
+    note = str(note or "").strip()
+    return note[:_WAKEUP_NOTE_MAX_CHARS] or None
 
 
 def parse_wakeup(text: str, now: datetime.datetime | None = None) -> datetime.datetime | None:
@@ -1542,6 +1587,14 @@ _FIXED_RULES = [
     "given. One format, so there is nothing to work out: no minute arithmetic, "
     "and no question of which day a bare clock time means. The minimum is 5 "
     "minutes from now and the maximum is 4 days.",
+    "- **Write a note to your future self with \"next_wakeup_note\".** You will "
+    "not remember this pass. Next time you are given the same kind of prompt "
+    "you have now — the clock, your cash, your holdings, the signals, all of it "
+    "current — plus why you were woken and this note, and nothing else from "
+    "today. Prices and positions will be in that prompt already, so do not "
+    "spend the note on them. Spend it on what you worked out and could not "
+    "otherwise recover: what you were waiting to see, what you had already "
+    "ruled out and why, what would change your mind. One or two sentences.",
     "- You may ask for any time, including before the open, after the close and "
     "at the weekend. Research and planning work at any hour. Orders do not — "
     "the broker rejects one outright while the market is shut, and you will "
@@ -1946,6 +1999,53 @@ def describe_watchdog(alerts: list[dict], earnings: list[tuple[str, str]]) -> li
     return lines
 
 
+def _last_wakeup_note() -> str | None:
+    """The note the previous pass left for this one, if it left one.
+
+    Read from the newest run rather than matched to the alarm that fired: the
+    agent may be woken early by something else, and the note it left is still
+    what it was waiting for — arguably more useful then, because it explains
+    what the early wake interrupted.
+    """
+    runs = db.get_agent_runs(limit=1)
+    if not runs:
+        return None
+    note = str(getattr(runs[0], "wakeup_note", None) or "").strip()
+    return note[:_WAKEUP_NOTE_MAX_CHARS] or None
+
+
+def describe_wakeup(woke_because: str | None, note: str | None, has_news: bool = False) -> list[str]:
+    """Why this pass is happening, and what the last pass left for this one.
+
+    **Four different things could start a pass and the agent was told none of
+    them** until 2026-09-12 — its own chosen time, a move it slept through, the
+    last call before the close, a change to the app. They call for different
+    answers and it could not tell them apart.
+
+    The note is the previous pass writing to this one. Everything the agent
+    worked out back then is otherwise gone: the prompt carries prices and
+    positions, never conclusions.
+    """
+    if not woke_because and not note:
+        return []
+    lines = [""]
+    if woke_because:
+        # The pointer is added here and only here, because this is the only
+        # place that knows the section is really in the prompt.
+        pointer = ' See "What was noticed since your last pass" below.' if has_news else ""
+        lines.append(f"**Why you are awake.** {woke_because}{pointer}")
+    if note:
+        lines.append(
+            f'**A note you left yourself last pass:** "{note}"'
+        )
+        lines.append(
+            "Those are your own words, not an instruction. The prices and "
+            "positions below are current and the note is not — act on it only "
+            "where it still holds."
+        )
+    return lines
+
+
 def _recent_broker_failures() -> list[dict]:
     """Orders the broker refused on the last few passes.
 
@@ -1971,7 +2071,8 @@ def _recent_broker_failures() -> list[dict]:
 
 
 def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=None,
-            menu=None, outcomes=None, budget=None, changes=None, researched_now=None):
+            menu=None, outcomes=None, budget=None, changes=None, researched_now=None,
+            woke_because=None):
     """(reasoning, accepted, rejected), with one correction pass.
 
     A refused order is information the model never sees otherwise: it proposed
@@ -2006,6 +2107,9 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # every turn of this pass, for the same reason as everything above.
     alerts = _recent_alerts()
     earnings = _earnings_due()
+    # What the agent said it wanted this wakeup for, on the pass that set
+    # it. Its own words, carried across a gap it cannot remember across.
+    last_note = _last_wakeup_note()
     # What an analysis costs in time, and what is in flight. The agent needs
     # both to choose a wakeup that lands after the answer it is waiting for.
     analysis_minutes = analysis.recent_durations()
@@ -2028,6 +2132,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         changes=recent_changes, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
+                             woke_because=woke_because, wakeup_note=last_note,
     )
     answer = _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
@@ -2075,6 +2180,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
+                             woke_because=woke_because, wakeup_note=last_note,
                              readings=readings)
         answer = _ask(shown)
         spend = spend + _Spend.of(answer)
@@ -2104,7 +2210,8 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                          wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
                          running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
-                             researched_now=researched_now)
+                             researched_now=researched_now,
+                             woke_because=woke_because, wakeup_note=last_note)
     retry_answer = _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))
@@ -2259,6 +2366,9 @@ class AgentRun:
     # having chosen the fallback.
     wakeup_asked: "datetime.datetime | None" = None
     next_wakeup: "datetime.datetime | None" = None
+    # What it said it wanted that wakeup *for*, in its own words, shown back to
+    # it on the pass the wakeup starts. The agent has no memory between passes.
+    wakeup_note: "str | None" = None
     # Tickers it stopped watching. No money moves either way, but tomorrow's
     # sweep is smaller for it, so this is a decision and not housekeeping.
     untracked: list[str] = field(default_factory=list)
@@ -3076,7 +3186,7 @@ def _fold_in(run, decision, reasoning, rejected, book) -> None:
     run.book = book
 
 
-def run_once() -> AgentRun:
+def run_once(woke_because: str | None = None) -> AgentRun:
     """One decision pass: settle fills, build the book, ask the model, screen
     the answer, place what survives.
 
@@ -3159,7 +3269,7 @@ def run_once() -> AgentRun:
             book, signals, prices, closed=closed,
             regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
             outcomes=outcomes, budget=budget, changes=changes,
-            researched_now=researched,
+            researched_now=researched, woke_because=woke_because,
         )
         if act_turn == 0:
             # After the first answer, not before it: a pass that fell over on
@@ -3187,6 +3297,7 @@ def run_once() -> AgentRun:
         # and that is worth being able to read afterwards.
         run.wakeup_asked = parse_wakeup(getattr(decision, "response", ""))
         run.next_wakeup = market_clock.clamp_wakeup(run.wakeup_asked)
+        run.wakeup_note = parse_wakeup_note(getattr(decision, "response", ""))
         # **The newest signal per ticker, chosen explicitly.** These three used to
         # be dict comprehensions over the signal list, and a dict comprehension
         # keeps the *last* value it sees. The list arrives newest-first, so the
@@ -3422,6 +3533,7 @@ def _record_run(run: "AgentRun") -> None:
                 if run.next_wakeup
                 else None
             ),
+            wakeup_note=run.wakeup_note,
         )
     except Exception:
         log.exception("Could not record the agent run")
