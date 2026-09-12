@@ -756,11 +756,38 @@ A git-tracked file rather than a database row on purpose: this project has
 reset its own database more than once (see "Since 2026-09-01..." above), and
 an announcement should survive that the same way JOURNEY.md does.
 
-Shown for a fixed three-day window rather than until acknowledged — the same
-choice already made for recent wakeups and recent failures. There is no clean
-way to tell "the agent read this" from "the agent ignored this" short of
-asking it to say so, which is one more thing to get wrong, and a standing
-reminder would eventually crowd out the pass's own decision.
+**Shown for a number of passes rather than a number of days (2026-09-12), and
+it is a correction rather than an announcement.** Three things were wrong with
+the old shape at once, and together they put roughly **1,600 tokens of
+changelog** in front of the agent before it saw a price:
+
+- **Days were wildly uneven.** The agent picks its own cadence and ran between
+  3 and 11 passes a day over a measured week, so one note was read about 25
+  times if it landed on a busy Tuesday and twice if it landed before a quiet
+  weekend — or never, if the agent slept through the window. `_CHANGE_NOTES_PASSES`
+  is 3 and the count lives in `BotSetting`. **This is not "until
+  acknowledged"**, which was considered and rejected: that needed a judgement
+  about whether the agent had understood, and a counter judges nothing.
+- **There was no cap.** Seven notes landed on 2026-09-10 alone.
+  `_CHANGE_NOTES_SHOWN` is 5, and **the pool is capped before the seen-filter,
+  never after** — filtering first would rotate, surfacing the batch behind the
+  newest as each one expired, and the agent would work through every note ever
+  written. A note that newer ones have pushed out has been superseded.
+- **The notes had drifted into commit messages**, averaging 530 characters
+  with two at 982 and 971. `_CHANGE_NOTE_MAX_CHARS` is 240, the renderer
+  truncates as a backstop, and a test keeps the file itself inside the budget
+  so it never fires.
+
+**Write what is no longer true, not how it works now.** The agent has no
+memory between passes: it reads the current rules fresh every time, so a note
+explaining the new rule repeats the rules it sits beside. What the rules cannot
+explain is the agent's *own history* — the decisions, wakeups and track record
+lower in the same prompt were produced under the older rules. JOURNEY.md holds
+the long version. Same-day notes are collapsed under one date.
+
+`mark_changes_seen` is called **once per pass**, from `run_once` after the
+first answer — a pass builds several prompts, and counting those would expire a
+note inside the very pass that first showed it.
 
 **A new entry also wakes the agent, on the restart that ships it**, rather
 than waiting for whatever time the agent last chose for itself — which can be

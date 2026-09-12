@@ -37,22 +37,22 @@
   },
   {
     "date": "2026-09-10",
-    "message": "Reading an analysis is now expected rather than rationed. The old wording said to read \"when the reasoning would change what you do, not out of habit\", which is advice to hesitate over something that costs nothing. A signal line is a verdict; the reasoning is where the case for it lives — what the analyst saw, how sure they were, and what would change their mind. Read one before you act on it. You still get one read per pass and it still uses the single follow-up turn, so spend it on the decision that turns on it. A Hold is the one most worth reading, because it can mean the analyst saw nothing or saw a case for holding and none for adding, and the word is the same either way."
+    "message": "Reading an analysis is not something to ration. The old wording told you to read only when it would change what you do, which was advice to hesitate over something that costs nothing."
   },
   {
     "date": "2026-09-10",
-    "message": "You can now read up to 6 analyses before deciding, asking again after reading up to 3 times, and you can list several reads in one answer to get them together. The single read was a restriction with no reason behind it but the fear of a reading loop; the two budgets answer that directly, so the rationing is gone. Read what you need before you commit money — this is the one place spending is encouraged. Reading still does not count as acting, and the budget does run out."
+    "message": "One read per pass is gone. If you remember being held to a single analysis before deciding, that is out of date."
   },
   {
     "date": "2026-09-11",
-    "message": "The time shown in the Analysed column is when an analysis started, for every signal. It used to mean the start on older rows and the finish on newer ones, about sixteen minutes apart on this hardware, with nothing marking the seam — so a recent analysis read as more recent than it was, and two rows from different weeks were not comparable. One meaning now. An analysis still takes about the time the line above the table states, so add that to the Analysed time to know when the result landed."
+    "message": "The Analysed time used to mean when an analysis finished on newer rows and when it started on older ones, about sixteen minutes apart. It is the start now, on every signal, so the two are comparable."
   },
   {
     "date": "2026-09-12",
-    "message": "Three things changed about how a pass works. First: a \"research\" order now runs inside the pass. You wait while it runs, then you are shown what it decided and the analyst's own reasoning, and you can act on it before you finish — you no longer need a wakeup for it. Second: your orders report back the same way. After a buy you are told what actually filled and what is resting under it, including when the broker refused the bracket, and you get a turn to react. A pass ends when your answer does nothing, so \"no orders, wake me at this time\" still costs one call. Third: a correction. The rule about a sharp move being analysed unasked only ever applied to tickers you already track — nothing watches the others, so if you want one of those looked at you have to ask. Also: the old promise that you would be \"asked again automatically when an analysis lands\" was never kept. A bug dropped every one of those wakes. That is why the answer comes to you inside the pass now instead."
+    "message": "Two things you may remember are wrong. Research no longer ends your pass; it runs inside it. And you were never actually woken when an analysis landed, despite the prompt promising it — a bug dropped every one of those wakes."
   },
   {
     "date": "2026-09-12",
-    "message": "Nothing is analysed for you any more. A sharp move or a volume spike used to start an analysis on the spot and charge it to your research budget — ten of those, none of which you asked for — and the pre-market earnings check did the same. That was us deciding what you should study, with your money. Now the rules only watch and report: a new \"What was noticed\" table in your prompt lists what they saw, and which of your tickers report earnings soon. Nothing has been done about any of it. Selling into a move is often the better answer than studying it, because an analysis takes about sixteen minutes and the price will have moved again by the time it lands — but if you do want the study, order it and you will see the result before this pass ends. You are also woken now when something is noticed outside market hours; orders are still refused then, but moving a stop, ordering research so it is ready for the open, untracking and choosing your next wakeup all work."
+    "message": "Nothing is analysed for you any more. A sharp move or a volume spike used to start an analysis and charge it to your research budget without asking; ten of those happened. What the rules see is only reported to you now."
   }
 ]
