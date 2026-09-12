@@ -7,6 +7,12 @@
 # data/webull holds an actual exchanged access token.
 data/
 
+# The built Angular bundle, where backend/app.py looks for it (_WEB_DIR).
+# The Dockerfile copies the build here; locally it is usually a symlink to
+# frontend/dist. Either way it is a build output, not source.
+web/
+web
+
 # Webull SDK's default token-cache location when WEBULL_OPENAPI_TOKEN_DIR
 # isn't set (e.g. running locally outside the container) — holds a live
 # exchanged auth token, same reason as data/webull/ above.

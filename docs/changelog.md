@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-11
+
+- **Site** — The research page shows the time an analysis ran, not only its date, and lists analyses newest first within a day as well as across days. Several a day is the normal case here — eight on 2026-09-10, nine on 2026-09-08, and two of them 27 seconds apart — and `signal_date` is a calendar date, so the page had shown a day's 06:02 analysis above its 16:57 one with nothing to tell them apart. The three filter branches also disagreed: "pending" came back in whatever order the rows sat in, and "resolved" came back oldest first and was then sliced, so asking for the newest 20 resolved analyses returned the 20 oldest. Sorted in the route, which is the same function the static export calls, so the published site gets it too. The time is on the reader's clock, checked in three zones.
+
 ## 2026-09-10
 
 - **Deployment** — The exported JSON goes to an R2 bucket on its own domain, and Cloudflare Pages holds only the Angular shell, deployed once per container build. One Pages deployment used to carry both, so the half that changes monthly paid the bill for the half that changes every 15 minutes: **96 deployments a day**, and Cloudflare refuses to delete a project with more than a hundred of them. The publisher now uploads only the files whose contents changed — measured live, the exporter rewrites all **89 files (3.9 MB)** every round and almost none of them differ, because a graded signal's JSON is frozen the moment it is written. `R2_SNAPSHOT_BUCKET` unset keeps the old shape exactly, which is what a self-hosted copy gets.
