@@ -494,17 +494,6 @@ def set_cached_price(
 
 
 @read_session
-def has_signal_today(ticker: str, *, _session: Session = None) -> bool:
-    """Used to stop event triggers from re-analyzing a ticker the same day."""
-    return (
-        _session.exec(
-            select(Signal).where(Signal.ticker == ticker, Signal.signal_date == datetime.date.today())
-        ).first()
-        is not None
-    )
-
-
-@read_session
 def get_latest_signal_with_target(ticker: str, *, _session: Session = None) -> Signal | None:
     return _session.exec(
         select(Signal)

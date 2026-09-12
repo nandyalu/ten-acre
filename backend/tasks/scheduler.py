@@ -156,29 +156,6 @@ def _research_for_agent(tickers: list[str]) -> None:
     future.result()
 
 
-async def _run_triggered_analyses(reasons: dict[str, str], trigger: str) -> None:
-    """``reasons`` maps ticker to why it was triggered, for the log.
-
-    ``trigger`` is the machine-readable version of the same fact, stored on
-    every signal this produces and shown to the agent. Each call is one kind —
-    a whole batch of moves, or a whole batch of earnings — so one value covers
-    the batch.
-
-    Runs them together — the shared semaphore is the backpressure, not this
-    function, so several triggered tickers use several GPUs instead of queueing
-    behind each other. Nothing is announced: an analysis starting is not
-    something the agent did, and Discord carries only what it did.
-    """
-    for ticker, reason in reasons.items():
-        log.info("Triggered analysis for %s: %s", ticker, reason)
-    await analysis.run_analyses(
-        list(reasons),
-        on_failure=lambda ticker: notify(f"Triggered analysis failed for {ticker} — check the logs."),
-        trigger=trigger,
-    )
-    await _maybe_run_agent()
-
-
 # Event-driven agent runs are rate-limited. A triggered analysis takes about
 # seven minutes and the watchdog ticks every fifteen, so a busy morning could
 # otherwise have the model re-plan the whole book several times an hour against
@@ -210,21 +187,25 @@ async def _maybe_run_agent() -> None:
     actually trade on them.
 
     **This is the trigger path, not the agent's own schedule.** It fires when
-    the market moves under the agent rather than when the agent asked to be
-    woken, so it keeps the market-hours gate that `run_once` gave up on
-    2026-09-10: a move worth analysing at midday is worth nothing by the next
-    morning, and there is no reason to interrupt a plan the agent made for a
-    price that will have moved again by the open.
+    something happened under the agent rather than when the agent asked to be
+    woken.
+
+    **The market-hours gate is gone (2026-09-12), and it was load-bearing
+    until it was not.** It was here because a move worth *analysing* at midday
+    is worth nothing by the next morning. But nothing here commissions an
+    analysis any more — the agent is simply told what was seen — and the things
+    it can do about that work at any hour: move a stop, commission research so
+    the answer is ready for the open, untrack, leave a note, pick its next
+    wakeup. The earnings check is the clearest case: it runs pre-market and,
+    with the gate in place, could never have woken anybody at all.
 
     The morning sweep this docstring used to describe is gone (2026-09-08).
     Analyses now arrive because the agent paid for them, one at a time, so
     there is no batch of signals waiting to be weighed against each other.
 
-    The earnings check reaches this too and runs pre-market, so it falls
-    through the gate below and waits for the agent's own next pass.
     """
     global _last_agent_run
-    if not agent.is_enabled() or not watchdog.is_us_market_hours():
+    if not agent.is_enabled():
         return
     now = datetime.datetime.now(datetime.timezone.utc)
     if _last_agent_run is not None and now - _last_agent_run < _AGENT_COOLDOWN:
@@ -648,17 +629,23 @@ async def _alert_watchdog_job() -> None:
     # not offering to remember it.
     await _place_queued_exits()
     try:
-        alerts, to_analyze = await asyncio.to_thread(watchdog.scan_for_alerts)
+        alerts = await asyncio.to_thread(watchdog.scan_for_alerts)
     except Exception:
         log.exception("Alert watchdog scan failed")
         return
     for alert in alerts:
         await notify(alert.message)
-    if to_analyze:
-        await _run_triggered_analyses(
-            {ticker: "Unusual price/volume action" for ticker in to_analyze},
-            trigger="move",
-        )
+    # **Tell the agent, do not act for it (2026-09-12).** A sharp move used to
+    # commission an analysis on the spot — sixteen minutes of GPU and $0.05 of
+    # the agent's own research budget, spent on a decision it was never asked
+    # about. A move is the moment "sell it now" matters most, and the agent was
+    # not even asked until the study it had not ordered had finished.
+    #
+    # It is woken instead, and the alerts are in its prompt. If it decides the
+    # move is worth studying it can commission research itself, which now runs
+    # inside that same pass.
+    if alerts:
+        await _maybe_run_agent()
 
 
 def alert_watchdog() -> None:
@@ -681,26 +668,29 @@ def export_public_snapshot() -> None:
 
 
 async def _earnings_check_job() -> None:
-    """Pre-market (13:00 UTC = 8/9am ET): fresh analysis for tracked tickers
-    reporting within the next couple of days."""
+    """Pre-market (13:00 UTC = 8/9am ET): find out who reports soon, and say so.
+
+    **It used to commission an analysis for each one (until 2026-09-12)**, on
+    the agent's behalf and out of the agent's research budget. An earnings date
+    is worth knowing; whether it is worth studying is the agent's call, and it
+    may well prefer to sell before the report rather than pay to read about it.
+
+    Stored rather than passed, because the prompt is built somewhere else
+    entirely and calling the earnings calendar per ticker while assembling a
+    prompt would put a network request per tracked name on the critical path of
+    every pass.
+    """
     if datetime.datetime.now(datetime.timezone.utc).weekday() >= 5:
         return
     try:
-        upcoming = await asyncio.to_thread(watchdog.earnings_tickers_to_analyze)
+        upcoming = await asyncio.to_thread(watchdog.earnings_due)
     except Exception:
         log.exception("Earnings calendar check failed")
         return
+    await asyncio.to_thread(agent.store_earnings_dates, upcoming)
     if upcoming:
-        await _run_triggered_analyses(
-            {
-                ticker: (
-                    f"{ticker} reports earnings "
-                    f"{'today' if earnings_date == datetime.date.today() else f'on {earnings_date}'}"
-                )
-                for ticker, earnings_date in upcoming
-            },
-            trigger="earnings",
-        )
+        log.info("Reporting soon: %s", ", ".join(f"{t} {d}" for t, d in upcoming))
+        await _maybe_run_agent()
 
 
 def earnings_check() -> None:

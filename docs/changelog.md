@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-12
 
+- **Data** — `trigger` on a signal will no longer take the values `move` or `earnings`. Nothing commissions an analysis except the agent, so every new signal is `commissioned`. The existing rows keep their meaning; the scorecard's move-triggered history is now a closed set of 10.
 - **Infrastructure** — A decision pass can run an analysis and wait for it. `agent.run_once` is synchronous and runs on a worker thread, so the scheduler installs a bridge at startup that hands the work to the main event loop and blocks until it lands. A deployment with no scheduler — a script, a test — has no bridge and is told so, rather than hanging.
 - **Infrastructure** — A skipped pass no longer spends the agent's 30-minute trigger cooldown. It was stamped before the attempt, so a pass blocked by the lock still suppressed every later trigger for half an hour.
 

@@ -1,11 +1,15 @@
-"""Intraday alert watchdog and event-driven analysis triggers — all
-rule-based, no LLM involved. ``scan_for_alerts`` does one pass over every
-ticker on the watchlist — which covers every holding, because the agent may
-not untrack a position it still owns —
-alerting on big daily moves, unusual volume, stop-level breaches, and
-price-target touches; big moves and volume spikes also nominate the ticker
-for an immediate TradingAgents run. ``earnings_tickers_to_analyze`` feeds the
-separate pre-market earnings task.
+"""Intraday alert watchdog — all rule-based, no LLM involved.
+``scan_for_alerts`` does one pass over every ticker on the watchlist — which
+covers every holding, because the agent may not untrack a position it still
+owns — alerting on big daily moves, unusual volume, stop-level breaches, and
+price-target touches. ``earnings_due`` reports which tracked tickers announce
+soon, for the separate pre-market task.
+
+**Nothing here commissions an analysis (2026-09-12).** A big move and a volume
+spike used to nominate the ticker for an immediate TradingAgents run, which
+made this module decide what the agent should study and spend the agent's
+research budget doing it. It reports what it sees; the agent decides what that
+is worth.
 
 Sent alerts are recorded in the ``alert`` table keyed by ``dedupe_key`` so a
 15-minute loop never repeats itself (per ticker per day for moves/volume/
@@ -146,7 +150,6 @@ class AlertCandidate:
     alert_type: str  # "big_move" | "volume" | "stop_loss" | "signal_stop" | "target"
     dedupe_key: str
     message: str
-    trigger_analysis: bool = False
 
 
 def evaluate_ticker(
@@ -168,7 +171,6 @@ def evaluate_ticker(
                 f"big_move:{ticker}:{today}",
                 f"📊 {ticker} moved {snapshot.day_change_pct:+.1f}% today "
                 f"(${snapshot.prev_close:,.2f} → ${snapshot.price:,.2f}).",
-                trigger_analysis=True,
             )
         )
 
@@ -180,7 +182,6 @@ def evaluate_ticker(
                 f"volume:{ticker}:{today}",
                 f"📊 {ticker} volume is {snapshot.today_volume / snapshot.avg_volume:.1f}× "
                 f"its 20-day average.",
-                trigger_analysis=True,
             )
         )
 
@@ -262,16 +263,24 @@ def _tracked_tickers() -> list[str]:
     return sorted(set(db.get_watchlist()) - set(listings.inactive_tickers()))
 
 
-def scan_for_alerts() -> tuple[list[AlertCandidate], list[str]]:
-    """One watchdog pass. Returns (fresh alerts, tickers to analyze now).
+def scan_for_alerts() -> list[AlertCandidate]:
+    """One watchdog pass. Returns the alerts that are new.
+
     Alerts are recorded before being returned, so a crash between recording
-    and sending drops an alert rather than ever repeating one."""
+    and sending drops an alert rather than ever repeating one.
+
+    **It reports; it does not commission (2026-09-12).** This used to also
+    return a list of tickers to analyse on the spot, which meant the system
+    chose what to study and charged the agent $0.05 for each one — ten of
+    them, on a book the agent was never asked about first. Seeing a move and
+    deciding what it is worth are two different jobs, and only the first is
+    ours. See the 2026-09-12 entry in JOURNEY.md.
+    """
     config = load_config()
     if not config.enabled:
-        return [], []
+        return []
     today = datetime.datetime.now(US_MARKET_TZ).date()
     fresh: list[AlertCandidate] = []
-    to_analyze: list[str] = []
 
     for ticker in _tracked_tickers():
         # Independent of the daily snapshot below, and before its own
@@ -302,10 +311,8 @@ def scan_for_alerts() -> tuple[list[AlertCandidate], list[str]]:
                 continue
             db.record_alert(candidate.ticker, candidate.alert_type, candidate.dedupe_key, candidate.message)
             fresh.append(candidate)
-            if candidate.trigger_analysis and ticker not in to_analyze and not db.has_signal_today(ticker):
-                to_analyze.append(ticker)
 
-    return fresh, to_analyze
+    return fresh
 
 
 # --- Earnings trigger ---------------------------------------------------------------
@@ -328,15 +335,22 @@ def get_next_earnings_date(ticker: str) -> datetime.date | None:
         return None
 
 
-def earnings_tickers_to_analyze() -> list[tuple[str, datetime.date]]:
-    """Tracked tickers reporting within EARNINGS_LOOKAHEAD_DAYS that haven't
-    been analyzed today. Re-nominates each day inside the window on purpose —
-    a fresh read the day before and the day of the report."""
+def earnings_due() -> list[tuple[str, datetime.date]]:
+    """Tracked tickers reporting within EARNINGS_LOOKAHEAD_DAYS.
+
+    **A fact for the prompt, not a reason to analyse (2026-09-12).** This used
+    to nominate each one for an analysis the agent had not asked for and was
+    charged for. An earnings date is worth knowing; whether it is worth $0.05
+    and sixteen minutes is the agent's call, and it may prefer to sell before
+    the report rather than study it.
+
+    The ``has_signal_today`` filter went with the nomination. It answered
+    "have we already spent GPU on this today", which is not a question about
+    whether the agent should be told a company reports on Thursday.
+    """
     results = []
     today = datetime.date.today()
     for ticker in _tracked_tickers():
-        if db.has_signal_today(ticker):
-            continue
         next_date = get_next_earnings_date(ticker)
         if next_date is not None and (next_date - today).days <= EARNINGS_LOOKAHEAD_DAYS:
             results.append((ticker, next_date))

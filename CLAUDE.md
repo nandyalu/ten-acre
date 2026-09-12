@@ -728,10 +728,12 @@ One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
 11. **What it asked to read**, when the previous turn asked for an analysis.
     Placed with the refusals, because both are replies to something the agent
     said rather than new facts about the world.
-12. **What its own orders did, earlier in this same pass** — the fill and what
+12. **What the rules noticed** — the watchdog's own alerts, and which tracked
+    tickers report earnings soon. Facts, with nothing done about them.
+13. **What its own orders did, earlier in this same pass** — the fill and what
     is resting under it, the analysis it commissioned and what that analysis
     concluded, the untrack, the refusal. Same placement and the same reason.
-13. **The rules** (below), then the JSON shape to answer in.
+14. **The rules** (below), then the JSON shape to answer in.
 
 ### Telling the agent when a note was answered
 
@@ -818,10 +820,12 @@ The rules block:
   this pass**: you wait while it runs, and are then shown what it decided and
   the analyst's own reasoning, with a chance to act on it before you finish.
   There is no daily count on how many you may commission, only cash.
-- A **tracked** stock that moves sharply while the market is open is analysed
-  on the spot whether you asked for it or not [...] This never happens for a
-  ticker you do not track — nothing watches those, so if you want one looked at
-  you have to ask.
+- **Nothing is ever analysed unless you ask for it and pay for it.** Rules
+  watch your tracked tickers for a sharp move, a volume spike, a stop or target
+  being reached, and for earnings coming up. What they see is reported to you
+  above and nothing else happens [...] selling into it is often the better
+  answer: an analysis takes the time stated above, and the price will have
+  moved again by the time it lands.
 - **A signal line is a verdict, not the case for it.** The reasoning behind it
   is on record and reading it costs nothing [...] **Read one before you act on
   it.**
@@ -919,6 +923,21 @@ record would be of a strategy nobody chose.
   back as a broker failure that the next prompt shows. **Do not add a
   timing gate here again** — the two gates in `run_once` are the sandbox
   boundary and the on/off switch, and neither is about the clock.
+- **Nothing but the agent commissions an analysis (2026-09-12).** A sharp move
+  and a volume spike used to nominate a ticker for one, and the pre-market
+  earnings check did the same. Both decided what the agent should study, and
+  both were billed to the agent's research budget — **every analysis charges,
+  whoever ordered it**, which is what made this a real cost and not just a
+  philosophical one: ten charges on the live book that the agent never asked
+  for. `watchdog.scan_for_alerts` returns alerts only, `AlertCandidate` has no
+  `trigger_analysis`, `earnings_due` replaces `earnings_tickers_to_analyze`,
+  `_run_triggered_analyses` is deleted rather than left dormant, and
+  `db.has_signal_today` went with its last caller. **Do not add a path that
+  analyses something the agent did not order.**
+- **Triggered wakes are not gated on market hours.** The gate existed because a
+  move worth *analysing* at midday is worth nothing by morning; nothing
+  analyses now. The earnings check runs pre-market and under that gate could
+  never have woken anyone.
 - **A pass is a loop: act, see what happened, be asked again (2026-09-12).**
   `run_once` rebuilds the book, the prices and the signals on every turn,
   because a buy changed the cash and a research order put a new analysis in the

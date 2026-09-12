@@ -130,7 +130,8 @@ def test_a_fresh_signal_today_does_not_block_a_second_look(charging, monkeypatch
     second look the same day is the right call, and cash already bounds
     however many the agent is willing to pay for."""
     monkeypatch.setattr(agent.db, "get_watchlist", lambda: ["AAA"])
-    monkeypatch.setattr(agent.db, "has_signal_today", lambda ticker: True)
+    # `has_signal_today` is gone entirely since 2026-09-12 — the watchdog's own
+    # auto-trigger was its last caller, and nothing analyses unasked now.
 
     accepted, rejected = agent.screen(
         [{"ticker": "AAA", "side": "research"}], _book(), {}, {}, {"AAA"}

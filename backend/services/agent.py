@@ -466,6 +466,8 @@ def build_prompt(
     changes: list[dict] | None = None,
     readings: list[str] | None = None,
     outcomes: list[str] | None = None,
+    alerts: list[dict] | None = None,
+    earnings: list | None = None,
 ) -> str:
     """Everything the model gets. Written as plain figures rather than a table
     of jargon, because the numbers are the whole input and a misread one is a
@@ -676,6 +678,13 @@ def build_prompt(
     if recent_wakeups:
         lines += ["", *recent_wakeups]
 
+    # **What the rules noticed, as facts.** Placed with the account and the
+    # holdings rather than with the replies below, because it is news about the
+    # world rather than an answer to something the agent said.
+    watchdog_lines = describe_watchdog(alerts or [], earnings or [])
+    if watchdog_lines:
+        lines += watchdog_lines
+
     # **What its own orders did, earlier in this same pass.** Placed with the
     # readings and the refusals because all three are replies to something the
     # agent said rather than new facts about the world.
@@ -881,11 +890,14 @@ def build_prompt(
                 "  Choosing what to study is the only way anything changes,",
                 "  and paying to study something you then ignore is how the money leaves",
                 "  this account.",
-                "- A **tracked** stock that moves sharply while the market is open is",
-                "  analysed on the spot whether you asked for it or not, so a volatile name",
-                "  you already track may come back the same day regardless. This never",
-                "  happens for a ticker you do not track — nothing watches those, so if you",
-                "  want one looked at you have to ask.",
+                "- **Nothing is ever analysed unless you ask for it and pay for it.**",
+                "  Rules watch your tracked tickers for a sharp move, a volume spike, a",
+                "  stop or target being reached, and for earnings coming up. What they see",
+                "  is reported to you above and nothing else happens — no analysis is",
+                "  started on your behalf and nothing is charged. Whether a move is worth",
+                "  studying is your call, and selling into it is often the better answer:",
+                "  an analysis takes the time stated above, and the price will have moved",
+                "  again by the time it lands.",
             ]
             if (watchlist or menu)
             else []
@@ -1720,6 +1732,84 @@ def _recent_changes() -> list[dict]:
     return out
 
 
+_EARNINGS_KEY = "earnings_due"
+_ALERTS_SHOWN = 8
+
+
+def store_earnings_dates(upcoming) -> None:
+    """Record which tracked tickers report soon, for the next prompt to read.
+
+    Written by the daily pre-market check rather than looked up while building
+    a prompt, because the earnings calendar is one network request per ticker
+    and a prompt must not carry that on its critical path.
+    """
+    payload = json.dumps([[t, str(d)] for t, d in (upcoming or [])])
+    db.set_setting(_EARNINGS_KEY, payload)
+
+
+def _earnings_due() -> list[tuple[str, str]]:
+    """What the last pre-market check found, dropping anything already past."""
+    try:
+        stored = json.loads(db.get_setting(_EARNINGS_KEY) or "[]")
+    except ValueError:
+        return []
+    today = str(datetime.date.today())
+    return [(t, d) for t, d in stored if isinstance(t, str) and str(d) >= today]
+
+
+def _recent_alerts() -> list[dict]:
+    """What the watchdog saw, newest first.
+
+    **The agent could not see any of this until 2026-09-12.** The watchdog
+    alerted on a sharp move and then commissioned an analysis itself, so the
+    only trace that reached the agent was a signal it had not asked for. The
+    tracked-ticker table shows "moved since the last analysis", which cannot
+    tell a 5% fall this morning from a 5% drift over three weeks.
+    """
+    out: list[dict] = []
+    for row in db.get_recent_alerts(limit=_ALERTS_SHOWN):
+        at = getattr(row, "created_at", None)
+        if at is not None and at.tzinfo is None:
+            at = at.replace(tzinfo=datetime.timezone.utc)
+        out.append({
+            "at": market_clock.now_et(at).strftime("%-d %b %-I:%M %p") if at else "",
+            "text": str(getattr(row, "message", "") or "").lstrip("📊🔔⚠️ ").strip(),
+        })
+    return out
+
+
+def describe_watchdog(alerts: list[dict], earnings: list[tuple[str, str]]) -> list[str]:
+    """What was noticed since the agent last looked, as facts rather than actions.
+
+    Nothing here has been acted on. That is the point: the rule that a sharp
+    move is analysed unasked is gone, because deciding a move is worth sixteen
+    minutes and $0.05 was a decision being taken for the agent — and a sharp
+    move is exactly when selling may beat studying.
+    """
+    lines: list[str] = []
+    if alerts:
+        lines += [
+            "",
+            "## What was noticed",
+            "",
+            "Rules spotted these; nothing was done about them and nothing was analysed.",
+            "Decide whether any is worth acting on, or worth paying to study.",
+            "",
+            "| When (ET) | What |",
+            "|---|---|",
+            *(f"| {a['at']} | {a['text']} |" for a in alerts),
+        ]
+    if earnings:
+        lines += [
+            "",
+            "**Reporting earnings soon:** "
+            + ", ".join(f"{t} on {d}" for t, d in earnings)
+            + ". A report is the event most likely to move one of these sharply, and "
+            "you can sell before it, study it, or hold through it.",
+        ]
+    return lines
+
+
 def _recent_broker_failures() -> list[dict]:
     """Orders the broker refused on the last few passes.
 
@@ -1774,6 +1864,10 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # Same reason: the retry is the same pass, and nothing was written to
     # BotSetting in between it and the first attempt.
     recent_changes = _recent_changes()
+    # What the rules noticed, and who reports soon. Read once and shared with
+    # every turn of this pass, for the same reason as everything above.
+    alerts = _recent_alerts()
+    earnings = _earnings_due()
     # What an analysis costs in time, and what is in flight. The agent needs
     # both to choose a wakeup that lands after the answer it is waiting for.
     analysis_minutes = analysis.recent_durations()
@@ -1794,6 +1888,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         failures=recent_failures, unsettled_cash=unsettled, wakeups=recent_wakeups,
         analysis_minutes=analysis_minutes, running_analyses=running_analyses,
         changes=recent_changes, outcomes=outcomes,
+                             alerts=alerts, earnings=earnings,
     )
     answer = _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
@@ -1839,6 +1934,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              failures=recent_failures, unsettled_cash=unsettled,
                              wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
                              running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
+                             alerts=alerts, earnings=earnings,
                              readings=readings)
         answer = _ask(shown)
         spend = spend + _Spend.of(answer)
@@ -1866,7 +1962,8 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                          watchlist=watchlist, max_watchlist=_max_watchlist(),
                          failures=recent_failures, unsettled_cash=unsettled,
                          wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
-                         running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes)
+                         running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
+                             alerts=alerts, earnings=earnings)
     retry_answer = _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))

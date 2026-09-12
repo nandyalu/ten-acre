@@ -94,18 +94,21 @@ def test_quiet_day_produces_nothing():
     assert _evaluate(_snapshot(price=101.0, prev_close=100.0)) == []
 
 
-def test_big_move_alerts_and_triggers():
+def test_big_move_alerts():
+    """It alerts and nothing else. Until 2026-09-12 it also commissioned an
+    analysis, which chose what the agent should study and spent the agent's
+    research budget doing it."""
     alerts = _evaluate(_snapshot(price=94.0, prev_close=100.0))
     assert [a.alert_type for a in alerts] == ["big_move"]
-    assert alerts[0].trigger_analysis is True
+    assert not hasattr(alerts[0], "trigger_analysis")
     assert alerts[0].dedupe_key == f"big_move:NVDA:{_TODAY}"
     assert "-6.0%" in alerts[0].message
 
 
-def test_volume_spike_alerts_and_triggers():
+def test_volume_spike_alerts():
     alerts = _evaluate(_snapshot(today_volume=2_500_000, avg_volume=1_000_000))
     assert [a.alert_type for a in alerts] == ["volume"]
-    assert alerts[0].trigger_analysis is True
+    assert not hasattr(alerts[0], "trigger_analysis")
     assert "2.5×" in alerts[0].message
 
 
@@ -118,7 +121,6 @@ def test_stop_loss_names_the_agent_s_average_cost():
     snapshot = _snapshot(price=85.0, prev_close=86.0)
     alerts = _evaluate(snapshot, position=_position(avg_cost=100.0))
     assert [a.alert_type for a in alerts] == ["stop_loss"]
-    assert alerts[0].trigger_analysis is False
     assert "$100.00 average cost" in alerts[0].message
     assert "−15.0%" in alerts[0].message
 
@@ -138,7 +140,6 @@ def test_signal_stop_fires_when_price_reaches_the_analysis_level():
     assert _types(alerts) == ["signal_stop"]
     assert alerts[0].dedupe_key == "signal_stop:11"
     assert "$90.00 stop" in alerts[0].message
-    assert alerts[0].trigger_analysis is False
 
 
 def test_signal_stop_stays_quiet_above_the_level():

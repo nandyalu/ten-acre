@@ -51,6 +51,14 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-12 — nothing is analysed unless the agent asks for it and pays for it.** A sharp move or a volume spike used to commission an analysis on the spot, and the pre-market earnings check did the same for anything reporting soon. Both chose what the agent should study, and both were billed to the agent's own research budget — ten such charges on the live book, none of them asked for. The watchdog reports now: what it saw is a table in the prompt, and the agent decides whether any of it is worth $0.05 and sixteen minutes.
+
+**The timing is the argument, not the principle alone.** A pass takes about a minute and an analysis sixteen. A sharp move is exactly the moment selling may beat studying, and the agent was not asked until sixteen minutes of research it had not ordered had finished — describing a price that had moved again. It can still order that research, and since this morning it runs inside the pass.
+
+**The agent could not see any of this before.** The alert table was never read into a prompt, and the tracked-ticker table shows the move *since the last analysis*, which cannot tell a 5% fall this morning from a 5% drift over three weeks.
+
+**Triggered wakes are no longer gated on market hours.** That gate existed because a move worth analysing at midday is worth nothing by morning — an argument about analysis, which this removes. Moving a stop, ordering research for the open, untracking and choosing a wakeup all work at any hour. The earnings check proves the point: it runs pre-market, so under the old gate it could never have woken anyone.
+
 **2026-09-12 — a pass is a loop now: the agent acts, sees what its own orders did, and is asked again.** Research runs *inside* the pass — it waits the sixteen minutes, then reads the verdict and the analyst's reasoning and can act on it before finishing. Trades report back the same way, including what is actually resting under a buy. A pass ends when an answer does nothing, which is also what "no action, just wake me later" looks like. Bounded at three act-turns, with one read allowance shared across them, and an answer that repeats the previous turn's orders ends the pass rather than placing them twice.
 
 **The old shape never worked, and the evidence says so.** The prompt promised "you are asked again automatically when one you ordered lands". It was not: the pass dispatched its research and then, still holding `_pass_lock`, called the wake — which begins `if _pass_lock.locked(): return`. Every one of those wakes was dropped. Of seventeen analyses finishing across 2026-09-10 and 09-11, none produced a pass. A second fault compounded it: the cooldown was stamped before the attempt, so a pass that was skipped still suppressed every trigger for thirty minutes. Both are gone — the first by construction, since there is nobody left to wake.

@@ -79,12 +79,18 @@ def test_a_trigger_during_market_hours_runs_the_agent(agent_stub, monkeypatch):
     assert len(agent_stub) == 1
 
 
-def test_a_trigger_outside_market_hours_does_not(agent_stub, monkeypatch):
-    """It would only queue an order that cannot fill. The 13:35 batch picks it
-    up and re-decides on fresh prices."""
+def test_a_trigger_outside_market_hours_still_wakes_the_agent(agent_stub, monkeypatch):
+    """**The gate is gone (2026-09-12).** It was here because a move worth
+    *analysing* at midday is worth nothing by the next morning — but nothing
+    commissions an analysis any more, and everything the agent can do about an
+    alert works at any hour: move a stop, order research so the answer is ready
+    for the open, untrack, leave a note, pick its next wakeup.
+
+    The earnings check is the case that proves it: it runs pre-market, so with
+    the gate in place it could never have woken anybody at all."""
     _open(monkeypatch, is_open=False)
     asyncio.run(scheduler._maybe_run_agent())
-    assert agent_stub == []
+    assert len(agent_stub) == 1
 
 
 def test_a_disabled_agent_is_not_run_by_a_trigger(agent_stub, monkeypatch):
