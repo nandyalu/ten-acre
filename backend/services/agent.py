@@ -510,6 +510,7 @@ def build_prompt(
     changes: list[dict] | None = None,
     readings: list[str] | None = None,
     outcomes: list[str] | None = None,
+    researched_now: set | None = None,
     alerts: list[dict] | None = None,
     earnings: list | None = None,
 ) -> str:
@@ -646,7 +647,9 @@ def build_prompt(
             "already happened.** They are not suggestions and not history from an "
             "older pass — they are the result of your own last answer, and anything "
             "you paid for is already paid for. Do not order them again. Read them "
-            "before the tables below, because they may change what those mean.",
+            "before the tables below, because they may change what those mean. An "
+            "analysis you paid for here also has its own row in the signals table, "
+            "marked as yours; this is the reasoning behind that row.",
             "",
             *(f"- {line}" for line in outcomes),
         ]
@@ -715,7 +718,17 @@ def build_prompt(
             # honest value, and inventing one would be a guess in the record.
             # getattr, because several tests pass signal-shaped stand-ins
             # rather than the model, the same way the Decision unpacking does.
-            because = _TRIGGER_PHRASE.get(getattr(s, "trigger", None) or "", "").strip() or "—"
+            # **Provenance belongs in the table, not in a prose block above
+            # it.** A research result was appearing twice — once as this row
+            # and once in "What you just did" — and the model cited the row and
+            # called it "the analyst", never registering that it had paid for
+            # it moments earlier. It was not ignoring the prose; it was
+            # reconciling two copies of one fact and keeping the canonical
+            # one. So the canonical one now carries the provenance.
+            if researched_now and s.ticker in researched_now:
+                because = "**YOU paid for this one, in this pass, minutes ago.** It is here because you ordered it."
+            else:
+                because = _TRIGGER_PHRASE.get(getattr(s, "trigger", None) or "", "").strip() or "—"
             lines.append(
                 f"| {s.ticker} | {_analysed_at(s)} | {s.decision} | {price_text} | "
                 f"{money(getattr(s, 'price_at_signal', None))} | {money(s.entry_price)} | "
@@ -1958,7 +1971,7 @@ def _recent_broker_failures() -> list[dict]:
 
 
 def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=None,
-            menu=None, outcomes=None, budget=None, changes=None):
+            menu=None, outcomes=None, budget=None, changes=None, researched_now=None):
     """(reasoning, accepted, rejected), with one correction pass.
 
     A refused order is information the model never sees otherwise: it proposed
@@ -2014,6 +2027,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         analysis_minutes=analysis_minutes, running_analyses=running_analyses,
         changes=recent_changes, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
+                             researched_now=researched_now,
     )
     answer = _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
@@ -2060,6 +2074,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
                              running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
+                             researched_now=researched_now,
                              readings=readings)
         answer = _ask(shown)
         spend = spend + _Spend.of(answer)
@@ -2088,7 +2103,8 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                          failures=recent_failures, unsettled_cash=unsettled,
                          wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
                          running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
-                             alerts=alerts, earnings=earnings)
+                             alerts=alerts, earnings=earnings,
+                             researched_now=researched_now)
     retry_answer = _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))
@@ -2913,11 +2929,19 @@ def _research_and_report(tickers: list[str]) -> list[str]:
         log.exception("In-pass research failed for %s", tickers)
         return [f"{t}: the analysis did not finish — {exc}" for t in tickers]
     charge = research.get_price()
-    paid = f"You paid ${charge:,.2f} for this a moment ago" if charge else "You ordered this a moment ago"
-    return [f"{paid}, and it has now finished. {analysis_reader.read(t)}" for t in tickers]
+    return [
+        (
+            f"**{t}: the analysis YOU ordered minutes ago"
+            + (f", and paid ${charge:,.2f} for" if charge else "")
+            + ".** It has finished, its verdict and levels are the row marked "
+            f"as yours in the signals table, and this is the reasoning behind "
+            f"it:\n{analysis_reader.read(t)}"
+        )
+        for t in tickers
+    ]
 
 
-def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker) -> list[str]:
+def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, researched=None) -> list[str]:
     """Carry out what survived screening, and say what happened to each order.
 
     **The returned lines go back to the model in the same pass.** Until
@@ -2997,6 +3021,9 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker) -> 
         # went out — the broker refuses it otherwise. See _place.
     if research_wanted:
         outcomes.extend(_research_and_report(research_wanted))
+        # So the next turn's signal table can mark the rows this pass paid for.
+        if researched is not None:
+            researched.update(research_wanted)
     return outcomes
 
 
@@ -3101,6 +3128,9 @@ def run_once() -> AgentRun:
     outcomes: list[str] = []
     # Read once for the whole pass, and counted once — see mark_changes_seen.
     changes = _recent_changes()
+    # Tickers this pass has paid to have analysed. The signals table marks
+    # their rows, because that is where the agent actually looks.
+    researched: set[str] = set()
     # One read allowance for the whole pass — see _decide.
     budget = {"reads": _MAX_READS_PER_PASS, "turns": _MAX_READ_TURNS}
     last_signature = None
@@ -3129,6 +3159,7 @@ def run_once() -> AgentRun:
             book, signals, prices, closed=closed,
             regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
             outcomes=outcomes, budget=budget, changes=changes,
+            researched_now=researched,
         )
         if act_turn == 0:
             # After the first answer, not before it: a pass that fell over on
@@ -3185,7 +3216,7 @@ def run_once() -> AgentRun:
             log.info("The answer repeats the previous turn's orders; ending the pass")
             break
         last_signature = signature
-        did = _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker)
+        did = _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, researched)
         # Settle again on the way out, and re-read the book. A market order placed
         # in session hours fills in well under a second, but nothing would notice
         # until the next scheduled pass — so the Discord post and the dashboard

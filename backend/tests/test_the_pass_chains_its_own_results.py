@@ -115,7 +115,10 @@ def test_research_runs_in_the_pass_and_its_verdict_comes_back(quiet, monkeypatch
     # analysis and then treated it as just another analyst signal rather than
     # as their own spend from a moment earlier.
     assert "INTC analysis: Overweight because ..." in seen[1][0]
-    assert "a moment ago" in seen[1][0]
+    # Claimed as the agent's own, and pointed at the table row that carries the
+    # verdict — the result was appearing twice and being read as "the analyst".
+    assert "YOU ordered minutes ago" in seen[1][0]
+    assert "marked as yours in the signals table" in seen[1][0]
 
 
 def test_a_failed_analysis_is_reported_rather_than_losing_the_pass(quiet, monkeypatch):

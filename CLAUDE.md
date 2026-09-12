@@ -1133,6 +1133,29 @@ are the clearest cases: each was added after the model got that exact thing
 wrong, and each reads as padding to anyone who does not know that. That is why
 they are stated in the sections above rather than left in a dated entry.
 
+### Probe the prompt: send it to the model and read the reasoning
+
+**A prompt change is a hypothesis until the model's own reasoning confirms it.** `python -m backend.scripts.probe_prompt --turn turn1 [--parallel]` builds the real prompt from the database and calls the model out of the app — it never reaches `run_once`, `screen` or any broker path. `.claude/skills/probe-the-prompt/SKILL.md` says how to read what comes back.
+
+**Every prompt bug in this project was found this way, and none was visible in the code, the tests, or the rendered prompt:**
+
+| What looked fine | What the reasoning showed |
+|---|---|
+| The sharp-move rule | Applied to a ticker nothing was watching |
+| "What was noticed" | Not one of four runs referenced it |
+| A research result handed back | Cited as "the analyst", never as its own spend |
+| The change-note section | 1,600 tokens, quoted by nobody |
+
+The last three were **correct code producing correct output**. Tests passed, the sections rendered, and the model read past them.
+
+Three findings worth carrying forward, because each cost a round of probing:
+
+- **Tables get read; prose between tables gets skimmed.** Two sections at 42% and 47% of the prompt went untouched by four runs. Above the tables, the next runs quoted them — `$37.38` and `40.34` appear nowhere else in the prompt, which is what makes that hard evidence rather than an impression.
+- **Put a fact where it is already read rather than repeating it.** A research result appeared twice, as a signals-table row and as a prose block, and the model reconciled the copies and kept the table — calling it "the analyst". It was not ignoring the prose; it was picking the canonical copy. Marking the row fixed it (0 to 4 of 7 claiming it as their own); adding emphasis to the prose had not.
+- **Do not grep the reasoning for the words you wrote.** The model paraphrases, and a keyword scan reported "not used" for a run that had quoted the section verbatim. Find a number that appears in only one section, or read it.
+
+**`agent._invoke` prepends `SYSTEM_PROMPT` itself**, so a probe that hands it system+user concatenated sends the system prompt twice. The script sends them as the two messages they are.
+
 ### Before changing the prompt
 
 Add the entry to **[JOURNEY.md](JOURNEY.md)** first, with the date and the reason. A month of runs across an undocumented prompt revision cannot be analysed, and the temptation to reconstruct the reasoning afterwards produces a story about what we would like to have been thinking.

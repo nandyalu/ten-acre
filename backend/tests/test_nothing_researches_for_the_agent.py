@@ -202,10 +202,33 @@ def test_what_the_agent_just_did_sits_above_the_signal_table():
     assert did < noticed < table
 
 
-def _signal_row():
+def test_a_row_the_pass_paid_for_is_marked_as_the_agents_own():
+    """**The result was arriving twice, and the model kept the wrong copy.**
+    An analysis the agent commissioned appeared both as a signals-table row and
+    in "What you just did", so the model reconciled two copies of one fact and
+    cited the table — calling it "the analyst", never registering that it had
+    paid for it minutes earlier. Provenance now sits on the row itself, which
+    is what actually gets read."""
+    prompt = agent.build_prompt(
+        _book(), [_signal_row()], {"AAA": 10.0}, researched_now={"AAA"},
+    )
+
+    assert "YOU paid for this one, in this pass" in prompt
+
+
+def test_a_row_from_an_earlier_pass_keeps_its_own_reason():
+    prompt = agent.build_prompt(
+        _book(), [_signal_row(trigger="move")], {"AAA": 10.0}, researched_now={"BBB"},
+    )
+
+    assert "YOU paid for this one" not in prompt
+    assert "moved unusually" in prompt
+
+
+def _signal_row(trigger=None):
     return types.SimpleNamespace(
         ticker="AAA", decision="Hold", signal_date=datetime.date(2026, 9, 11),
         created_at=None, price_at_signal=10.0, entry_price=None, stop_loss=None,
         price_target=None, win_probability=None, risk_reward=None,
-        expected_value_r=None, id=1, model=None, trigger=None,
+        expected_value_r=None, id=1, model=None, trigger=trigger,
     )
