@@ -245,7 +245,7 @@ def test_research_the_agent_asked_for_runs_in_the_same_pass(monkeypatch):
     dispatched = {}
     loop_holder = {}
 
-    async def fake_run_analyses(tickers, on_failure=None, trigger=None):
+    async def fake_run_analyses(tickers, on_failure=None, trigger=None, failures=None):
         dispatched["tickers"] = list(tickers)
         dispatched["trigger"] = trigger
         return []
@@ -276,7 +276,7 @@ def test_the_in_pass_runner_does_not_ask_the_agent_again(monkeypatch):
     """
     asked = []
 
-    async def fake_run_analyses(tickers, on_failure=None, trigger=None):
+    async def fake_run_analyses(tickers, on_failure=None, trigger=None, failures=None):
         return []
 
     async def fake_maybe_run_agent():

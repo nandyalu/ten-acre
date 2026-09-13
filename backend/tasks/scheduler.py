@@ -123,8 +123,12 @@ async def _evaluate_pending_signals() -> None:
 _main_loop: asyncio.AbstractEventLoop | None = None
 
 
-def _research_for_agent(tickers: list[str]) -> None:
+def _research_for_agent(tickers: list[str]) -> dict[str, str]:
     """Run the analyses a decision pass just commissioned, and block until done.
+
+    Returns what stopped each analysis that did not finish, by ticker. An empty
+    dict means every one finished. Until 2026-09-13 this returned nothing, so
+    the pass told the agent a failed analysis had finished.
 
     **This is what lets a synchronous pass wait for its own research.**
     `agent.run_once` is sync and runs on a worker thread; an analysis is async
@@ -143,6 +147,7 @@ def _research_for_agent(tickers: list[str]) -> None:
         raise RuntimeError("No event loop is running; research cannot be dispatched here")
     for ticker in tickers:
         log.info("Running the analysis the agent asked for: %s", ticker)
+    failures: dict[str, str] = {}
     future = asyncio.run_coroutine_threadsafe(
         analysis.run_analyses(
             list(tickers),
@@ -150,10 +155,12 @@ def _research_for_agent(tickers: list[str]) -> None:
                 f"Analysis failed for {ticker} — check the logs."
             ),
             trigger="commissioned",
+            failures=failures,
         ),
         _main_loop,
     )
     future.result()
+    return failures
 
 
 # Event-driven agent runs are rate-limited. A triggered analysis takes about
@@ -219,7 +226,7 @@ async def _maybe_run_agent(label: str = "Event-driven") -> None:
     # Pull the pending alarm forward rather than running beside it. Firing a
     # one-off also deletes it, so the time the agent is about to supersede
     # cannot arrive later and ask a question it has already answered.
-    if wake_agent_now():
+    if wake_agent_now(label):
         _last_agent_run = now
         return
     if _pass_lock.locked():
@@ -240,6 +247,11 @@ _last_final_pass: datetime.date | None = None
 # In memory because quiv's own task table is in memory: a restart deletes both,
 # and _restore_wakeup_alarm rebuilds them together from the database.
 _wakeup_task_id: str | None = None
+
+# What is firing the pending alarm early, when something is. Set by
+# wake_agent_now and read by _alarm_job, so the pass tells the agent the real
+# reason. None means the alarm fired at the agent's own time.
+_early_wake_label: str | None = None
 
 # Two paths can decide a pass is due at the same moment. The alarm fires, and a
 # second later the tick reads a next_wakeup the running pass has not replaced
@@ -348,6 +360,7 @@ def wake_agent_for_new_changes() -> None:
     without a marker that survives every reset a marker in the database
     cannot.
     """
+    global _early_wake_label
     changes = agent.load_change_notes()
     seen = int(db.get_setting(_CHANGES_SEEN_COUNT_KEY) or 0)
     if len(changes) <= seen:
@@ -357,24 +370,31 @@ def wake_agent_for_new_changes() -> None:
         "%d new agent change note(s) since this container last started — waking the agent now",
         len(changes) - seen,
     )
-    if not wake_agent_now():
+    if not wake_agent_now("Change"):
         # No pending alarm to pull forward — should not happen right after
         # restore_wakeup_alarm, but a fresh one-off is the honest fallback
         # rather than silently doing nothing. No interval needed for a
         # one-off since quiv 0.9.0 (#65) — see _replace_wakeup_alarm.
+        # The one-off runs the same alarm job, so it carries the same label.
+        _early_wake_label = "Change"
         scheduler.add_task(
             task_name="agent_wakeup_new_change", func=agent_wakeup_alarm,
             delay=0, run_once=True,
         )
 
 
-def wake_agent_now() -> bool:
+def wake_agent_now(label: str | None = None) -> bool:
     """Pull the pending alarm forward instead of letting it fire stale.
 
     Used when something else makes a pass worth running early — an analysis the
     agent asked to see today, or a watchdog trigger. Because the alarm is a
     one-off, firing it now also deletes it, so the time the agent has just
     superseded cannot arrive later and ask a question it has already answered.
+
+    ``label`` names what woke the agent early, as a key of ``_WOKE_BECAUSE``.
+    The alarm job reads it, so the pass gives the real reason. Until 2026-09-13
+    every early wake told the agent "You asked to be woken now". None means the
+    agent's own time, which is what the alarm means when it fires on schedule.
 
     Returns False when there is no alarm to pull, which leaves the caller to run
     the pass itself.
@@ -387,14 +407,16 @@ def wake_agent_now() -> bool:
     would mean the handler was never registered at all, which is a real bug
     and should not be swallowed alongside the two harmless races.
     """
-    global _wakeup_task_id
+    global _wakeup_task_id, _early_wake_label
     if _wakeup_task_id is None:
         return False
+    _early_wake_label = label
     try:
         scheduler.run_task_immediately(_wakeup_task_id)
     except (TaskNotFoundError, TaskNotActiveError):
         # Already fired (deleted itself) or already running. Either way a
-        # pass is happening.
+        # pass is happening, and it is not the one this label describes.
+        _early_wake_label = None
         log.debug("Could not pull the wakeup alarm forward")
         return False
     _wakeup_task_id = None
@@ -407,11 +429,13 @@ def agent_wakeup_alarm() -> None:
 
 
 async def _alarm_job() -> None:
-    global _wakeup_task_id
+    global _wakeup_task_id, _early_wake_label
     _wakeup_task_id = None  # it has fired; quiv has deleted its row
+    # Read and cleared together, so a label never outlives the wake it names.
+    label, _early_wake_label = _early_wake_label or "Alarm", None
     if not agent.is_enabled():
         return
-    await _run_agent_pass("Alarm")
+    await _run_agent_pass(label)
 
 
 # What each wake path means in the agent's own reading. The labels were log
@@ -424,7 +448,7 @@ _WOKE_BECAUSE = {
     "Event-driven": "Something was noticed while you were away. You did not ask for this pass.",
     "Earnings": "A company you track reports earnings soon. You did not ask for this pass.",
     "Final": "This is the last pass before the close. Anything you want done today has to be done now.",
-    "Change": "The app changed and you are being told about it. You did not ask for this pass.",
+    "Change": "A change to this app woke you. You did not ask for this pass.",
 }
 # **No reason here promises a section.** One did — "see what it was, below" —
 # and the earnings path reaches the same pass with no alerts to show, so the

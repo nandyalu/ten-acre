@@ -91,7 +91,8 @@ This is why the deployed model is about twice as slow as the one it replaced. Sp
 
 - **Read the daily token allowance before the requests-per-minute limit.** One analysis is roughly 130,000 tokens, so the allowance decides how many analyses a day you get. Two models on one free tier differed by a factor of eighty on that alone.
 - **Price input and output separately, never blended.** They differ by about eight times, so a blended rate is a property of the workload's output ratio rather than of the model. Blending once produced a cost estimate 39% too low.
-- Expect `429`s. The app reads the vendor's own `retry-after` header and waits exactly that long.
+- Expect `429`s. The app reads the vendor's own `retry-after` header, or the wait in Gemini's error body, and waits exactly that long. A vendor that sends no budget headers, such as Gemini, needs `LLM_REQUESTS_PER_MINUTE`, `LLM_TOKENS_PER_MINUTE` and `LLM_REQUESTS_PER_DAY` set, or every analysis collects refusals.
+- **On Gemini, set `TRADINGAGENTS_GOOGLE_THINKING_LEVEL`.** Without it there is no thinking to read, and reading the thinking is how every tell on this page was found.
 
 ## Before you switch
 

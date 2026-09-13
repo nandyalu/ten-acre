@@ -124,6 +124,10 @@ LLM_MODEL=qwen-3.8-27b
 
 **A free tier will return `429`, and that is handled.** The app reads the provider's own `retry-after` header and waits exactly that long rather than guessing, then retries up to four times. Guessing is not a small error: one vendor asks for 58 seconds, where an invented ladder of 5, 10 and 20 seconds would exhaust every retry before the window even reopened. Repeated pauses in the log are the throttle working, not a fault.
 
+**A provider that sends no rate-limit headers needs its limits stated.** Gemini is one, so the app cannot see a limit coming. Set `LLM_REQUESTS_PER_MINUTE`, `LLM_TOKENS_PER_MINUTE` and `LLM_REQUESTS_PER_DAY` to the provider's published numbers. The app then waits before a call that would pass a per-minute limit, and refuses a call past the daily limit. When too few requests are left today for an analysis, the agent is told so and nothing is charged. `LLM_DAY_TIMEZONE` says where the provider's day starts; the default is Google's, midnight Pacific time.
+
+**Gemini returns its thinking only at a stated level.** Set `TRADINGAGENTS_GOOGLE_THINKING_LEVEL` to `low`, `medium` or `high`. Without it the model does not think, and the record of each decision has no reasoning to read.
+
 ## Choosing a model, if you are running locally
 
 The rule this project learned the expensive way: **speed rules a model out; behaviour rules it in.**

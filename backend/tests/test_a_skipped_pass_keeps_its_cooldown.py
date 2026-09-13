@@ -21,7 +21,7 @@ def open_market(monkeypatch):
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
     monkeypatch.setattr(scheduler.watchdog, "is_us_market_hours", lambda: True)
     monkeypatch.setattr(scheduler, "_last_agent_run", None)
-    monkeypatch.setattr(scheduler, "wake_agent_now", lambda: False)
+    monkeypatch.setattr(scheduler, "wake_agent_now", lambda label=None: False)
 
 
 def test_a_pass_blocked_by_the_lock_does_not_spend_the_cooldown(monkeypatch):
@@ -65,7 +65,7 @@ def test_pulling_the_alarm_forward_spends_it_too(monkeypatch):
         ran.append(label)
 
     monkeypatch.setattr(scheduler, "_run_agent_pass_locked", runs)
-    monkeypatch.setattr(scheduler, "wake_agent_now", lambda: True)
+    monkeypatch.setattr(scheduler, "wake_agent_now", lambda label=None: True)
 
     asyncio.run(scheduler._maybe_run_agent())
 

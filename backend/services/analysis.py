@@ -111,6 +111,11 @@ DEFAULT_MODEL = DEFAULT_CONFIG["deep_think_llm"]
 _MODEL_LIST_TTL_SECONDS = 300
 _MODEL_LIST_TIMEOUT_SECONDS = 5
 _model_list_cache: tuple[float, list[str]] = (0.0, [])
+# Google's list is kept for hours, not minutes, because each call may count
+# against the key's request limits, and the list changes only when Google
+# releases a model. See _google_models.
+_GOOGLE_MODEL_LIST_TTL_SECONDS = 6 * 60 * 60
+_google_list_attempted_at = -1e9
 
 # final_state keys worth persisting per signal (backend/database/models.py SignalReport):
 # the four analyst reports plus both researcher/trader plans. The final
@@ -236,6 +241,43 @@ def _models_auth_header() -> dict[str, str]:
     return headers
 
 
+def _google_models() -> list[str]:
+    """Every model Google serves to this key that can generate text, without
+    the "models/" prefix the API puts on each name.
+
+    **Gemini has no OpenAI-shaped /models route, so until 2026-09-13 this list
+    was always empty for it.** The setup page reads an empty list as "the
+    endpoint did not answer", and the banner then said the deployment was not
+    ready to trade, while every analysis ran.
+
+    **Counted as a request, and cached for hours.** Google probably does not
+    count a model list against a key's limits: one timed call at 05:39 UTC on
+    2026-09-13 did not appear in the console's counts. One call is not proof,
+    so each call still goes through the stated limits until a full day with no
+    agent calls confirms it, and list_models keeps the answer for
+    _GOOGLE_MODEL_LIST_TTL_SECONDS rather than asking on every page load.
+    """
+    from google import genai
+
+    key = (os.environ.get("GOOGLE_API_KEY") or "").strip()
+    if not key:
+        return []
+    llm_throttle.count_request()
+    # Keep the client in a variable until the list is read. The list is fetched
+    # lazily, and an unreferenced client is closed first: chaining
+    # genai.Client(...).models.list() raised "the client has been closed"
+    # without sending anything (2026-09-13).
+    client = genai.Client(
+        api_key=key,
+        http_options={"timeout": int(_MODEL_LIST_TIMEOUT_SECONDS * 1000)},
+    )
+    return sorted(
+        str(model.name).removeprefix("models/")
+        for model in client.models.list()
+        if model.name and "generateContent" in (model.supported_actions or [])
+    )
+
+
 def list_models(*, force: bool = False) -> list[str]:
     """Every model the configured LLM endpoint currently serves, sorted.
 
@@ -244,13 +286,28 @@ def list_models(*, force: bool = False) -> list[str]:
     settings page to showing the current model on its own — it never blocks a
     save and never stops an analysis. Blocking (one HTTP request) — run from a
     thread when called off the event loop."""
-    global _model_list_cache
+    global _model_list_cache, _google_list_attempted_at
     cached_at, cached = _model_list_cache
-    if not force and cached and time.monotonic() - cached_at < _MODEL_LIST_TTL_SECONDS:
+    google = str(DEFAULT_CONFIG.get("llm_provider") or "").lower() == "google"
+    ttl = _GOOGLE_MODEL_LIST_TTL_SECONDS if google else _MODEL_LIST_TTL_SECONDS
+    if not force and cached and time.monotonic() - cached_at < ttl:
         return cached
     url = _models_endpoint()
     if url is None:
-        return []
+        if not google:
+            return []
+        # A failed list would otherwise be asked for again on every page load,
+        # and each attempt may cost a request.
+        if not force and time.monotonic() - _google_list_attempted_at < _MODEL_LIST_TTL_SECONDS:
+            return cached
+        _google_list_attempted_at = time.monotonic()
+        try:
+            models = _google_models()
+        except Exception as exc:
+            log.warning("Couldn't list models from Google: %s", exc)
+            return cached
+        _model_list_cache = (time.monotonic(), models)
+        return models
     try:
         request = urllib.request.Request(url, headers=_models_auth_header())
         with urllib.request.urlopen(request, timeout=_MODEL_LIST_TIMEOUT_SECONDS) as response:
@@ -308,6 +365,15 @@ def _build_graph(
     # backend/services/llm_throttle.py. getattr rather than attribute access
     # because several tests stub TradingAgentsGraph out entirely, and a
     # telemetry wrapper must never be the reason a graph fails to build.
+    # Ask Gemini to send back its thinking. The library's default sends none,
+    # and TradingAgents' Google client has no setting for it. Only a client
+    # that has the field and leaves it unset is changed, so other providers are
+    # not touched and an explicit False stays False. Thinking comes back only
+    # when TRADINGAGENTS_GOOGLE_THINKING_LEVEL is set too: at its default level
+    # gemini-3.5-flash-lite does not think at all (measured 2026-09-13).
+    for llm in (getattr(graph, "deep_thinking_llm", None), getattr(graph, "quick_thinking_llm", None)):
+        if llm is not None and hasattr(llm, "include_thoughts") and llm.include_thoughts is None:
+            llm.include_thoughts = True
     llm_throttle.attach(
         getattr(graph, "deep_thinking_llm", None), getattr(graph, "quick_thinking_llm", None)
     )
@@ -634,7 +700,210 @@ def record_signal(
     return db.get_signal(signal_id)
 
 
-async def run_analysis_and_record(ticker: str, trigger: str | None = None) -> Signal | None:
+class AnalysisFailed(RuntimeError):
+    """An analysis that did not produce a signal, after every retry.
+
+    The message is written for the agent. It says what stopped the analysis and
+    whether it was charged, because both change what the agent does next.
+    """
+
+
+# --- when an analysis fails ------------------------------------------------------
+#
+# Four kinds of failure, told apart because each one needs a different answer:
+#
+# - **The model service did not answer**: a refused connection, a timeout, a
+#   5xx, or a 429 that the throttle could not wait out. Ollama was down on
+#   2026-09-10 and refused the connection. A service usually comes back, so the
+#   app waits with a doubling delay and asks the endpoint whether it answers
+#   before it runs the analysis again.
+# - **The model service refused access**: 401, 402 or 403. Cerebras returned
+#   402 when its free credits ran out on 2026-09-11. Waiting does not fix a
+#   billing page, so this is reported at once.
+# - **The day's stated request limit ran out**: see llm_throttle. It starts
+#   again hours later, so this is reported at once too.
+# - **An error in this app**: anything else. Retried once, because a bug
+#   usually fails the same way twice, and each retry costs a whole analysis.
+
+_SERVICE_FIRST_WAIT_SECONDS = 30.0
+_SERVICE_MAX_WAIT_SECONDS = 10 * 60.0
+# The pass that ordered the research waits for it, and holds the agent's lock
+# while it waits. Without a limit, an outage would stop the agent for as long
+# as the outage lasted. This is a bound, not a ration.
+_SERVICE_WAIT_LIMIT_SECONDS = 60 * 60.0
+_APP_ERROR_RETRIES = 1
+# The charge lands between the model work and the record, so recording is
+# retried on its own. Running the analysis again would charge it twice.
+_RECORD_RETRIES = 2
+_RECORD_RETRY_SECONDS = 30.0
+
+_SERVICE_ERROR_NAMES = frozenset({
+    "APIConnectionError", "APITimeoutError", "InternalServerError", "RateLimitError",
+    "ServiceUnavailable", "ServerError", "DeadlineExceeded", "ResourceExhausted",
+    "ConnectError", "ConnectTimeout", "ReadTimeout", "WriteTimeout", "PoolTimeout",
+    "ReadError", "RemoteProtocolError", "TransportError", "TimeoutException",
+})
+_SERVICE_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504, 529})
+_REFUSED_STATUSES = frozenset({401, 402, 403})
+
+# Indirect, so a test can replace the wait without replacing asyncio.sleep
+# for the event loop itself.
+_sleep = asyncio.sleep
+
+
+def _exception_chain(exc: BaseException):
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        yield exc
+        exc = exc.__cause__ or exc.__context__
+
+
+def _status(exc: BaseException) -> int | None:
+    for name in ("status_code", "code"):
+        value = getattr(exc, name, None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def failure_kind(exc: BaseException) -> str:
+    """"limit", "refused", "service" or "app". See the notes above.
+
+    The whole chain is read, because LangChain and TradingAgents often raise
+    their own error with the vendor's error as its cause.
+    """
+    chain = list(_exception_chain(exc))
+    if any(isinstance(e, llm_throttle.DailyLimitReached) for e in chain):
+        return "limit"
+    if any(_status(e) in _REFUSED_STATUSES for e in chain):
+        return "refused"
+    for e in chain:
+        if isinstance(e, (ConnectionError, TimeoutError)):
+            return "service"
+        if any(k.__name__ in _SERVICE_ERROR_NAMES for k in type(e).__mro__):
+            return "service"
+        if _status(e) in _SERVICE_STATUSES:
+            return "service"
+    return "app"
+
+
+def _short(exc: BaseException | None) -> str:
+    if exc is None:
+        return ""
+    text = " ".join(str(exc).split())
+    return f"{type(exc).__name__}: {text[:160]}" if text else type(exc).__name__
+
+
+def _service_answers() -> bool | None:
+    """Whether the model endpoint answers now, or None when it cannot be asked.
+
+    Gemini has no OpenAI-shaped model list here, so it cannot be asked, and
+    the caller then runs the analysis again on the same schedule instead.
+    """
+    url = _models_endpoint()
+    if url is None:
+        return None
+    try:
+        request = urllib.request.Request(url, headers=_models_auth_header())
+        with urllib.request.urlopen(request, timeout=_MODEL_LIST_TIMEOUT_SECONDS):
+            return True
+    except Exception:
+        return False
+
+
+async def _wait_for_service(ticker: str, wait: float, budget: float) -> tuple[float, float]:
+    """Wait, then ask the endpoint whether it answers; while it does not, wait
+    again for twice as long. Returns (seconds spent, the next wait to use).
+
+    Returns when the endpoint answers, when it cannot be asked, or when the
+    budget is spent.
+    """
+    spent = 0.0
+    while spent < budget:
+        step = min(wait, budget - spent)
+        log.info("Waiting %.0fs for the model service before %s is analysed again", step, ticker)
+        await _sleep(step)
+        spent += step
+        wait = min(wait * 2, _SERVICE_MAX_WAIT_SECONDS)
+        if await asyncio.to_thread(_service_answers) is not False:
+            break
+    return spent, wait
+
+
+async def _one_attempt(ticker: str) -> tuple[dict, str]:
+    """One run of the graph.
+
+    A function of its own so that the retry loop in _propagate_with_retries
+    does not read as the loop-over-tickers bug that
+    test_analyses_are_dispatched_together pins. That loop retries one ticker.
+    Several tickers are still dispatched together, by run_analyses.
+    """
+    return await propagate_ticker(ticker)
+
+
+async def _propagate_with_retries(ticker: str) -> tuple[dict, str]:
+    """The graph's result, after as many retries as the failure deserves.
+
+    Nothing is charged until the graph finishes, so every failure raised here
+    says that nothing was charged.
+    """
+    app_errors = 0
+    waited = 0.0
+    wait = _SERVICE_FIRST_WAIT_SECONDS
+    while True:
+        try:
+            return await _one_attempt(ticker)
+        except Exception as exc:
+            kind = failure_kind(exc)
+            if kind == "limit":
+                raise AnalysisFailed(
+                    "The model's requests for today ran out partway through it. Nothing was charged."
+                ) from exc
+            if kind == "refused":
+                raise AnalysisFailed(
+                    f"The model service refused the request ({_short(exc)}). Nothing was charged."
+                ) from exc
+            if kind == "service":
+                if waited >= _SERVICE_WAIT_LIMIT_SECONDS:
+                    raise AnalysisFailed(
+                        f"The model service did not answer for {waited / 60:.0f} minutes "
+                        f"({_short(exc)}). Nothing was charged."
+                    ) from exc
+                log.warning("Analysis of %s stopped: the model service did not answer (%s)", ticker, _short(exc))
+                spent, wait = await _wait_for_service(ticker, wait, _SERVICE_WAIT_LIMIT_SECONDS - waited)
+                waited += spent
+                continue
+            app_errors += 1
+            if app_errors > _APP_ERROR_RETRIES:
+                raise AnalysisFailed(
+                    f"An error in this app stopped it {app_errors} times ({_short(exc)}). "
+                    "Nothing was charged."
+                ) from exc
+            log.warning("Analysis of %s failed with an error in this app; trying again", ticker, exc_info=True)
+
+
+def _recorded_since(ticker: str, started_at) -> Signal | None:
+    """The signal this run already wrote, if a recording failed after writing it.
+
+    A signal's created_at is the instant its analysis started, so that instant
+    names the run. Without this check, a retry after a late failure would
+    store the same analysis twice.
+    """
+    if started_at is None:
+        return None
+    for signal in db.get_recent_signals(ticker=ticker, limit=5, by_time=True):
+        created = signal.created_at
+        if created is None:
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=datetime.timezone.utc)
+        if abs((created - started_at).total_seconds()) < 1:
+            return signal
+    return None
+
+
+async def run_analysis_and_record(ticker: str, trigger: str | None = None) -> Signal:
     """Run the graph and store the signal. Nothing is posted to Discord.
 
     It used to post the whole analysis as an embed and seed a ✅ reaction that
@@ -646,16 +915,40 @@ async def run_analysis_and_record(ticker: str, trigger: str | None = None) -> Si
     and there are several a morning; they are read on the Signals page, where
     they can be scrolled, compared and linked to the decision that used them.
     Discord carries what the agent *did*, which is short and worth an alert.
+
+    **It retries, and raises AnalysisFailed when it cannot finish
+    (2026-09-13).** Until then a failure returned nothing or raised, and the
+    pass that ordered the research told the agent the analysis had finished.
+    See the notes above failure_kind for how each failure is answered.
     """
     ticker = ticker.upper().strip()
-    final_state, decision = await propagate_ticker(ticker)
-    return record_signal(ticker, final_state, decision, trigger=trigger)
+    final_state, decision = await _propagate_with_retries(ticker)
+    started_at = final_state.get("started_at")
+    error = None
+    for attempt in range(_RECORD_RETRIES + 1):
+        try:
+            signal = record_signal(ticker, final_state, decision, trigger=trigger)
+            error = None
+        except Exception as exc:
+            log.warning("Recording the analysis of %s failed", ticker, exc_info=True)
+            signal, error = _recorded_since(ticker, started_at), exc
+        if signal is not None:
+            return signal
+        if attempt < _RECORD_RETRIES:
+            await _sleep(_RECORD_RETRY_SECONDS)
+    why = (
+        f"its result could not be recorded ({_short(error)})"
+        if error else
+        f"no current price for {ticker} could be read, and a result is recorded against that price"
+    )
+    raise AnalysisFailed(f"It ran and was charged, but {why}.")
 
 
 async def run_analyses(
     tickers: list[str],
     on_failure: Callable[[str], Awaitable[None]] | None = None,
     trigger: str | None = None,
+    failures: dict[str, str] | None = None,
 ) -> list[Signal]:
     """Analyze several tickers at once, one failure never stopping the rest.
 
@@ -668,13 +961,21 @@ async def run_analyses(
 
     ``on_failure`` is awaited once per failed ticker, for callers that want to
     report it (the scheduler posts to Discord; the API route just logs).
+
+    ``failures``, when given, is filled with what stopped each ticker that did
+    not finish, keyed by the ticker as passed, in words the agent reads.
     """
 
     async def _one(ticker: str) -> Signal | None:
         try:
             return await run_analysis_and_record(ticker, trigger=trigger)
-        except Exception:
+        except Exception as exc:
             log.exception("Analysis failed for %s", ticker)
+            if failures is not None:
+                failures[ticker] = (
+                    str(exc) if isinstance(exc, AnalysisFailed)
+                    else f"An unexpected error stopped it ({_short(exc)})."
+                )
             if on_failure is not None:
                 try:
                     await on_failure(ticker)

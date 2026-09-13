@@ -66,5 +66,9 @@
   {
     "date": "2026-09-12",
     "message": "When the market is shut you are now told so beside the order rules, not only in the clock line. A buy or a sell is refused outright, never queued for the open. Moving a stop or target with adjust still works."
+  },
+  {
+    "date": "2026-09-13",
+    "message": "When something other than your own chosen time woke you, the prompt still said you had asked to be woken. It now says what woke you, and shows your note beside the time you wrote it for."
   }
 ]

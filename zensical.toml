@@ -31,6 +31,7 @@ nav = [
   { "The GPU pool" = "gpu-pool.md" },
   { "Running a bigger model" = "gpu-bigger-models.md" },
   { "How many analyses at once" = "gpu-concurrency.md" },
+  { "Google's free tier (not built)" = "free-tier-gemini.md" },
 ]
 
 [project.theme]

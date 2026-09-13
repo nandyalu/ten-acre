@@ -6,6 +6,15 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-13
+
+- **Docs** — A study of running the whole experiment on Google's free Gemini tier, with no local GPU. Not built: it measures whether the limits fit and lists what the app would need first.
+- **Infrastructure** — The LLM throttle reaches Gemini. It wrapped only `client.create`, which Gemini's client does not have, so a Gemini deployment had no throttle at all. It also reads the wait from Gemini's error body, because Gemini sends no `retry-after` header.
+- **Setup** — `compose.example.yaml`, `.env.example` and the deploy docs list `TRADINGAGENTS_GOOGLE_THINKING_LEVEL`, `LLM_REQUESTS_PER_MINUTE`, `LLM_TOKENS_PER_MINUTE`, `LLM_REQUESTS_PER_DAY` and `LLM_DAY_TIMEZONE`. Each is unset by default, and unset costs nothing.
+- **Docs** — `probe_prompt.py` builds a `change` variant: a change to the app wakes the agent while its planned wakeup is still ahead. A `change_turn2` variant is the second turn of that pass, after its research landed.
+- **Setup** — A Gemini deployment no longer reports "not ready to trade". The setup check asks for the model list, which had no Gemini branch and so was always empty; it now asks Google, and the settings page gets a model dropdown for Gemini from the same list. Each list call counts against the stated request limits and the answer is kept for six hours, because a Google model list may count against the key's limits and both pages load often.
+- **Site** — "Show the thinking" on the Decisions page shows every turn's thinking, labelled by turn. It showed the last turn's alone, so a two-turn pass looked as though it had thought once. The hint no longer says the thinking is never a summary: Gemini's is.
+
 ## 2026-09-12
 
 - **Agent** — `is_us_market_hours()` knows about holidays and the three half-days a year. It answered True all Labor Day afternoon, and its five callers all mean "is the session genuinely open" — one refuses a reset that needs a market order, one queues an exit-arm rather than attempting it, one takes a live quote instead of the last completed close. The NYSE calendar moved into its own module that imports nothing from the project, because the two modules that need it already import each other.

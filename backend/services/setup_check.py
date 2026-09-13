@@ -186,6 +186,11 @@ def _llm() -> Requirement:
     "the endpoint replies" are different facts and only the second one lets an
     analysis run. A model list that comes back empty is how this app already
     reports an endpoint it could not reach.
+
+    **Gemini is asked for its model list too (2026-09-13).** Until then the
+    list was always empty for it, so this reported "did not answer" and the
+    banner said the deployment was not ready, while the agent and every
+    analysis ran normally.
     """
     provider = str(analysis.DEFAULT_CONFIG.get("llm_provider") or "").lower() or "ollama"
     try:
@@ -193,6 +198,19 @@ def _llm() -> Requirement:
     except Exception:
         log.warning("Setup check could not reach the LLM endpoint", exc_info=True)
         reachable = False
+    if provider == "google":
+        return Requirement(
+            key="llm",
+            label="Language model endpoint (google)",
+            ready=reachable,
+            blocking=True,
+            detail=(
+                "Answering." if reachable else
+                "Google did not return a model list for this key. Check that the key "
+                "is set and that the Gemini API is enabled for its project."
+            ),
+            fix="" if reachable else "TRADINGAGENTS_LLM_PROVIDER=google\nGOOGLE_API_KEY=your-key",
+        )
     return Requirement(
         key="llm",
         label=f"Language model endpoint ({provider})",

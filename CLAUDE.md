@@ -512,6 +512,16 @@ succeeded), ran a full analysis in <1 min vs Ollama's ~15 min, at roughly
 $0.02–0.08/analysis. If revisiting Gemini, start with `flash-lite`, not
 `3.5-flash`.
 
+### Gemini's thinking and rate limits (2026-09-13)
+
+**Gemini thinks only at a stated level.** At its default level, `gemini-3.5-flash-lite` returned zero thinking tokens. Set `TRADINGAGENTS_GOOGLE_THINKING_LEVEL` to `low`, `medium` or `high`; on one small trading question they cost 386, 490 and 702 thinking tokens. `analysis._build_graph` turns on `include_thoughts` for every Gemini client, and `llm_content` reads the thinking in a callback, before TradingAgents' Google client flattens the answer to a string. What comes back is Google's summary of the thinking, not the raw reasoning an Ollama model returns.
+
+**The throttle wraps `client.models.generate_content` for Gemini**, because that client has no `create`. Gemini sends no budget headers, so a deployment states its limits: `LLM_REQUESTS_PER_MINUTE`, `LLM_TOKENS_PER_MINUTE`, `LLM_REQUESTS_PER_DAY` and `LLM_DAY_TIMEZONE`. The day's count lives in `BotSetting` under `llm_requests_today`, so a restart does not start it again at zero. Research that cannot finish inside the day's remaining requests is refused in `agent._research_and_report`, before it runs or is charged. **Do not move that check into the analysis itself:** `run_analyses` swallows an analysis failure, so the agent would never learn why its research did not come back.
+
+**Do not test Gemini from the host shell.** The host's Python resolves Google to an IPv6 address that does not route here, and the call hangs in `SYN-SENT` with no error (found 2026-09-13). The containers use IPv4. Run a check in a throwaway container from `trading-experiment:local` with `backend/` mounted read-only over `/app/backend`.
+
+**Google's model list is counted as a request and cached for six hours.** The setup check and the settings page read it, and both load often. Google probably does not count a model list against a key's limits: one timed list call at 05:39 UTC on 2026-09-13 did not appear in the console's per-minute or daily counts. One call is not proof, so `_google_models` still goes through `llm_throttle.count_request()` until a full day of page loads with no agent calls confirms it. **Once confirmed, remove that call**, because otherwise the app's daily count runs a few requests higher than Google's. A failed list is not asked for again for five minutes either way.
+
 ### What Gemini actually bills (measured 2026-08-22 and 2026-08-25)
 
 **`gemini-2.5-flash-lite` is retired.** It still appears in the models list,
@@ -693,6 +703,8 @@ One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
    the same pass with no alerts, so the prompt pointed at nothing and seven
    probe runs read straight past it. `build_prompt` adds the pointer, because
    only it knows whether the section is there.
+
+   **An early wake says that it is early, and asks again (2026-09-13).** A restart with new change notes, a sharp move and the earnings check all fire the pending alarm early through `scheduler.wake_agent_now(label)`, and until that date the alarm always said "You asked to be woken now". The label now travels with the alarm in `_early_wake_label`. When the planned wakeup is still ahead, `describe_wakeup` shows the note beside the time it was written for, and asks for `next_wakeup` and `next_wakeup_note` again, because the early pass replaces the planned alarm. Probed on Gemini: 4 of 4 samples kept 9:25 AM, a time that appears only in that block, and 4 of 4 wrote a new note. Only one of the four mentioned what woke it, so the ask is what does the work, not the reason line. **A later turn of the same pass names the wake as history** — "Why this pass started" — and adds "Why you are asked again", built in `build_prompt` from whichever of the outcomes, the readings and the refusals are really in that prompt.
 
    **A worked example beats a prohibition.** The rule told the agent not to
    spend the note on prices the next prompt already carries, and two of seven
@@ -1026,6 +1038,7 @@ record would be of a strategy nobody chose.
   `if _pass_lock.locked(): return`. Seventeen analyses across two days produced
   no pass at all. The prompt had promised "you are asked again automatically",
   which made it a lie the agent planned around.
+- **A failed analysis is retried, reported as failed, and never charged twice (2026-09-13).** Until then a failure inside the pass was told to the agent as "It has finished", beside the older analysis. `analysis.failure_kind` sorts a failure four ways: the model service not answering (a doubling wait from 30 seconds, capped at ten minutes a step and one hour in total, asking the endpoint whether it answers before running again), the service refusing access (401, 402, 403 — Cerebras' 402 when its credits ran out would not clear in an hour, so it is reported at once), the day's stated request limit (reported at once), and an error in this app (retried once). **Recording is retried on its own**, because the charge lands between the model work and the record, and running the analysis again would charge twice. **The retry loop awaits `_one_attempt`, not `propagate_ticker`**, so `test_analyses_are_dispatched_together` does not read one ticker's retries as the loop-over-tickers bug — do not inline it. **The hour is a bound on the pass, not a ration**: the pass holds `_pass_lock` for the whole wait.
 - **A read earns one follow-up turn, and it is the same one a refusal uses.**
   `read` never reaches `screen` — it moves no cash, no shares and no watchlist
   slot — so it is split out in `_decide` before screening, because it changes

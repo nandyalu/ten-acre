@@ -123,7 +123,7 @@ TRADINGAGENTS_QUICK_THINK_LLM=qwen-3.8-27b
 
 Measured here: a full analysis in **153 seconds**, with the prices in its market report matching the real closes exactly. Leave the key out for a local server that wants none.
 
-**Read the daily token allowance, not the requests-per-minute limit.** One analysis spends roughly 130,000 tokens, so the allowance is what sets how many you get in a day — two models on one free tier differed by a factor of eighty on that alone. When the rate limit is hit the app reads the provider's own `retry-after` header and waits exactly that long, so `429` lines in the log are the throttle working.
+**Read the daily token allowance, not the requests-per-minute limit.** One analysis spends roughly 130,000 tokens, so the allowance is what sets how many you get in a day — two models on one free tier differed by a factor of eighty on that alone. When the rate limit is hit the app reads the provider's own `retry-after` header and waits exactly that long, so `429` lines in the log are the throttle working. A provider that sends no rate-limit headers, such as Gemini, needs its limits stated in `LLM_REQUESTS_PER_MINUTE`, `LLM_TOKENS_PER_MINUTE` and `LLM_REQUESTS_PER_DAY` — see [Running it yourself](deploying.md#any-other-openai-shaped-endpoint).
 
 Both stages take the same value. The model is also a database setting, so the settings page changes it without a redeploy; these variables only supply the starting value.
 

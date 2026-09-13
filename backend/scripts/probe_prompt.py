@@ -84,16 +84,42 @@ def build_prompts() -> dict:
             **(common | {"alerts": _raw_alerts()}),
         ),
     }
+    # An early wake: a change to the app woke the agent while its own planned
+    # wakeup was still ahead. The stored plan is used when it is in the future;
+    # otherwise one two days out stands in, so the section under test exists.
+    planned = agent._last_planned_wakeup()
+    if planned is None or planned <= datetime.datetime.now(datetime.timezone.utc):
+        planned = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2)
+    out["change"] = agent.build_prompt(
+        book, signals, prices,
+        woke_because=_WOKE_BECAUSE["Change"],
+        wakeup_note=agent._last_wakeup_note()
+        or "Market reopens today. Review tracked tickers and consider deploying capital if attractive setups emerge.",
+        planned_wakeup=planned,
+        **common,
+    )
     # Turn 2: what the agent sees after research it ordered has landed inside
     # this same pass. No runner is installed, so nothing is analysed — the
     # reading comes from what is already on record.
     held = book.holdings[0].ticker if book.holdings else (sorted(tickers)[0] if tickers else None)
     if held:
         agent.set_research_runner(lambda tickers: None)
+        outcomes = agent._research_and_report([held])
         out["turn2"] = agent.build_prompt(
             book, signals, prices,
-            outcomes=agent._research_and_report([held]),
+            outcomes=outcomes,
             researched_now={held},
+            **common,
+        )
+        # The second turn of a pass a change to the app started: the wake is
+        # history by now, and the reason to be asked again is the research.
+        out["change_turn2"] = agent.build_prompt(
+            book, signals, prices,
+            outcomes=outcomes,
+            researched_now={held},
+            woke_because=_WOKE_BECAUSE["Change"],
+            wakeup_note=agent._last_wakeup_note(),
+            planned_wakeup=planned,
             **common,
         )
         out["held"] = held

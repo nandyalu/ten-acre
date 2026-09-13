@@ -36,6 +36,8 @@ import uuid
 
 from langchain_core.callbacks import BaseCallbackHandler
 
+from backend.services import llm_content
+
 log = logging.getLogger("trading-experiment.llm_traces")
 
 # Set to a writable path to record. Unset means record nothing.
@@ -74,13 +76,16 @@ def _message_to_dict(message) -> dict:
     content field instead is the exact failure this dataset exists to fix, and
     flattening the two would hide it.
     """
-    content = message.content
-    if isinstance(content, list):
-        content = " ".join(str(part) for part in content)
+    # Gemini and Anthropic send thinking as its own block. Until 2026-09-13 the
+    # blocks were joined into the content as stringified dicts. Thinking is a
+    # separate field now, so a reader can take the answer without it.
+    content, thinking = llm_content.split_thinking(message.content)
     record = {
         "role": getattr(message, "type", None) or message.__class__.__name__,
-        "content": _clip(str(content or "")),
+        "content": _clip(content),
     }
+    if thinking:
+        record["thinking"] = _clip(thinking)
     tool_calls = getattr(message, "tool_calls", None)
     if tool_calls:
         record["tool_calls"] = [

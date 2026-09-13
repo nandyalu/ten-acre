@@ -121,8 +121,8 @@
         @if ((event().turns?.length ?? 0) > 1) {
           <p class="hint">
             This pass took {{ event().turns?.length }} turns. The agent answered, was given
-            something back — an analysis it asked to read, or the reason an order was refused — and
-            answered again. The last answer is the one its orders were screened from.
+            something back — what its orders did, an analysis it asked to read, or the reason an
+            order was refused — and answered again.
           </p>
           @for (turn of event().turns ?? []; track $index) {
             <p class="turn-label">Turn {{ $index + 1 }} of {{ event().turns?.length }} — asked</p>
@@ -150,14 +150,33 @@
         </div>
       }
       @if (isOpen('thinking')) {
+        <!-- Every turn keeps its own thinking. Until 2026-09-13 this panel
+             showed only the last turn's, so a two-turn pass looked as though
+             it had thought once. -->
         <p class="hint">
-          The model's own reasoning on the way to the answer above — not a summary written
-          afterwards. It is most of what the pass generated, and most of what it cost.
+          The model's reasoning on the way to its answer. Some providers return it in full; Gemini
+          returns a summary of it. It is most of what the pass generated.
         </p>
-        <div class="verbatim-wrap">
-          <app-copy-button [text]="event().thinking" label="the thinking" />
-          <pre class="verbatim">{{ event().thinking }}</pre>
-        </div>
+        @if ((event().turns?.length ?? 0) > 1) {
+          @for (turn of event().turns ?? []; track $index) {
+            <p class="turn-label">
+              Turn {{ $index + 1 }} of {{ event().turns?.length }} — thinking
+            </p>
+            @if (turn.thinking) {
+              <div class="verbatim-wrap">
+                <app-copy-button [text]="turn.thinking" label="this turn's thinking" />
+                <pre class="verbatim">{{ turn.thinking }}</pre>
+              </div>
+            } @else {
+              <p class="hint">This turn returned no thinking.</p>
+            }
+          }
+        } @else {
+          <div class="verbatim-wrap">
+            <app-copy-button [text]="event().thinking" label="the thinking" />
+            <pre class="verbatim">{{ event().thinking }}</pre>
+          </div>
+        }
       }
     } @else if (event().skipped) {
       <!-- The ordinary case, and the only one a fresh deployment ever sees:

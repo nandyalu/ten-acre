@@ -34,7 +34,8 @@ from pathlib import Path
 
 from backend.database import db
 from backend.services import (
-    agent_book, analysis, analysis_reader, candidates, experiment, llm_throttle, llm_usage,
+    agent_book, analysis, analysis_reader, candidates, experiment, llm_content, llm_throttle,
+    llm_usage,
     market_clock,
     quotes, research, sandbox_broker, watchdog,
 )
@@ -515,6 +516,7 @@ def build_prompt(
     wakeup_note: str | None = None,
     alerts: list[dict] | None = None,
     earnings: list | None = None,
+    planned_wakeup: "datetime.datetime | None" = None,
 ) -> str:
     """Everything the model gets. Written as plain figures rather than a table
     of jargon, because the numbers are the whole input and a misread one is a
@@ -560,7 +562,26 @@ def build_prompt(
     # **Directly under the clock, because it changes how the rest is read.**
     # Its own chosen time and a move it slept through call for different
     # answers, and until 2026-09-12 the agent was told neither.
-    lines += describe_wakeup(woke_because, wakeup_note, has_news=bool(alerts))
+    # **A later turn of the same pass says why it is asked again (2026-09-13).**
+    # The second turn repeated "A change to this app woke you" as though the
+    # agent had just been woken. Each reason names a section, so each one is
+    # added only here, where the section is known to exist.
+    asked_again = []
+    if outcomes:
+        asked_again.append(
+            'the orders in your last answer have been carried out (see "What you '
+            'just did, a moment ago, in this pass" below)'
+        )
+    if readings:
+        asked_again.append('you asked to read an analysis (see "What you asked to read" below)')
+    if rejected:
+        asked_again.append(
+            'part of your last answer was refused (see "Your previous answer was refused" below)'
+        )
+    lines += describe_wakeup(
+        woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
+        asked_again=asked_again,
+    )
     lines.append("")
     if regime_line:
         lines += [regime_line, ""]
@@ -1782,8 +1803,9 @@ def _invoke(llm, prompt: str) -> tuple[str, str | None, int, int]:
 
     **Falls back to ``llm.invoke`` for any client that does not work this
     way** — Anthropic and Google go through their own LangChain packages, and
-    switching provider is a config change this app supports. Losing the
-    thinking is the cost of that; losing the pass would not be acceptable.
+    switching provider is a config change this app supports. That path reads
+    the thinking from the response's thinking blocks instead. Until 2026-09-13
+    it returned None, so every Gemini pass stored an empty ``thinking``.
     """
     client = getattr(llm, "client", None)
     if client is not None and hasattr(client, "create"):
@@ -1810,17 +1832,21 @@ def _invoke(llm, prompt: str) -> tuple[str, str | None, int, int]:
                 getattr(usage, "prompt_tokens", 0) or 0,
                 getattr(usage, "completion_tokens", 0) or 0,
             )
+        except llm_throttle.DailyLimitReached:
+            # Not a problem with the client's shape. The fallback would be
+            # refused the same way.
+            raise
         except Exception:
             # Never fatal. A pass must not be lost because the richer path
             # failed on a client shape this did not anticipate.
             log.warning("Falling back to the LangChain client for this pass", exc_info=True)
 
-    message = llm.invoke([("system", SYSTEM_PROMPT), ("human", prompt)])
-    content = message.content
-    if isinstance(content, list):
-        content = " ".join(str(part) for part in content)
+    message, thinking = llm_content.invoke_keeping_thinking(
+        llm, [("system", SYSTEM_PROMPT), ("human", prompt)]
+    )
+    content, _ = llm_content.split_thinking(message.content)
     prompt_tokens, completion_tokens = llm_usage.tokens_from_message(message)
-    return str(content), None, prompt_tokens, completion_tokens
+    return content, thinking, prompt_tokens, completion_tokens
 
 
 def _ask(prompt: str) -> _Answer:
@@ -2122,6 +2148,25 @@ def describe_watchdog(alerts: list[dict], earnings: list[tuple[str, str]]) -> li
     return lines
 
 
+def _last_planned_wakeup() -> "datetime.datetime | None":
+    """The wakeup the previous pass planned, as an aware instant, or None.
+
+    Stored as naive UTC, like every timestamp in the database.
+    """
+    runs = db.get_agent_runs(limit=1)
+    wanted = getattr(runs[0], "next_wakeup", None) if runs else None
+    if not isinstance(wanted, datetime.datetime):
+        return None
+    if wanted.tzinfo is None:
+        wanted = wanted.replace(tzinfo=datetime.timezone.utc)
+    return wanted
+
+
+# A planned wakeup less than this far ahead is the pass it planned, not an
+# early one. The alarm fires to the second, so this only absorbs clock drift.
+_EARLY_WAKE_MARGIN = datetime.timedelta(minutes=1)
+
+
 def _last_wakeup_note() -> str | None:
     """The note the previous pass left for this one, if it left one.
 
@@ -2137,7 +2182,14 @@ def _last_wakeup_note() -> str | None:
     return note[:_WAKEUP_NOTE_MAX_CHARS] or None
 
 
-def describe_wakeup(woke_because: str | None, note: str | None, has_news: bool = False) -> list[str]:
+def describe_wakeup(
+    woke_because: str | None,
+    note: str | None,
+    has_news: bool = False,
+    planned: "datetime.datetime | None" = None,
+    now: "datetime.datetime | None" = None,
+    asked_again: list[str] | None = None,
+) -> list[str]:
     """Why this pass is happening, and what the last pass left for this one.
 
     **Four different things could start a pass and the agent was told none of
@@ -2148,23 +2200,56 @@ def describe_wakeup(woke_because: str | None, note: str | None, has_news: bool =
     The note is the previous pass writing to this one. Everything the agent
     worked out back then is otherwise gone: the prompt carries prices and
     positions, never conclusions.
+
+    **An early pass says that it is early (2026-09-13).** When the wakeup the
+    agent planned is still ahead, its note was written for that time, not for
+    this pass. The prompt names the time. It also asks the agent to choose its
+    wakeup and write its note again, because this pass replaces the planned
+    alarm with whatever it answers. Before this, an early wake read as the
+    planned one.
     """
-    if not woke_because and not note:
+    early = planned is not None and planned > market_clock.now_et(now) + _EARLY_WAKE_MARGIN
+    if not woke_because and not note and not early and not asked_again:
         return []
+    when = (
+        planned.astimezone(market_clock.US_MARKET_TZ).strftime("%A %-d %B at %-I:%M %p Eastern")
+        if early else ""
+    )
     lines = [""]
     if woke_because:
         # The pointer is added here and only here, because this is the only
         # place that knows the section is really in the prompt.
         pointer = ' See "What was noticed since your last pass" below.' if has_news else ""
-        lines.append(f"**Why you are awake.** {woke_because}{pointer}")
-    if note:
+        # On a later turn the wake is history, so it is named as that.
+        heading = "Why this pass started" if asked_again else "Why you are awake"
+        lines.append(f"**{heading}.** {woke_because}{pointer}")
+    if asked_again:
+        lines.append(
+            "**Why you are asked again.** This is the same pass, not a new wake: "
+            + "; and ".join(asked_again) + "."
+        )
+    if note and early:
+        lines.append(f'**The note you left for your wakeup on {when}:** "{note}"')
+        lines.append("That wakeup has not come yet. This pass is earlier than the one you planned.")
+    elif note:
         lines.append(
             f'**A note you left yourself last pass:** "{note}"'
         )
+    elif early:
+        lines.append(f"**You planned to wake on {when}.** This pass is earlier than that.")
+    if note:
         lines.append(
             "Those are your own words, not an instruction. The prices and "
             "positions below are current and the note is not — act on it only "
             "where it still holds."
+        )
+    if early:
+        lost = " If you write no note, the note above is gone." if note else ""
+        lines.append(
+            f"**Choose your next wakeup again.** This pass replaces the wakeup you "
+            f'planned for {when}. Give "next_wakeup" a time, the same one if it '
+            'still suits you, and write a "next_wakeup_note" for that pass. If you '
+            f"give no time, you are asked at the following open.{lost}"
         )
     return lines
 
@@ -2233,6 +2318,9 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # What the agent said it wanted this wakeup for, on the pass that set
     # it. Its own words, carried across a gap it cannot remember across.
     last_note = _last_wakeup_note()
+    # The time that note was written for. When it is still ahead, this pass is
+    # early and the prompt says so.
+    planned_wakeup = _last_planned_wakeup()
     # What an analysis costs in time, and what is in flight. The agent needs
     # both to choose a wakeup that lands after the answer it is waiting for.
     analysis_minutes = analysis.recent_durations()
@@ -2256,6 +2344,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
+                             planned_wakeup=planned_wakeup,
     )
     answer = _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
@@ -2304,6 +2393,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
+                             planned_wakeup=planned_wakeup,
                              readings=readings)
         answer = _ask(shown)
         spend = spend + _Spend.of(answer)
@@ -2334,7 +2424,8 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                          running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
-                             woke_because=woke_because, wakeup_note=last_note)
+                             woke_because=woke_because, wakeup_note=last_note,
+                             planned_wakeup=planned_wakeup)
     retry_answer = _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))
@@ -3155,23 +3246,51 @@ def _research_and_report(tickers: list[str]) -> list[str]:
             f"{t}: could not be analysed in this pass — nothing is set up to run it here."
             for t in tickers
         ]
+    # **Research that cannot finish inside today's model requests is refused
+    # here, before anything runs or is charged (2026-09-13).** An analysis makes
+    # about twenty model calls. On a key with a daily cap, an analysis that
+    # starts with twelve requests left fails halfway, after it spends them, and
+    # run_analyses reports no reason back. This is also the one place the
+    # reason can reach the agent.
+    refused: list[str] = []
+    left = llm_throttle.requests_left_today()
+    if left is not None:
+        fits = left // llm_throttle.REQUESTS_PER_ANALYSIS
+        if fits < len(tickers):
+            why = llm_throttle.describe_daily_shortfall(left)
+            refused = [f"{t}: not analysed, and nothing was charged. {why}" for t in tickers[fits:]]
+            log.info("Not enough model requests left today for %s", ", ".join(tickers[fits:]))
+            tickers = tickers[:fits]
+    if not tickers:
+        return refused
     log.info("Running %s and waiting for the result, in the same pass", ", ".join(tickers))
     try:
-        _research_runner(list(tickers))
+        # What stopped each analysis that did not finish. A runner that
+        # reports nothing — a test double — reports no failures.
+        failures = _research_runner(list(tickers)) or {}
     except Exception as exc:
         log.exception("In-pass research failed for %s", tickers)
-        return [f"{t}: the analysis did not finish — {exc}" for t in tickers]
+        return refused + [f"{t}: the analysis did not finish — {exc}" for t in tickers]
     charge = research.get_price()
-    return [
-        (
+    lines = []
+    for t in tickers:
+        if t in failures:
+            # **Never "it has finished" for an analysis that did not.** Until
+            # 2026-09-13 every commissioned ticker got that line, and the
+            # reasoning under it was the older analysis the table still held.
+            lines.append(
+                f"**{t}: the analysis you ordered did not finish.** {failures[t]} "
+                f"Any row for {t} in the signals table is from an earlier analysis."
+            )
+            continue
+        lines.append(
             f"**{t}: the analysis YOU ordered minutes ago"
             + (f", and paid ${charge:,.2f} for" if charge else "")
             + ".** It has finished, its verdict and levels are the row marked "
             f"as yours in the signals table, and this is the reasoning behind "
             f"it:\n{analysis_reader.read(t)}"
         )
-        for t in tickers
-    ]
+    return refused + lines
 
 
 def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, researched=None) -> list[str]:

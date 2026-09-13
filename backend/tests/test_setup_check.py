@@ -49,6 +49,121 @@ def nothing_configured(monkeypatch):
     monkeypatch.setattr(setup_check.sandbox_broker, "get_paper_account_id", lambda: None)
 
 
+# --- a Gemini deployment ---------------------------------------------------------
+
+
+def test_a_gemini_key_that_lists_models_is_ready(monkeypatch, fully_configured):
+    """Until 2026-09-13 the model list had no Gemini branch, so it was always
+    empty, and a Gemini deployment whose analyses all ran was reported as not
+    ready to trade."""
+    monkeypatch.setitem(setup_check.analysis.DEFAULT_CONFIG, "llm_provider", "google")
+
+    llm = next(r for r in setup_check.requirements() if r.key == "llm")
+
+    assert llm.ready
+    assert llm.label == "Language model endpoint (google)"
+
+
+def test_a_gemini_key_that_lists_nothing_says_what_to_check(monkeypatch, fully_configured):
+    monkeypatch.setitem(setup_check.analysis.DEFAULT_CONFIG, "llm_provider", "google")
+    monkeypatch.setattr(setup_check.analysis, "list_models", lambda: [])
+
+    llm = next(r for r in setup_check.requirements() if r.key == "llm")
+
+    assert not llm.ready
+    assert "GOOGLE_API_KEY=your-key" in llm.fix
+    assert "OLLAMA_BASE_URL" not in llm.fix
+
+
+def test_the_model_list_asks_google_for_a_gemini_deployment(monkeypatch):
+    analysis = setup_check.analysis
+    monkeypatch.setitem(analysis.DEFAULT_CONFIG, "llm_provider", "google")
+    monkeypatch.setattr(analysis, "_model_list_cache", (0.0, []))
+    monkeypatch.setattr(analysis, "_google_models", lambda: ["gemini-3.5-flash-lite"])
+
+    assert analysis.list_models(force=True) == ["gemini-3.5-flash-lite"]
+
+
+def test_a_google_that_cannot_be_asked_reads_as_no_list(monkeypatch):
+    analysis = setup_check.analysis
+    monkeypatch.setitem(analysis.DEFAULT_CONFIG, "llm_provider", "google")
+    monkeypatch.setattr(analysis, "_model_list_cache", (0.0, []))
+
+    def unreachable():
+        raise OSError("no route to host")
+
+    monkeypatch.setattr(analysis, "_google_models", unreachable)
+
+    assert analysis.list_models(force=True) == []
+
+
+def _gemini(monkeypatch, clock):
+    analysis = setup_check.analysis
+    monkeypatch.setitem(analysis.DEFAULT_CONFIG, "llm_provider", "google")
+    monkeypatch.setattr(analysis, "_model_list_cache", (0.0, []))
+    monkeypatch.setattr(analysis, "_google_list_attempted_at", -1e9)
+    monkeypatch.setattr(analysis.time, "monotonic", lambda: clock["now"])
+    return analysis
+
+
+def test_the_gemini_list_is_kept_for_hours_not_minutes(monkeypatch):
+    """Each call may count against the key's request limits, and the setup
+    check runs on every page load."""
+    clock = {"now": 1000.0}
+    analysis = _gemini(monkeypatch, clock)
+    calls = []
+    monkeypatch.setattr(analysis, "_google_models", lambda: calls.append(1) or ["gemini-3.5-flash-lite"])
+
+    analysis.list_models()
+    clock["now"] += 60 * 60  # an hour of page loads later
+    analysis.list_models()
+    assert len(calls) == 1
+
+    clock["now"] += analysis._GOOGLE_MODEL_LIST_TTL_SECONDS
+    analysis.list_models()
+    assert len(calls) == 2
+
+
+def test_a_failed_gemini_list_is_not_asked_for_on_every_load(monkeypatch):
+    clock = {"now": 1000.0}
+    analysis = _gemini(monkeypatch, clock)
+    calls = []
+
+    def unreachable():
+        calls.append(1)
+        raise OSError("no route to host")
+
+    monkeypatch.setattr(analysis, "_google_models", unreachable)
+
+    analysis.list_models()
+    clock["now"] += 60
+    analysis.list_models()
+    assert len(calls) == 1
+
+    clock["now"] += analysis._MODEL_LIST_TTL_SECONDS
+    analysis.list_models()
+    assert len(calls) == 2
+
+
+def test_a_gemini_list_counts_against_the_stated_limits(monkeypatch):
+    from backend.services import llm_throttle
+
+    counted = []
+    monkeypatch.setattr(llm_throttle, "_reserve", lambda estimate: counted.append(estimate))
+    monkeypatch.setenv("GOOGLE_API_KEY", "a-key")
+
+    class _Client:
+        def __init__(self, **kwargs):
+            self.models = type("M", (), {"list": staticmethod(lambda: [])})()
+
+    import google.genai
+
+    monkeypatch.setattr(google.genai, "Client", _Client)
+
+    assert setup_check.analysis._google_models() == []
+    assert counted == [0]
+
+
 # --- the property that matters --------------------------------------------------
 
 

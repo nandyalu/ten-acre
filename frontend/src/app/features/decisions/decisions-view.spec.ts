@@ -406,6 +406,26 @@ describe('DecisionsView', () => {
       expect(el.textContent).toContain('2 turns');
     });
 
+    it("shows every turn's thinking, not only the last", async () => {
+      /** Until 2026-09-13 the thinking panel showed the last turn's alone,
+       * so a two-turn pass looked as though it had thought once. */
+      const pass = twoTurns();
+      pass.turns![0].thinking = 'the first thought';
+      pass.turns![1].thinking = 'the second thought';
+      pass.thinking = 'the second thought';
+      service.eventsByMonth['2026-09'] = [pass];
+      const fixture = TestBed.createComponent(DecisionsView);
+      await fixture.whenStable();
+      const el = fixture.nativeElement as HTMLElement;
+
+      clickButtonContaining(el, 'Show the thinking');
+      await fixture.whenStable();
+
+      expect(el.textContent).toContain('the first thought');
+      expect(el.textContent).toContain('the second thought');
+      expect(el.textContent).toContain('Turn 1 of 2 — thinking');
+    });
+
     it('shows a single prompt when the pass had one turn', async () => {
       service.eventsByMonth['2026-09'] = [event({ turns: [] })];
       const fixture = TestBed.createComponent(DecisionsView);
