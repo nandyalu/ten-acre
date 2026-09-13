@@ -37,8 +37,8 @@ frontend/.angular/
 
 # Local-only Claude Code settings (personal permission config, not shared).
 .claude/settings.local.json
-# The handoff skill's note between two sessions. Personal and short-lived.
-.claude/handoff.md
+# The handoff skill's notes between two sessions, one file for each topic. Personal and short-lived.
+.claude/handoffs/
 # Token and cache totals for each Claude Code session, written by .claude/helpers/session-usage.py.
 .claude/usage/
 
