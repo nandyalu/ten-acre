@@ -49,7 +49,7 @@ Check the entry exists **and** that it is filed correctly. One question: does th
 Then read the entry itself:
 
 - Does it say **why**, or only what? The what is already in the diff.
-- Is it a sentence or two? Long-form reasoning that constrains a future edit belongs in `CLAUDE.md`.
+- Is it a sentence or two? Long-form reasoning that constrains a future edit belongs in `CLAUDE.md`, or in the `.claude/rules/` file for that area.
 - If the agent's own tools changed, is there a line in `backend/agent_changes.json`? Without one the agent keeps working around a restriction that has been lifted.
 
 ## 4. Are the claims in the description ones somebody checked?

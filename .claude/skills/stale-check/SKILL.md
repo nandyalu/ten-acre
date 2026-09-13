@@ -2,7 +2,7 @@
 name: stale-check
 description: Run after any change to this app, before committing. Records the
   change in the right file (JOURNEY.md, docs/changelog.md, agent_changes.json)
-  and sweeps the surfaces that go stale silently — CLAUDE.md's quoted prompt,
+  and sweeps the surfaces that go stale silently — the prompt quoted in .claude/rules/agent.md,
   docs, site copy, code comments, and hardcoded values that are really
   settings. Every check here caught a real bug on 2026-09-10.
 ---
@@ -45,22 +45,22 @@ Rules:
 
 ---
 
-## 2. CLAUDE.md, if the prompt or the rules moved
+## 2. The quoted prompt, if the prompt or the rules moved
 
-`CLAUDE.md` quotes the prompt verbatim, and **a quotation is stale the moment the original moves.** On 2026-09-10 it had drifted three ways at once — a system message still saying "paper-trading" a day after the code dropped the word, and two whole rules missing.
+`.claude/rules/agent.md` quotes the prompt verbatim. The quotation was in `CLAUDE.md` until 2026-09-13. **A quotation is stale the moment the original moves.** On 2026-09-10 it had drifted three ways at once — a system message still saying "paper-trading" a day after the code dropped the word, and two whole rules missing.
 
 **A wrong quotation here is worse than none, because this file is read instead of the code.**
 
-**The exact half is a test now**, not a step here: `backend/tests/test_the_documented_prompt_is_the_real_prompt.py` pins the system message, the opener, and the three rules that exist because of a live failure. Run the suite and it tells you. What is left below is the fuzzy half — the rules list, which CLAUDE.md paraphrases, so it needs a person reading hits rather than an assertion.
+**The exact half is a test now**, not a step here: `backend/tests/test_the_documented_prompt_is_the_real_prompt.py` pins the system message, the opener, and the three rules that exist because of a live failure. Run the suite and it tells you. What is left below is the fuzzy half — the rules list, which the rule file paraphrases, so it needs a person reading hits rather than an assertion.
 
 ```sh
 python3 - <<'EOF'
 import re
 a = open("backend/services/agent.py").read()
 # Strip blockquote markers, or wrapped quotations never match.
-c = re.sub(r"\s+", " ", re.sub(r"^\s*>\s?", "", open("CLAUDE.md").read(), flags=re.M))
+c = re.sub(r"\s+", " ", re.sub(r"^\s*>\s?", "", open(".claude/rules/agent.md").read(), flags=re.M))
 rules = [r for r in re.findall(r'"(- [^"]{10,})"', a) if not r.startswith("- {")]
-print(f"{len(rules)} rules in the prompt. Not found in CLAUDE.md by opening words:")
+print(f"{len(rules)} rules in the prompt. Not found in .claude/rules/agent.md by opening words:")
 for r in rules:
     key = re.sub(r"\s+", " ", r[2:]).split("{")[0].strip()[:38]
     if len(key) > 12 and key not in c:
@@ -68,7 +68,7 @@ for r in rules:
 EOF
 ```
 
-**Read every hit; do not treat the list as a failure count.** CLAUDE.md paraphrases some rules and abbreviates others with `[...]`, so a paraphrase shows up here looking like a gap. The first run of this check flagged six, of which three were paraphrases and three were rules genuinely missing from CLAUDE.md — including two that appear only in the state that produces them (a zero balance, a conviction floor), which is exactly why reading the code had missed them.
+**Read every hit; do not treat the list as a failure count.** The rule file paraphrases some rules and abbreviates others with `[...]`, so a paraphrase shows up here looking like a gap. The first run of this check flagged six, of which three were paraphrases and three were rules genuinely missing from CLAUDE.md — including two that appear only in the state that produces them (a zero balance, a conviction floor), which is exactly why reading the code had missed them.
 
 Also re-read any CLAUDE.md sentence saying a thing **is not built**. Those rot fastest — one claimed an unbuilt feature that had shipped the previous day.
 
@@ -105,7 +105,7 @@ Sweep for every removed mechanism by name, across code comments, templates and d
 # Tests and the archive pages are excluded — a 13:35 timestamp in a fixture is
 # not a claim, and the two -experiment.md pages describe experiments that ended.
 grep -rniE "morning sweep|daily sweep|13:35 (UTC|batch|pass)|11:00 UTC|each weekday|Decide now|\`?/(analyze|track|model|horizon|candidates)\`" \
-  backend/ frontend/src/ docs/ README.md CLAUDE.md \
+  backend/ frontend/src/ docs/ README.md CLAUDE.md .claude/rules/ \
   --include=*.py --include=*.html --include=*.ts --include=*.md \
   --exclude-dir=tests --exclude="*.spec.ts" --exclude="*-experiment.md" \
   --exclude="changelog.md" --exclude="journey.md" \

@@ -37,6 +37,8 @@ frontend/.angular/
 
 # Local-only Claude Code settings (personal permission config, not shared).
 .claude/settings.local.json
+# The handoff skill's note between two sessions. Personal and short-lived.
+.claude/handoff.md
 
 # OS/editor
 .DS_Store

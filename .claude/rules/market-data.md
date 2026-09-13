@@ -1,0 +1,43 @@
+---
+paths:
+  - "backend/services/{bars,listings,positions,quotes,intraday,watchdog}.py"
+  - "backend/scripts/backfill_intraday_bars.py"
+  - "TradingAgents/tradingagents/dataflows/**"
+---
+
+<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
+
+## Market data goes through the bar cache
+
+`backend/services/bars.py` is a read-through cache over the `dailybar` table (`(ticker, date)`). **Route any new daily-history read through `bars.get_bars()`, not `yf.Ticker(...).history()` or a direct Webull call** — the whole point is that a completed session never changes, so refetching one is waste and rate-limit risk.
+
+**Webull first, yfinance as fallback (2026-09-08).** `bars._fetch_history` tries `_fetch_from_webull` (the same history-bar endpoint `backend/services/intraday.py` uses for 1-minute bars, called here with `Timespan.D`) and falls through to `_fetch_from_yfinance` only when that returns `None` — Webull not configured, the call failing, or coming back empty. Confirmed live: the endpoint pages back daily bars with no real depth ceiling, over 2,000 bars deep in testing. yfinance is not removed — it is what already produces this app's "possibly delisted" false positives and 429s, and a Webull outage must not take the whole daily cache down with it.
+
+Two legitimate direct yfinance uses remain, neither of them history: `positions.get_current_price` (a live quote, Webull's fallback) and `watchdog.get_next_earnings_date` (the calendar).
+
+Non-obvious rules the cache depends on:
+
+- **Today's bar is never stored.** It is still moving. `include_today=True` gets it via a separate live request instead.
+- **Pass `today=` when the caller has a market-relative date.** The watchdog does: after about 8pm ET the local clock is already tomorrow, so the default would treat the just-closed session as still in progress.
+- **`_earliest_attempt` records what was asked for, not what came back.** Without it, a ticker with less history than requested refetches on every call forever.
+- **`last_completed_session` ignores holidays deliberately.** The 30-minute recheck throttle absorbs the resulting extra request.
+
+The table is pure cache; dropping it costs only a refetch.
+
+## Tickers that stop trading
+
+`backend/services/listings.py` marks a ticker inactive once no fresh bar has appeared for `STALE_AFTER_TRADING_DAYS` (7). Every fetch path checks it: the bar cache, `get_current_price`, and the watchdog's tracked list.
+
+**Why it needs detecting at all:** a delisted symbol does not fail cleanly. AILEQ returned five bars across two months, every one priced at $0.000001. Nothing in that looks like an error — to the bar cache it was a ticker merely behind, so it refetched every 30 minutes forever, and the (now-retired) daily sweep spent minutes of GPU analyzing a company with no market, then could not record the signal because there was no price to record it against.
+
+**The rule is freshness, not price.** A real penny stock at $0.0001 is still real and must keep working; a price threshold would wrongly exclude it.
+
+An inactive ticker is still rechecked once a day, so a lifted halt recovers without anyone noticing. `/ignore` and `/unignore` are the manual override, and a manual setting is never overwritten by detection.
+
+A held position stays in the portfolio — there is just nothing to fetch, and its lots are excluded from the vs-SPY comparison like any other undateable lot.
+
+## Reddit/social-sentiment data source
+
+`TradingAgents/tradingagents/dataflows/reddit.py` scrapes Reddit's public RSS search feed (no API key). Occasional `429`/warning logs are expected and handled gracefully (retry-once-with-backoff, then degrades to "no posts found" for that subreddit) — not a bug unless it fails on *every* run. `stocktwits.py` exists in the same directory as an unused alternative if Reddit ever becomes unreliable enough to matter.
+
+The Webull OpenAPI SDK (`backend/services/quotes.py`, `backend/services/sandbox_broker.py`) is market-data + brokerage only (quotes, fundamentals, financials, trading) — it has no news-article or social-sentiment endpoints, so it can't replace `get_news`/`reddit.py`.

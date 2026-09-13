@@ -1,0 +1,195 @@
+---
+paths:
+  - "backend/services/agent*.py"
+  - "backend/services/watchdog.py"
+  - "backend/services/sandbox_broker.py"
+  - "backend/services/market_clock.py"
+  - "backend/services/market_calendar.py"
+  - "backend/services/analysis_reader.py"
+  - "backend/services/signals.py"
+  - "backend/services/research.py"
+  - "backend/tasks/scheduler.py"
+  - "backend/agent_changes.json"
+  - "backend/scripts/probe_prompt.py"
+  - "backend/tests/test_agent*.py"
+  - "backend/tests/test_the_documented_prompt_is_the_real_prompt.py"
+  - "JOURNEY.md"
+  - ".claude/skills/probe-the-prompt/**"
+  - ".claude/skills/stale-check/**"
+---
+
+<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
+
+## The auto trader: what it is now
+
+**This section is the current contract — what the agent is shown, what it may ask for, and what Python refuses.** For how it got that way, and why any given rule exists, see the changelog in [JOURNEY.md](../../JOURNEY.md).
+
+**Record every behaviour change there before making it** — a reworded rule, a new number in the prompt, a different limit. Behaviour is mostly prompt, so an experiment that runs for a month across three prompt revisions has three experiments in it, and no way to tell them apart afterwards unless someone wrote down when the question changed.
+
+### What the agent is shown
+
+One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
+
+1. **The clock** — the Eastern time, the date, and how long until the close. First, because everything below is read against it and because the agent chooses its own next wakeup, which is a question about the time.
+1b. **Why it is awake, and the note the last pass left for this one.** Four things start a pass — its own chosen time, something noticed while it slept, the last call before the close, a change to the app — and it was told none of them until 2026-09-12; the labels were log lines. `next_wakeup_note` is the other half: the agent has no memory between passes, and the prompt carries prices and positions but never conclusions, so this is the one place it can hand something to its own future self. **No wake reason may promise a section** — one said "see what it was, below" and the earnings path reaches the same pass with no alerts, so the prompt pointed at nothing and seven probe runs read straight past it. `build_prompt` adds the pointer, because only it knows whether the section is there.
+
+   **An early wake says that it is early, and asks again (2026-09-13).** A restart with new change notes, a sharp move and the earnings check all fire the pending alarm early through `scheduler.wake_agent_now(label)`, and until that date the alarm always said "You asked to be woken now". The label now travels with the alarm in `_early_wake_label`. When the planned wakeup is still ahead, `describe_wakeup` shows the note beside the time it was written for, and asks for `next_wakeup` and `next_wakeup_note` again, because the early pass replaces the planned alarm. Probed on Gemini: 4 of 4 samples kept 9:25 AM, a time that appears only in that block, and 4 of 4 wrote a new note. Only one of the four mentioned what woke it, so the ask is what does the work, not the reason line. **A later turn of the same pass names the wake as history** — "Why this pass started" — and adds "Why you are asked again", built in `build_prompt` from whichever of the outcomes, the readings and the refusals are really in that prompt.
+
+   **A worked example beats a prohibition.** The rule told the agent not to spend the note on prices the next prompt already carries, and two of seven runs wrote "my cash is critically low" anyway. Adding two examples of a good note — *"ruled out HPE at a $59.83 entry, worth another look under $56"* — moved notes naming a concrete price level from **0 of 7 to 4 of 7**, and notes stating a condition from 3 to 5. It did not stop the balance-restating (still 2 of 7); it raised the floor of everything else.
+2. **The regime line** when one is available — VIX, SPY against its 200-day average, the yield curve, as one sentence.
+3. **Recent changes to the app**, when any were written down in the last three days — see "Telling the agent when a note was answered" below. Placed early because it is a fact about the world the agent should read before the numbers, the same reason the regime line goes here.
+4. **The account**: total budget, uninvested cash, total equity with its return against the budget, realized profit — plus how much of the cash is unsettled, when any is. Unsettled money is spendable but a buy made with it cannot carry its stop and target in the same order, which is the real restriction on a cash account. The *broker's* balance is never shown. The simulated account holds $1,000,000 and the agent is given a small fraction of it; if that number reached the prompt the budget would be meaningless.
+5. **Holdings**, one line each: quantity, average cost, current price, market value, unrealized profit, share of the account, days held, what is resting at the broker under it, and what selling all of it would raise. A holding with no resting exit says `NOTHING is resting to close it` — the agent cannot move an exit it cannot see, nor notice one that was never placed.
+6. **Recent analyst signals**, up to 12 from the last 3 days, filtered to the model the app is configured to use. Each carries the decision, the current price, the suggested entry, stop and target, the model's own chance of working, the risk/reward and the expected value in R-multiples — plus, in plain words, how many whole shares the cash could buy. That last part is computed in Python, because the model proposed $1,944 of buys against $1,000 of cash on a live run when it was left to do the arithmetic.
+7. **Every tracked ticker**, held or watched-only, one line each: current price, and either "Never analysed" or the date and price of the last analysis, the percentage moved since, and what that analysis said. Since 2026-09-08 nothing is analysed on a schedule — this is the only ambient signal telling the agent a name has gone stale and might be worth a fresh $0.05 look, or that a name has never been looked at at all.
+8. **Its own track record**: closed trades, how many were profitable, the net result, the average holding period, and the last six individually with what the analyst had said at entry. Once it has bought on a Hold signal twice, it is told how that worked out specifically — that being the pattern it actually falls into.
+9. **How long an analysis takes**, from its own recent runs, and what is being analysed right now with how long it has been running. It cannot plan a wakeup around research it ordered without both.
+10. **Its recent wakeups**, and whether each led to an action. Feedback rather than a limit: waking costs nothing, so pricing it would be an invented cost, and whether the agent learns to space them is a result worth having.
+11. **What it asked to read**, when the previous turn asked for an analysis. Placed with the refusals, because both are replies to something the agent said rather than new facts about the world.
+12. **What the rules noticed since the last pass** — the watchdog's own alerts, bounded by the previous pass rather than by a count, and which tracked tickers report earnings soon. Facts, with nothing done about them.
+13. **What its own orders did, earlier in this same pass** — the fill and what is resting under it, the analysis it commissioned and what that analysis concluded, the untrack, the refusal. Same placement and the same reason.
+14. **The rules** (below), then the JSON shape to answer in.
+
+### Telling the agent when a note was answered
+
+A `note` order (see the rules) reaches the people who maintain this app, and "nothing acts on it automatically" — that was only ever true in one direction. If a maintainer builds what a note asked for, the agent had no way to learn its note had been read, and would keep asking or keep working around a restriction that no longer exists.
+
+`backend/agent_changes.json` is a git-tracked list of `{"date", "message"}` entries, edited by hand and committed in the same change that needs one — `agent.describe_recent_changes` shows entries from the last three days in the prompt. Edit it at the same time as the JOURNEY.md entry the change also needs — JOURNEY.md is prose for a person and mixes in changes that have nothing to do with the agent's own tools; this is the one-line version aimed at the agent, for the ones that do. Not every JOURNEY.md entry needs one: a docs reshuffle or a GPU benchmark has nothing for the agent to act on.
+
+A git-tracked file rather than a database row on purpose: this project has reset its own database more than once (see "Since 2026-09-01..." above), and an announcement should survive that the same way JOURNEY.md does.
+
+**Shown for a number of passes rather than a number of days (2026-09-12), and it is a correction rather than an announcement.** Three things were wrong with the old shape at once, and together they put roughly **1,600 tokens of changelog** in front of the agent before it saw a price:
+
+- **Days were wildly uneven.** The agent picks its own cadence and ran between 3 and 11 passes a day over a measured week, so one note was read about 25 times if it landed on a busy Tuesday and twice if it landed before a quiet weekend — or never, if the agent slept through the window. `_CHANGE_NOTES_PASSES` is 3 and the count lives in `BotSetting`. **This is not "until acknowledged"**, which was considered and rejected: that needed a judgement about whether the agent had understood, and a counter judges nothing.
+- **There was no cap.** Seven notes landed on 2026-09-10 alone. `_CHANGE_NOTES_SHOWN` is 5, and **the pool is capped before the seen-filter, never after** — filtering first would rotate, surfacing the batch behind the newest as each one expired, and the agent would work through every note ever written. A note that newer ones have pushed out has been superseded.
+- **The notes had drifted into commit messages**, averaging 530 characters with two at 982 and 971. `_CHANGE_NOTE_MAX_CHARS` is 240, the renderer truncates as a backstop, and a test keeps the file itself inside the budget so it never fires.
+
+**Write what is no longer true, not how it works now.** The agent has no memory between passes: it reads the current rules fresh every time, so a note explaining the new rule repeats the rules it sits beside. What the rules cannot explain is the agent's *own history* — the decisions, wakeups and track record lower in the same prompt were produced under the older rules. JOURNEY.md holds the long version. Same-day notes are collapsed under one date.
+
+`mark_changes_seen` is called **once per pass**, from `run_once` after the first answer — a pass builds several prompts, and counting those would expire a note inside the very pass that first showed it.
+
+**A new entry also wakes the agent, on the restart that ships it**, rather than waiting for whatever time the agent last chose for itself — which can be up to four days out. `backend/tasks/scheduler.py`'s `wake_agent_for_new_changes()` runs once at startup, after the agent's normal wakeup alarm has been restored, and pulls that alarm forward the same way an intraday trigger or the agent's own "research now" already does. It compares how many entries are in the file against how many this container has already announced (a count, stored in `BotSetting`, not a date — two entries can share a date across two same-day deploys, and a date comparison alone would call the second one "nothing new"). Scheduled through quiv and never awaited, so a slow decision pass can never hold up the app coming up.
+
+### The rules, verbatim
+
+**The rules live in two places since 2026-09-10, split by whether they quote a number from the pass.** The fixed ones are in `SYSTEM_PROMPT`, sent once per call and never rebuilt. The ones carrying a figure — the cash limit, the watchlist cap, the trade horizon, the conviction floor, the research price — stay in the user message beside the numbers they name. `_FIXED_RULES` holds the first set; `build_prompt` assembles the second.
+
+The system message opens:
+
+> You are a disciplined portfolio manager. You answer with JSON only — no prose outside it. You never spend more cash than you have and never sell shares you do not hold.
+>
+> The rules below never change. The message that follows carries this pass's own figures — the clock, your cash, your holdings, the analyst signals — and the few rules that quote a number from them.
+
+Then the thirteen fixed rules. The list below is all of them plus the dynamic ones, in the order the model reads them; a rule marked **(pass)** is the kind that carries a figure and therefore sits in the user message.
+
+The opener above it, from `build_prompt`:
+
+> You manage a small account of real money. Decide what to do with it now, if anything.
+
+The rules block:
+
+- The buys you place must cost `$X` or less in total, added up across every buy. Not each — in total.
+- Orders execute in the order you list them, so a sell frees its cash for a buy listed after it. To buy something you cannot currently afford, sell something first and put that sell earlier in the list.
+- You may only sell shares you hold. No shorting, no options. Whole shares only.
+- What the analysts' decisions mean: Buy means they expect it to rise. Sell means they expect it to fall, so exit it if you hold it. Hold means no action is recommended — if you do not own it, a Hold is not a reason to buy it.
+- Some signals carry how good the analyst thought the bet was. [...] Signals without these numbers are not worse bets, only ones where the analyst did not say.
+- You can also move the stop and take-profit on something you already hold, without buying or selling any of it. Use side `adjust` [...]
+- You can sell any position at any time, for your own reasons. You do not have to wait for a stop or a target to be reached, and you do not need an analyst to say Sell first. [...] A resting stop is a floor under a position, not a reason to leave it alone.
+- Nothing is analysed automatically, holdings included. Use side `research` [...] to have something looked at, new or already tracked — **it runs inside this pass**: you wait while it runs, and are then shown what it decided and the analyst's own reasoning, with a chance to act on it before you finish. There is no daily count on how many you may commission, only cash.
+- **Nothing is ever analysed unless you ask for it and pay for it.** Rules watch your tracked tickers for a sharp move, a volume spike, a stop or target being reached, and for earnings coming up. What they see is reported to you above and nothing else happens [...] selling into it is often the better answer: an analysis takes the time stated above, and the price will have moved again by the time it lands.
+- **The market is closed right now, so a buy or a sell you place will not execute.** [...] **Moving a stop or a target with `adjust` does work**, because that rests at the broker rather than trading now. *(pass — appears only when the session is shut.)*
+- **A signal line is a verdict, not the case for it.** The reasoning behind it is on record and reading it costs nothing [...] **Read one before you act on it.**
+- To read one, use side `read` with a ticker, and a `date` [...]
+- You may read up to `N` analyses before deciding, and ask again after reading up to `M` times [...] **Read what you need**: this is the one place spending is encouraged, because a decision made on a verdict alone is the thing this is trying to avoid. Reading is not acting, though: a pass that only read is an idle pass, and the budget runs out.
+- **A Hold is the decision that says least**, and the one most worth reading. [...]
+
+**The stance on reading changed on 2026-09-10, from sparing to expected.** The first wording said to read "when the reasoning would change what you do, not out of habit", which is advice to hesitate over something free. The costs are asymmetric: reading too often spends a turn, reading too rarely means acting on a single word. A live pass spent a long stretch reasoning about what one Hold might have meant, which is exactly what a read answers.
+- You may track at most `N` tickers. To stop watching one, use side `untrack` [...]
+- Untracking frees a slot the same way a sell frees cash, and in the same order: to research something when the list is full, list the untrack first and the research after it.
+- You cannot untrack something you hold. Sell it first [...]
+- If something is stopping you deciding well — a number you cannot see, a tool you do not have, a rule that contradicts another — say so with side `note`. It reaches the people who maintain you. Nothing acts on it automatically, so it is a message and not a request.
+- A note is never a substitute for a decision. [...]
+- Doing nothing is a valid answer, and often the right one.
+- You decide when you are next asked, and nothing else does. `next_wakeup` takes an ISO datetime — `"2026-09-11T09:00"` is Eastern, a trailing Z or an offset is read as given. Minimum 5 minutes, maximum 4 days. **The other forms still parse** (minutes, `"2h"`, `"14:30"`, `"3:58 PM ET"`) and are kept as a fallback: dropping a usable answer costs a whole pass. One instructed format is what stopped the agent converting 9 AM into "1021 minutes" by hand. Any hour is allowed, including before the open, after the close and at the weekend — research works then, orders do not.
+- If you name no time, you are next asked at the following open. That is a fallback, not a plan.
+- The thesis behind a trade usually runs about `N` days [...]
+- Before answering, add up what your buys cost and check it against your cash.
+
+Two more appear only in the state that produces them, which is why they are easy to miss when reading the code:
+
+- **When the balance is zero or negative**, the budget rule is replaced by "You have no money to spend. The balance is `$X`." rather than quoting a negative figure as a spending limit.
+- **When a conviction floor is set** (it defaults to off): "You may only open a new position on a signal that meets the conviction floor [...] Selling is never blocked this way."
+
+Three of those exist because of a specific failure and should not be trimmed as padding: the total-not-each wording, the sell-to-fund ordering, and the explanation of what a Hold means. Each was added after the model got that exact thing wrong on a live run.
+
+### What Python enforces, regardless of what the model says
+
+The division is deliberate and load-bearing: **the model decides what and how much; Python refuses what cannot be executed as stated, and never resizes.** Resizing would quietly turn its decision into a different one, and then the record would be of a strategy nobody chose.
+
+- **Orders are screened against a running book, not the opening one.** Three buys that are each affordable alone are not necessarily affordable together.
+- **An unaffordable order is dropped, not shrunk.**
+- **Sells cannot exceed holdings** — and since the margin account will short where a cash account refuses, that is now enforced in `sandbox_broker` too rather than inherited from the account type.
+- **Exit levels that would execute on placement are refused**: a stop at or above the price, a target at or below it.
+- **A held ticker cannot be untracked.** Since 2026-09-08 nothing is analysed automatically at all, holdings included — untracking a position would take away the only way left to ever research it again. Sell it first.
+- **The watchlist is screened against a running copy too**, for the same reason as cash: an untrack listed before a research frees a slot for it, and two researches cannot share one freed slot. This only matters for a genuinely new ticker — re-researching one already tracked does not touch the count.
+- **A ticker already tracked may be re-researched as often as the agent will pay for it, same day included.** Before 2026-09-08 this was refused outright, on the assumption that a daily sweep covered every tracked ticker for free. There is no such sweep now, so refusing a fresh look at something already tracked would mean it could never be re-analysed at all. A once-a-day guard (`has_signal_today`) briefly stood in its place and was removed the same day: an analysis finishes in about twenty minutes, and a price nearing its stop or target is exactly the case where a second look the same day is the right call. Cash is what bounds it now. `has_signal_today` still gates the watchdog's own automatic move-triggered re-analysis — a different question, the system deciding whether to auto-trigger rather than the agent deciding whether to ask. See the 2026-09-08 entries in JOURNEY.md.
+- **A closed market refuses the order, never the pass.** Until 2026-09-10 `run_once` returned before the model was asked whenever the session was shut, which made the prompt's standing invitation to wake early and commission the open's research quietly untrue. The venue's refusal is about orders; research, moving a stop, untracking, leaving a note and choosing the next wakeup all work at any hour. `market_clock.describe()` is the first line of every prompt and says which it is, and an order sent anyway comes back as a broker failure that the next prompt shows. **Do not add a timing gate here again** — the two gates in `run_once` are the sandbox boundary and the on/off switch, and neither is about the clock.
+- **Nothing but the agent commissions an analysis (2026-09-12).** A sharp move and a volume spike used to nominate a ticker for one, and the pre-market earnings check did the same. Both decided what the agent should study, and both were billed to the agent's research budget — **every analysis charges, whoever ordered it**, which is what made this a real cost and not just a philosophical one: ten charges on the live book that the agent never asked for. `watchdog.scan_for_alerts` returns alerts only, `AlertCandidate` has no `trigger_analysis`, `earnings_due` replaces `earnings_tickers_to_analyze`, `_run_triggered_analyses` is deleted rather than left dormant, and `db.has_signal_today` went with its last caller. **Do not add a path that analyses something the agent did not order.**
+- **Triggered wakes are not gated on market hours.** The gate existed because a move worth *analysing* at midday is worth nothing by morning; nothing analyses now. The earnings check runs pre-market and under that gate could never have woken anyone.
+- **"What you just did" and "What was noticed" sit above the signal table, and that placement was measured.** They were between the two tables, at 42% and 47% of the prompt, and four probe runs against the live book referenced neither — the model read the clock, the account and the tables and skimmed the prose between them. Moved above the tables, the next four runs quoted the alert figures verbatim: `$37.38`, `40.34` and `7.9%` appear nowhere else in the prompt. **Probe the prompt by reading the reasoning, not by assuming a section is read because it renders.**
+- **Alerts are bounded by the previous pass, not by a count.** The first version took the newest eight whatever their age, so a Saturday pass was shown Thursday's moves under a heading saying "noticed". With no previous pass, 24 hours is the fallback.
+- **A pass is a loop: act, see what happened, be asked again (2026-09-12).** `run_once` rebuilds the book, the prices and the signals on every turn, because a buy changed the cash and a research order put a new analysis in the table the next turn has to see. It ends when an answer does nothing — which is also what "no orders, wake me later" looks like — or at `_MAX_ACT_TURNS` (3). The read allowance is **one dict shared across those turns**, so six reads a pass cannot become eighteen.
+- **An answer repeating the previous turn's orders ends the pass.** Acting is not reading: executing a repeat would buy twice, and screening only catches the second buy once the cash has run out, which is far too late. The prompt also says what has already been done and not to place it again; the guard is what makes that safe rather than hopeful.
+- **Research runs inside the pass, and the scheduler supplies the bridge.** `run_once` is synchronous on a worker thread; an analysis is async work owned by the main loop. `scheduler._research_for_agent` is installed on the agent by `register_jobs` and blocks on `run_coroutine_threadsafe`, which keeps `agent.py` synchronous and free of a scheduler import. **The cost is that `_pass_lock` is held for the whole analysis**, about sixteen minutes, and that is deliberate — see the 2026-09-12 entry in JOURNEY.md.
+- **Never ask the agent again from inside a pass.** That was the old shape and it never once worked: the pass dispatched its research, then called `_maybe_run_agent` while still holding `_pass_lock`, whose first line is `if _pass_lock.locked(): return`. Seventeen analyses across two days produced no pass at all. The prompt had promised "you are asked again automatically", which made it a lie the agent planned around.
+- **A failed analysis is retried, reported as failed, and never charged twice (2026-09-13).** Until then a failure inside the pass was told to the agent as "It has finished", beside the older analysis. `analysis.failure_kind` sorts a failure four ways: the model service not answering (a doubling wait from 30 seconds, capped at ten minutes a step and one hour in total, asking the endpoint whether it answers before running again), the service refusing access (401, 402, 403 — Cerebras' 402 when its credits ran out would not clear in an hour, so it is reported at once), the day's stated request limit (reported at once), and an error in this app (retried once). **Recording is retried on its own**, because the charge lands between the model work and the record, and running the analysis again would charge twice. **The retry loop awaits `_one_attempt`, not `propagate_ticker`**, so `test_analyses_are_dispatched_together` does not read one ticker's retries as the loop-over-tickers bug — do not inline it. **The hour is a bound on the pass, not a ration**: the pass holds `_pass_lock` for the whole wait.
+- **A read earns one follow-up turn, and it is the same one a refusal uses.** `read` never reaches `screen` — it moves no cash, no shares and no watchlist slot — so it is split out in `_decide` before screening, because it changes the control flow rather than the book. A second read in the same pass is dropped rather than answered: silently granting a third turn is how "let me look at one more thing" becomes the whole pass. The refusals from a pass that read still stand and still reach the next prompt.
+- **A read resolves by ticker and an optional date, and sorts locally.** `db.get_recent_signals` orders by `signal_date` alone by default, which is a calendar date, so two analyses of one ticker on one day come back in row order — asking for INTC's 2026-09-08 analysis returned the 19:06 one over the 19:18 one. `analysis_reader` sorts by date, then `created_at`, then id, using `signals.newest_first` — one copy of that key, shared with the research page, which had the same fault for the same reason. **Do not change the query's default ordering: every other caller reads it.**
+- **Sorting after the fetch is not enough when a LIMIT is involved**, which is the one case that needs the query. A day here holds up to eleven analyses, so a limit landing inside a day keeps whichever rows the table offers first — the day's *oldest* — and the newest are never fetched at all, so no later sort can recover them. Measured on the live book 2026-09-11: `limit=10` returned 2026-09-10's four oldest and dropped its seven newest. `get_recent_signals` therefore takes an opt-in `by_time=True` that adds `created_at` and `id` to the ORDER BY. Opt-in, not the default, for the reason above.
+- **`Signal.created_at` is when the analysis *started*, for every row.** It meant the finish on rows written by `record_signal` and the start on rows recovered from `trace_id`, about sixteen minutes apart, until 2026-09-11. The start won because it is the instant actually observed — `trace_id` encodes it — where a finish has to be computed. `propagate_ticker` puts it in `final_state["started_at"]` and `record_signal` passes it down; `backend/scripts/backfill_signal_timestamps.py` resets every row that carries a trace_id and is safe to re-run. See the 2026-09-11 entry in JOURNEY.md.
+- **A refused order is fed back once** and the model asked again, which is how it learns it may sell to fund a buy, and untrack to fund a research. The advice in that retry is matched to the refusal — cash advice does not help a full watchlist, and the first live probe produced exactly that mistake.
+- **The clock knows the NYSE calendar, and it is computed rather than listed.** `market_clock.describe()` had no holidays at all, so on Labor Day 2026-09-07 it read "the market closes in 5h 28m, at 4:00 PM" and the agent placed five orders across three passes that the venue refused — **five of the six market-closed refusals in the whole record are that one day**, and the sixth is a Saturday. `market_holidays()` derives all ten closures from the published rules (including Good Friday from Easter, and the Saturday-to-Friday / Sunday-to-Monday observance), `early_closes()` covers the three half-days, and `next_open()` skips both. **No dependency and no table**: a table is a copy of the rules that goes stale the year nobody updates it. The line now names the reason and the reopen, and the model's reasoning restates it — *"The market is closed until Monday, 14 September 2026 at 9:30 AM ET."*
+- **A closed session stops a buy and a sell; `adjust` still works, and that was checked rather than assumed.** The clock line was never enough on its own — three probe runs wrote "the market is closed" and placed an order in the same breath, and one stated the belief behind it: *"any buys/sells placed now will not execute until market open"*, which is a fair guess and wrong, because this broker refuses rather than queues. The rule now sits beside the order rules and only when `watchdog.is_us_market_hours()` is false.
+
+  **The `adjust` exemption is the load-bearing part.** An earlier wording had the broker refusing "a buy, a sell or an adjust" and the record contradicts it: on Labor Day run 15 adjusted two exits at 09:31 while runs 16, 17 and 18 had five buys and sells refused over the next six hours. **No adjust has ever been refused** in nine broker failures. An exit rests rather than trading now, so there is nothing to reject — and it is the one useful thing left to do with a position going into a long weekend. Do not re-broaden it.
+
+  **The behavioural claim is unproven and should not be repeated as fact.** Seven probe samples with the rule placed no buys or sells — but the baseline placed none either, and across every baseline run it is 2 of 11. What the probe does show is that the correction is *read*: six of seven restate it, one as *"Orders will not execute, except for `adjust` (stop/target)."* The measurement that matters is whether the live book's closed-market failures, six of nine to date, stop growing.
+- **`is_us_market_hours()` knows holidays and half-days.** It answered True all afternoon on Labor Day, and its five callers all mean "is the session genuinely open" — one refuses a reset needing a market order, one queues an exit-arm, one takes a live quote instead of the last close. Each was wrong in the same direction that day. The calendar lives in `backend/services/market_calendar.py`, which **imports nothing from this project on purpose**: `market_clock` already imports `watchdog`, so a calendar inside either one puts a cycle between them.
+- **The parser reads orders the model put beside `orders`, and repairs two malformations.** Five decisions were dropped silently across 52 stored answers — two notes and three research orders — and it surfaced only because the agent's own note mentioned research that never ran. The model sometimes answers `{"research": [...]}` or `{"note": "..."}` with no `orders` key, and run 44 closed a string with an apostrophe (`…the thesis'`) so the whole answer parsed to nothing. **Only `research` and `note` are salvaged**: a bare `"sell": "AVGO"` does not say how many shares, and guessing places a trade nobody chose. Only repairs that cannot change a meaning are applied, and anything else stays a clean loss.
+- **A `note` is accepted before any check that could refuse it**, so an account with no cash left can still leave one. It moves no cash, no shares and no watchlist slot, and **it does not count as acting** — a pass that only left a note is still an idle pass. Without that, "I need better data" stands in for the decision the agent owed.
+- **Broker failures are stored, not just counted**, and the last five from the last three passes appear in the next prompt. `refusals` and `failures` are separate columns on purpose: a refusal says the agent's arithmetic was wrong, a failure says it formed the order correctly and the world would not take it. Those are different facts and it needs the difference.
+
+### How a position is opened and protected
+
+A buy goes out as a **bracket**: a `MASTER` entry with `STOP_PROFIT` and `STOP_LOSS` legs, one submission, one shared combo id. The broker activates the exits when the entry fills, so the shares are never held with nothing under them. The entry is a marketable limit rather than a market order because Webull refuses a `MARKET` master — and the limit caps slippage, which matters on an app-enforced budget.
+
+When the stated stop is unusable, one is derived from 2×ATR(14) at the moment of purchase. When a combo is refused — which happens routinely, because a cash account will not accept one against unsettled funds — it falls back to a market order plus separately-armed exits.
+
+### Probe the prompt: send it to the model and read the reasoning
+
+**A prompt change is a hypothesis until the model's own reasoning confirms it.** `python -m backend.scripts.probe_prompt --turn turn1 [--parallel]` builds the real prompt from the database and calls the model out of the app — it never reaches `run_once`, `screen` or any broker path. `.claude/skills/probe-the-prompt/SKILL.md` says how to read what comes back.
+
+**Every prompt bug in this project was found this way, and none was visible in the code, the tests, or the rendered prompt:**
+
+| What looked fine | What the reasoning showed |
+|---|---|
+| The sharp-move rule | Applied to a ticker nothing was watching |
+| "What was noticed" | Not one of four runs referenced it |
+| A research result handed back | Cited as "the analyst", never as its own spend |
+| The change-note section | 1,600 tokens, quoted by nobody |
+
+The last three were **correct code producing correct output**. Tests passed, the sections rendered, and the model read past them.
+
+Three findings worth carrying forward, because each cost a round of probing:
+
+- **Tables get read; prose between tables gets skimmed.** Two sections at 42% and 47% of the prompt went untouched by four runs. Above the tables, the next runs quoted them — `$37.38` and `40.34` appear nowhere else in the prompt, which is what makes that hard evidence rather than an impression.
+- **Put a fact where it is already read rather than repeating it.** A research result appeared twice, as a signals-table row and as a prose block, and the model reconciled the copies and kept the table — calling it "the analyst". It was not ignoring the prose; it was picking the canonical copy. Marking the row fixed it (0 to 4 of 7 claiming it as their own); adding emphasis to the prose had not.
+- **Do not grep the reasoning for the words you wrote.** The model paraphrases, and a keyword scan reported "not used" for a run that had quoted the section verbatim. Find a number that appears in only one section, or read it.
+
+**`agent._invoke` prepends `SYSTEM_PROMPT` itself**, so a probe that hands it system+user concatenated sends the system prompt twice. The script sends them as the two messages they are.
+
+### Before changing the prompt
+
+Add the entry to **[JOURNEY.md](../../JOURNEY.md)** first, with the date and the reason. A month of runs across an undocumented prompt revision cannot be analysed, and the temptation to reconstruct the reasoning afterwards produces a story about what we would like to have been thinking.
+
+**Then re-check "The rules, verbatim" above in the same edit.** That section quotes the prompt, and a quotation is stale the moment the original moves. By 2026-09-10 it had drifted three ways at once: it quoted a system message that still said "paper-trading" when the code had dropped the word a day earlier, it was missing the sell-any-time rule entirely, and it was missing the rule about a sharply-moving stock being analysed unasked. **A wrong quotation here is worse than no quotation**, because this file is what gets read instead of the code.

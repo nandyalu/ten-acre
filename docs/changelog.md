@@ -8,6 +8,9 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-13
 
+- **Docs** — `CLAUDE.md` is 12 KB, down from 103 KB. Claude Code loads it in full into every session, and every step of a session reads it again. The notes for one area of the code moved to path-scoped rules in `.claude/rules/`, which load only when Claude reads a matching file. The quoted prompt moved to `.claude/rules/agent.md`, and its test reads it there. The moved notes no longer name the files that commit `99dc4f9` deleted on 2026-09-01: `broker.py`, `fix_import_dates.py`, `scrub_implausible_levels.py` and `clear_wrong_side_levels.py`.
+- **Setup** — Two hooks and two skills cut Claude Code token use. A `PreToolUse` hook refuses a foreground wait loop, and the `wait-in-background` skill gives the recipes to use in its place. A `UserPromptSubmit` hook reports a session above 150k tokens, and the `handoff` skill writes a note so a new session can continue after `/clear`.
+
 - **Docs** — A study of running the whole experiment on Google's free Gemini tier, with no local GPU. Not built: it measures whether the limits fit and lists what the app would need first.
 - **Infrastructure** — The LLM throttle reaches Gemini. It wrapped only `client.create`, which Gemini's client does not have, so a Gemini deployment had no throttle at all. It also reads the wait from Gemini's error body, because Gemini sends no `retry-after` header.
 - **Setup** — `compose.example.yaml`, `.env.example` and the deploy docs list `TRADINGAGENTS_GOOGLE_THINKING_LEVEL`, `LLM_REQUESTS_PER_MINUTE`, `LLM_TOKENS_PER_MINUTE`, `LLM_REQUESTS_PER_DAY` and `LLM_DAY_TIMEZONE`. Each is unset by default, and unset costs nothing.

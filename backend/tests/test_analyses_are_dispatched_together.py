@@ -6,7 +6,7 @@ GPU: one LLM request is in flight at a time no matter how many backends the
 pool has, so every extra card idles. On this hardware that is the difference
 between about 43 minutes and about seven hours for fourteen tickers.
 
-CLAUDE.md records that this exact bug shipped in the daily sweep, the watchdog
+.claude/rules/gpu-pool.md records that this bug shipped in the daily sweep, the watchdog
 triggers, and the earnings check — three separate times, by people who knew
 about it. It is invisible in a diff and produces no error, only a slow day.
 

@@ -20,7 +20,11 @@ import re
 
 from backend.services import agent
 
-CLAUDE_MD = (pathlib.Path(__file__).resolve().parents[2] / "CLAUDE.md").read_text()
+# The quotation moved from CLAUDE.md to .claude/rules/agent.md on 2026-09-13, so
+# a session loads it only when it reads the agent's code. Both files are read,
+# so a quotation may live in either one.
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
+CLAUDE_MD = "\n".join((_ROOT / p).read_text() for p in ("CLAUDE.md", ".claude/rules/agent.md"))
 # Strip the blockquote markers before flattening. The quotations are wrapped
 # markdown blockquotes, so "> " sits at the start of every continuation line
 # and a naive whitespace collapse leaves it mid-sentence. Without this the
@@ -42,7 +46,7 @@ def test_the_quoted_system_message_is_the_real_one():
     assert _flat(identity) in FLAT, (
         "CLAUDE.md's quoted system message no longer matches the code.\n\n"
         f"The code says:\n  {_flat(identity)}\n\n"
-        "Update the quotation under 'The rules, verbatim'. It drifted on "
+        "Update the quotation under 'The rules, verbatim' in .claude/rules/agent.md. It drifted on "
         "2026-09-09 when the prompt stopped calling the account paper-trading, "
         "and stayed wrong for a day."
     )
@@ -63,7 +67,7 @@ def test_the_quoted_opener_is_the_real_one():
     assert _flat(match.group(1)) in FLAT, (
         "CLAUDE.md's quoted opener no longer matches the code.\n\n"
         f"The code says:\n  {_flat(match.group(1))}\n\n"
-        "Update the quotation under 'The rules, verbatim'."
+        "Update the quotation under 'The rules, verbatim' in .claude/rules/agent.md."
     )
 
 

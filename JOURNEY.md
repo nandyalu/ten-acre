@@ -39,7 +39,7 @@ That splits into three tests. Any one of them is enough:
 
 Everything else is a changelog entry: setup, deployment, guards, infrastructure, site copy, docs, dependencies. Those matter, and they are not this.
 
-**Keep an entry to a sentence or two — what changed, and why.** Long-form reasoning that constrains a future edit belongs in `CLAUDE.md`, which is read before the code is changed. This file answers "when did the question change", and it can only do that if it stays readable end to end.
+**Keep an entry to a sentence or two — what changed, and why.** Long-form reasoning that constrains a future edit belongs in `CLAUDE.md`, or in the `.claude/rules/` file for that area. Those are read before the code is changed. This file answers "when did the question change", and it can only do that if it stays readable end to end.
 
 Entries before 2026-09-11 were swept under these rules; anything that failed all three tests moved to the changelog.
 
@@ -47,7 +47,7 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 **This file covers one agent: the merged agent that has run since 2026-09-01.** Before that date, two deployments ran side by side — a live bot on a fixed watchlist, and a separate analyst experiment that chose its own tickers. Both ended on 2026-09-01. Their history lives in [the two-book experiment](https://github.com/nandyalu/ten-acre/blob/main/docs/two-book-experiment.md) and [the analyst experiment](https://github.com/nandyalu/ten-acre/blob/main/docs/analyst-experiment.md).
 
-`CLAUDE.md` describes what the rules are. This describes how they got that way. Add an entry here **before** changing a rule, not after.
+`CLAUDE.md` and `.claude/rules/agent.md` describe what the rules are. This describes how they got that way. Add an entry here **before** changing a rule, not after.
 
 Newest first.
 
