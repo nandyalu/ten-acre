@@ -142,7 +142,7 @@ One of them read plenty and still made up every price, from different years in d
 
 **Set `TRADINGAGENTS_MAX_CONCURRENT_ANALYSES` to your number of GPUs, and not more.**
 
-One analysis is internally sequential — the analysts run in turn, then the debate, then the trader — so it never has more than one request in flight and occupies exactly one card. N concurrent analyses is what fills N cards.
+One analysis runs its four analysts at the same time, then the debate and the trader in turn. So it uses up to four cards for about three minutes, and one card for the rest. N concurrent analyses is what fills N cards. The Ollama proxy queues a request when every card is busy, so the short burst of analyst requests waits and does not fail.
 
 Measured on this hardware: fourteen at once and seven at once take **the same total wall clock**, and fourteen doubles the latency of each. The CPU saturates before the GPUs do, because this model family keeps its per-layer embeddings in host RAM. More concurrency past your card count buys nothing.
 

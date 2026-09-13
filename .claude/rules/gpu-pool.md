@@ -18,7 +18,9 @@ paths:
   **Every pool container bind-mounts the same host directory** at `/root/.ollama/models` (`/opt/stacks/ollama-gpus/ollama/models`), so a model pulled or built through any one of them is immediately visible to all. There is no per-backend model state to keep in sync, and adding a card needs no model work at all.
 - `ollama-proxy` (image `ollama-proxy:local`) replaced nginx. It is a small FastAPI app: least-active-connections routing, `CONCURRENCY_PER_BACKEND=1`, `WAIT_TIMEOUT=600` (queues rather than 503s), and a `/healthz` endpoint reporting per-backend health and active count. Still on host port 11435.
 
-**One analysis occupies exactly one GPU.** TradingAgents' graph is internally sequential — analysts run one after another, then the debate, then the trader — so a single `propagate()` never has more than one LLM request in flight. Extra GPUs are only used by running *several analyses at once*.
+**One analysis uses up to four GPUs, for about three minutes (since 2026-09-13).** The four analysts run at the same time, each with its own request in flight. The Bull/Bear debate, the trader and the risk debate then run in turn, one request at a time. Most of the extra GPU use still comes from running *several analyses at once*.
+
+Measured 2026-09-13, outside the app: one NVDA analysis alone took 10.4 to 11.8 min, against 16.2 min for the old sequential graph, with the analyst stage at 3.0 to 3.4 min against 8.6. Four analyses started together all finished in 14.9 min, with 7 cards busy and the host CPU at 97% mean. **The CPU limits the analyst stage**, for the same reason as the table below. The table was measured before this change and has not been measured again.
 
 That is about concurrency, not stickiness. **An earlier note here said the proxy scatters one analysis's ~20 calls across whichever backends are idle. That is no longer true**: the proxy polls each backend's `/api/ps` and prefers a free backend that already holds the requested model warm, so a *sequential* run stays on one card. Concurrent runs still spread, which is the intent.
 
@@ -48,7 +50,7 @@ So `TRADINGAGENTS_MAX_CONCURRENT_ANALYSES=7`, and `_MAX_WATCHLIST = 30` on the 3
 
 **A card holds one model at a time.** Loading `gemma4-e4b-qat-128k` on a backend already holding `gemma4-e2b-96k` evicts the smaller model, even though 1.9 GiB and 3.7 GiB would both fit in the 8 GiB. So two deployments running different models will occasionally reload one on a card the other just used. The warm-model preference keeps a sequential run on its own card, so this only bites at wave boundaries, and it costs one load — 6 to 40 seconds against a 7-to-17-minute analysis. Not worth engineering around.
 
-Every multi-ticker caller must go through `analysis.run_analyses()`, which dispatches with `asyncio.gather` and lets the shared semaphore do the bounding. A `for ticker in …: await run_analysis_and_notify(ticker)` loop looks correct and silently pins the whole sweep to one GPU — that bug shipped in the daily sweep, the watchdog triggers, and the earnings check.
+Every multi-ticker caller must go through `analysis.run_analyses()`, which dispatches with `asyncio.gather` and lets the shared semaphore do the bounding. A `for ticker in …: await run_analysis_and_notify(ticker)` loop looks correct and silently runs the whole sweep one analysis at a time — that bug shipped in the daily sweep, the watchdog triggers, and the earnings check.
 
 To check which backends served a run: `docker logs --since 24h ollama-pool-a | grep "starting runner"` (an idle backend has no recent entries), or `curl localhost:11435/healthz`.
 

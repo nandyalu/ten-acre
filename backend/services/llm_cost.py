@@ -35,8 +35,9 @@ VENDOR_PRICES: dict[str, tuple[float, float]] = {
     "gemini-3.7-flash": (0.75, 3.75),
 }
 
-# What a local analysis draws. One analysis occupies exactly one GPU — the
-# graph is internally sequential — so wall-clock seconds are GPU-seconds.
+# What one busy card draws. The estimate charges wall-clock seconds at one
+# card's draw. Since 2026-09-13 the four analysts run at the same time on up to
+# four cards, so the estimate is low for that stage of about three minutes.
 GPU_WATTS = 100.0
 ELECTRICITY_USD_PER_KWH = 0.22
 

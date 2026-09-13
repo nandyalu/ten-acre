@@ -954,8 +954,8 @@ async def run_analyses(
 
     Concurrency is bounded by ``_analysis_semaphore`` inside propagate_ticker,
     not by the caller — which is the whole point. A caller that awaits each
-    ticker in a loop keeps exactly one LLM request in flight no matter how many
-    backends the Ollama pool has, so every extra GPU sits idle. Dispatching
+    ticker in a loop keeps exactly one analysis in flight no matter how many
+    backends the Ollama pool has, so most extra GPUs sit idle. Dispatching
     them together lets the semaphore admit as many as
     TRADINGAGENTS_MAX_CONCURRENT_ANALYSES allows.
 

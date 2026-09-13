@@ -38,7 +38,7 @@
 ## Rules that apply to every change
 
 - **Nothing but the agent commissions an analysis.** Do not add a path that analyses something the agent did not order. Every analysis charges the agent's research budget.
-- **Every multi-ticker caller goes through `analysis.run_analyses()`.** A `for` loop that awaits `run_analysis_and_notify` looks correct and pins the whole batch to one GPU.
+- **Every multi-ticker caller goes through `analysis.run_analyses()`.** A `for` loop that awaits `run_analysis_and_notify` looks correct and runs the whole batch one analysis at a time.
 - **Route every daily-history read through `bars.get_bars()`**, not `yf.Ticker(...).history()` or a direct Webull call.
 - **The model is never asked for a price.** `resolve_levels` computes the levels from the verified close and ATR. Never remove the deviation check in `analysis._trade_plan_levels`.
 - **A tool error goes back to the model, not only to the logs.** Every `ToolNode` sets `handle_tool_errors`.
