@@ -1,7 +1,8 @@
 {
   "statusLine": {
     "type": "command",
-    "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-statusline.cjs\""
+    "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/usage-statusline.cjs\"",
+    "refreshInterval": 60
   },
   "subagentStatusLine": {
     "type": "command",
@@ -26,6 +27,15 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" tool-savings",
             "timeout": 8000
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
+            "timeout": 5000
           }
         ]
       }
@@ -76,6 +86,11 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" stop",
             "timeout": 8000
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
+            "timeout": 5000
           }
         ]
       }

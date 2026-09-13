@@ -1,0 +1,22 @@
+{
+  "name": "claude-usage-bar",
+  "displayName": "Claude usage bar",
+  "description": "Shows the token and prompt cache figures of the newest Claude Code session in the status bar.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js"
+}
