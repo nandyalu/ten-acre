@@ -19,8 +19,8 @@ import os
 from dataclasses import dataclass, field
 
 from backend.database import db
-from backend.services import research
-from backend.services.positions import compute_position
+from backend.services import market_calendar, research
+from backend.services.positions import compute_position, get_shown_price
 
 log = logging.getLogger("trading-experiment.agent_book")
 
@@ -432,6 +432,15 @@ class EquityPoint:
     market_value: float
 
 
+def _session_has_opened(today: datetime.date, now: datetime.datetime | None = None) -> bool:
+    """True when ``today`` is a trading day and its session opened at or before ``now``."""
+    from backend.services.watchdog import _MARKET_OPEN, US_MARKET_TZ
+
+    now = now or datetime.datetime.now(US_MARKET_TZ)
+    session_open = datetime.datetime.combine(today, _MARKET_OPEN, tzinfo=US_MARKET_TZ)
+    return market_calendar.is_trading_day(today) and now >= session_open
+
+
 def equity_curve(trades=None, today: datetime.date | None = None) -> list[EquityPoint]:
     """The agent's equity, one point per trading day since its first fill.
 
@@ -463,10 +472,16 @@ def equity_curve(trades=None, today: datetime.date | None = None) -> list[Equity
         return (trade.filled_at or trade.placed_at).date()
 
     start = min(day_of(t) for t in filled)
+    # Completed sessions only. Do not pass include_today=True here: it sends
+    # one live vendor request for each ticker, at three seconds a call. On
+    # 2026-09-14 that made this page take 12 seconds. Today's point uses the
+    # price cache below.
     sessions = [
         datetime.date.fromisoformat(bar.date)
-        for bar in bars.get_bars("SPY", start, include_today=True, today=today)
+        for bar in bars.get_bars("SPY", start, today=today)
     ]
+    if _session_has_opened(today) and (not sessions or sessions[-1] < today):
+        sessions.append(today)
     if not sessions:
         return []
 
@@ -474,7 +489,7 @@ def equity_curve(trades=None, today: datetime.date | None = None) -> list[Equity
     for ticker in {t.ticker for t in filled}:
         closes[ticker] = {
             datetime.date.fromisoformat(bar.date): bar.close
-            for bar in bars.get_bars(ticker, start, include_today=True, today=today)
+            for bar in bars.get_bars(ticker, start, today=today)
         }
 
     budget = get_budget()
@@ -506,7 +521,12 @@ def equity_curve(trades=None, today: datetime.date | None = None) -> list[Equity
         for ticker, quantity in held.items():
             if quantity <= _QUANTITY_EPSILON:
                 continue
-            close = closes.get(ticker, {}).get(session) or last_close.get(ticker)
+            close = closes.get(ticker, {}).get(session)
+            if close is None and session == today:
+                # The watchdog writes this cache for every tracked ticker every
+                # fifteen minutes, and the agent cannot untrack a holding.
+                close = get_shown_price(ticker)
+            close = close or last_close.get(ticker)
             if close is None:
                 continue
             last_close[ticker] = close

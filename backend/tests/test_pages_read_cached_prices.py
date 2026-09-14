@@ -27,6 +27,7 @@ DECIDES = [
 DRAWS = [
     "backend/api/routes/agent.py",
     "backend/services/agent_performance.py",
+    "backend/services/agent_book.py",
 ]
 
 

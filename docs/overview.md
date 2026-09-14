@@ -257,6 +257,8 @@ That is what lets it cover every day the agent has traded instead of starting on
 
 A holding that printed no bar that day keeps its previous close rather than counting as nothing, so a missing quote does not draw a cliff and recover from it the next day.
 
+Today's point uses the last price the app saved, which is at most about fifteen minutes old. The page does not wait for a live quote. Before the open, the curve ends at the last completed session.
+
 ### Moving the exits as the analysis changes
 
 Every holding is re-analysed each morning, and the agent can act on what that says about a position it already owns — not only by selling it, but by moving the stop and the take-profit.

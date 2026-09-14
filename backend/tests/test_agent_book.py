@@ -346,6 +346,9 @@ def _bars(monkeypatch, closes: dict[str, dict[str, float]], sessions: list[str])
             self.date, self.close = date, close
 
     def get_bars(ticker, start, include_today=False, today=None):
+        # include_today sends a live vendor request for each ticker. The curve
+        # is a page, so it must never ask for one.
+        assert not include_today, "the curve asked the vendor for today's bar"
         if ticker == "SPY":
             return [Bar(d, 100.0) for d in sessions]
         return [Bar(d, c) for d, c in sorted(closes.get(ticker, {}).items())]
@@ -353,6 +356,7 @@ def _bars(monkeypatch, closes: dict[str, dict[str, float]], sessions: list[str])
     from backend.services import bars
 
     monkeypatch.setattr(bars, "get_bars", get_bars)
+    monkeypatch.setattr(agent_book, "_session_has_opened", lambda today: False)
 
 
 def test_the_curve_covers_every_session_not_only_the_trading_days(monkeypatch):
@@ -416,3 +420,69 @@ def test_an_unfilled_order_is_not_on_the_curve(monkeypatch):
 def test_no_fills_means_no_curve(monkeypatch):
     _bars(monkeypatch, {}, ["2026-08-13"])
     assert agent_book.equity_curve([]) == []
+
+
+def test_todays_point_uses_the_price_cache(monkeypatch):
+    """A live bar for today costs three seconds a ticker at the vendor's pace.
+    On 2026-09-14 it made /api/agent/curve take 12 seconds."""
+    _bars(monkeypatch, {"ZBH": {"2026-08-13": 100.0}}, ["2026-08-13"])
+    monkeypatch.setattr(agent_book, "_session_has_opened", lambda today: True)
+    monkeypatch.setattr(agent_book, "get_shown_price", lambda ticker: 120.0)
+    monkeypatch.setattr(agent_book, "get_budget", lambda: 1000.0)
+
+    curve = agent_book.equity_curve(
+        [_Trade("ZBH", "buy", 3, 100.0, "2026-08-13")], today=datetime.date(2026, 8, 14)
+    )
+
+    assert [p.date.isoformat() for p in curve] == ["2026-08-13", "2026-08-14"]
+    # 700 cash + 3 shares at the cached 120.
+    assert round(curve[-1].equity, 2) == 1060.0
+
+
+def test_a_holding_with_no_cached_price_today_keeps_its_last_close(monkeypatch):
+    _bars(monkeypatch, {"ZBH": {"2026-08-13": 100.0}}, ["2026-08-13"])
+    monkeypatch.setattr(agent_book, "_session_has_opened", lambda today: True)
+    monkeypatch.setattr(agent_book, "get_shown_price", lambda ticker: None)
+    monkeypatch.setattr(agent_book, "get_budget", lambda: 1000.0)
+
+    curve = agent_book.equity_curve(
+        [_Trade("ZBH", "buy", 3, 100.0, "2026-08-13")], today=datetime.date(2026, 8, 14)
+    )
+
+    assert round(curve[-1].equity, 2) == 1000.0
+
+
+def test_a_stored_bar_for_today_is_not_drawn_twice(monkeypatch):
+    """After the close, the bar cache stores today's bar, and it wins over the
+    price cache."""
+    _bars(
+        monkeypatch,
+        {"ZBH": {"2026-08-13": 100.0, "2026-08-14": 110.0}},
+        ["2026-08-13", "2026-08-14"],
+    )
+    monkeypatch.setattr(agent_book, "_session_has_opened", lambda today: True)
+    monkeypatch.setattr(agent_book, "get_shown_price", lambda ticker: 120.0)
+    monkeypatch.setattr(agent_book, "get_budget", lambda: 1000.0)
+
+    curve = agent_book.equity_curve(
+        [_Trade("ZBH", "buy", 3, 100.0, "2026-08-13")], today=datetime.date(2026, 8, 14)
+    )
+
+    assert [p.date.isoformat() for p in curve] == ["2026-08-13", "2026-08-14"]
+    assert round(curve[-1].equity, 2) == 1030.0
+
+
+@pytest.mark.parametrize(
+    "now, expected",
+    [
+        ("2026-09-14T09:29", False),  # Monday, a minute before the open
+        ("2026-09-14T09:30", True),  # Monday, at the open
+        ("2026-09-07T12:00", False),  # Labor Day
+        ("2026-09-12T12:00", False),  # Saturday
+    ],
+)
+def test_todays_session_starts_at_the_open(now, expected):
+    from zoneinfo import ZoneInfo
+
+    moment = datetime.datetime.fromisoformat(now).replace(tzinfo=ZoneInfo("America/New_York"))
+    assert agent_book._session_has_opened(moment.date(), now=moment) is expected

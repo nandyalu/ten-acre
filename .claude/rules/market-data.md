@@ -17,7 +17,7 @@ Two legitimate direct yfinance uses remain, neither of them history: `positions.
 
 Non-obvious rules the cache depends on:
 
-- **Today's bar is never stored.** It is still moving. `include_today=True` gets it via a separate live request instead.
+- **Today's bar is never stored.** It is still moving. `include_today=True` gets it via a separate live request instead. **A page must not pass it inside a loop over tickers.** Each call sends one vendor request at three seconds a call, and on 2026-09-14 a loop over four tickers made `/api/agent/curve` take 12 seconds. One ticker on a page, as in `positions.get_price_history` and the SPY baseline, costs one request. `agent_book.equity_curve` prices today from the price cache (`positions.get_shown_price`).
 - **Pass `today=` when the caller has a market-relative date.** The watchdog does: after about 8pm ET the local clock is already tomorrow, so the default would treat the just-closed session as still in progress.
 - **`_earliest_attempt` records what was asked for, not what came back.** Without it, a ticker with less history than requested refetches on every call forever.
 - **`last_completed_session` ignores holidays deliberately.** The 30-minute recheck throttle absorbs the resulting extra request.

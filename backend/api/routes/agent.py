@@ -106,9 +106,9 @@ def get_curve():
     """The agent's equity, one point per trading day since its first fill.
 
     Rebuilt from the ledger and the bar cache on each request rather than read
-    from stored snapshots — see agent_book.equity_curve for why. Cheap: a
-    completed session's close is served from the cache, so a repeat call
-    fetches nothing.
+    from stored snapshots — see agent_book.equity_curve for why. Past sessions
+    come from the bar cache and today's point from the price cache, so the page
+    does not wait for a live quote.
     """
     return [AgentEquityPointOut.model_validate(p) for p in agent_book.equity_curve()]
 
