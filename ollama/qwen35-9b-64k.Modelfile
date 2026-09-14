@@ -1,0 +1,12 @@
+# qwen3.5:9b at 64k context, fully on one 8 GiB card.
+# At 131072 with the default num_batch, 19% of the model goes to the CPU.
+# At 65536 it is 100% GPU. The largest call in 1,019 traced calls is about
+# 12k tokens, so 64k is enough.
+FROM qwen3.5:9b
+RENDERER qwen3.5
+PARSER qwen3.5
+PARAMETER num_ctx 65536
+PARAMETER temperature 1
+PARAMETER top_k 20
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 1.5

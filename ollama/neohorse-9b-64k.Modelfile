@@ -1,0 +1,13 @@
+# NeoHorse-1-9B (a fine-tune of Qwen3.5-9B) at 64k context.
+# Pull first: ollama pull hf.co/TokenRhythm/NeoHorse-1-9B-GGUF:Q4_K_M
+# The pull sets no renderer, parser or sampling. These lines copy the ones
+# from qwen3.5:9b, so the two builds differ only in their weights. The
+# sampling values are also the ones on the NeoHorse model card.
+FROM hf.co/TokenRhythm/NeoHorse-1-9B-GGUF:Q4_K_M
+RENDERER qwen3.5
+PARSER qwen3.5
+PARAMETER num_ctx 65536
+PARAMETER temperature 1
+PARAMETER top_k 20
+PARAMETER top_p 0.95
+PARAMETER presence_penalty 1.5

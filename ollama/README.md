@@ -210,6 +210,78 @@ Raising the temperature to 1 reached 4 of 4, and neither of the two runs that sc
 
 **The lesson is about the harness, not the model.** Four earlier models were rejected on the same evidence and never retested. This one was rejected, and the rejection turned out to be measuring our own defects. Any of those four may deserve another run now — the docs say not to retest them without a fix for tool calling, and there is now a fix for tool calling.
 
+## `qwen3.5:9b` and NeoHorse-1-9B: both pass, neither is switched (measured 2026-09-14)
+
+**Both models use real prices and choose from the menu. Both are too slow to replace `gemma4-e4b-qat-128k`.** NeoHorse-1-9B is TokenRhythm's fine-tune of Qwen3.5-9B for tool use, so this test compares the base model with its agent-tuned version. The fine-tune thinks about twice as long and is not more accurate here.
+
+Both builds are 64k. `qwen35-9b-64k.Modelfile` builds on `qwen3.5:9b`. `neohorse-9b-64k.Modelfile` builds on `hf.co/TokenRhythm/NeoHorse-1-9B-GGUF:Q4_K_M`. The Hugging Face pull has no renderer, no parser and no sampling, so the NeoHorse build copies all three from `qwen3.5:9b`. The two builds differ only in their weights. The sampling is also the one on the NeoHorse model card.
+
+### Fit and prefill
+
+| Model | Context | `num_batch` | Placement |
+|---|---|---|---|
+| `qwen3.5:9b` | 131,072 | default, 128, 64 | 17-19% CPU |
+| `qwen3.5:9b` | 98,304 | 128 | 11% CPU |
+| `qwen3.5:9b` | **65,536** | default | **100% GPU**, 6.3 GB |
+| NeoHorse | **65,536** | default | **100% GPU**, 6.1 GB |
+| NeoHorse | 131,072 | 64 | 100% GPU, 6.9 GB |
+
+**64k is enough for this pipeline.** The largest call in 1,019 traced calls from the live deployment is about 49,500 characters, which is about 12,000 tokens. NeoHorse fits at 128k and `qwen3.5:9b` does not, probably because the library copy also holds a vision model. Both builds use 64k so that the comparison stays fair.
+
+Prefill on one card, 6,792-token prompt: `qwen35-9b-64k` 500 tok/s, `neohorse-9b-64k` 496 tok/s. That is less than half of e4b-qat's 1,122.
+
+### Candidate menu
+
+Four runs of each model on the prompt from 2026-09-14, through the proxy, both models at the same time:
+
+| Model | Chose research | What it picked |
+|---|---|---|
+| `qwen35-9b-64k` | **4 of 4** | 1-2 names, with a reason each |
+| `neohorse-9b-64k` | **4 of 4** | 1-2 names, with a reason each |
+
+Every answer stated correctly that the market was closed. The reasons quote figures from the prompt, such as TNON's +11.9% and AAPL's +5.4%.
+
+### Full analysis
+
+Two AAPL runs of each model before the open on 2026-09-14. Each wave ran one Qwen and one NeoHorse analysis at the same time, through the proxy, with the four analysts in parallel. AAPL's last close was $332.27.
+
+| | Qwen run 1 | Qwen run 2 | NeoHorse run 1 | NeoHorse run 2 |
+|---|---|---|---|---|
+| Time, paired | 26.5 min | 23.7 min | 50.2 min | 51.3 min |
+| LLM calls | 20 | 16 | 17 | 17 |
+| Prompt tokens | 165,736 | 90,634 | 128,154 | 134,421 |
+| Completion tokens | 38,446 | 34,806 | 74,048 | 99,376 |
+| Completion share | 19% | 28% | 37% | 43% |
+| Structured-output failures | 0 | 0 | 0 | 0 |
+| Figures near the close | 10 of 11 | 7 of 8 | 8 of 9 | 12 of 16 |
+| $332.27 in the report | yes | yes | yes | yes |
+| Decision | Hold | Hold | Hold | Hold |
+
+**The prices are real in all four runs.** The exact close appears in every market report. The figure 62.84 appears in all four and is an indicator value, not a price.
+
+**The completion share does not apply to these models.** Both are thinking models, and their thinking counts as completion. NeoHorse's 43% is higher than the 34-35% that rejected `lfm2.5:8b`, but every price in its reports is real.
+
+**Qwen run 2 read less than usual.** Its 90,634 prompt tokens are below the 99-174k of a working model. They are still far above the 42-52k of the models that never fetched data, and its prices are real. Its market report is 1,743 characters, against 5,454 in run 1.
+
+**NeoHorse is slow because it writes too much.** In run 1, one risk-debate answer passed 13,000 tokens at 22 tok/s, so that one call took more than ten minutes. The builds set no output limit.
+
+### Writing takes the time, not reading
+
+The pool logs for these runs hold 83 requests:
+
+| | Tokens | Time | Speed |
+|---|---|---|---|
+| Reading the prompt | 566,811 | 19.7 min | 480 tok/s |
+| Writing the answer | 225,958 | 169.5 min | 22.2 tok/s |
+
+**Writing took 90% of the model time.** The notes above say that prefill sets the run time, because an analysis is about 86% prompt tokens. That is true of the token count, not of the time. For a thinking model, the number of tokens it writes decides the run time. This has not been measured for `gemma4-e4b-qat-128k`, which thinks less.
+
+### How this was run, and three traps
+
+- **`propagate_ticker` charges the research budget.** A test inside `trading-experiment` puts a charge in the live agent's ledger. These runs used a copy of `trading.db`, made with SQLite's backup call.
+- **The app finds its database from the location of its own code.** A symlink to `backend/` opens the repository's `data/trading.db`, because the path goes up through the real folder. The code must be a real copy beside the `data` folder.
+- **The repository's `.venv` held an old, non-editable copy of `tradingagents`.** It did not have the parallel analysts or the trawl fetcher. Put `TradingAgents/` first on `PYTHONPATH` for a run on the host, or reinstall the package.
+
 ## Sampling: use Gemma's published values
 
 `temperature 1 / top_k 64 / top_p 0.95`, for every build here. Google publishes those as the standard configuration for all use cases (<https://ollama.com/library/gemma4>), so they are not a default left alone out of caution — they are the documented setting.

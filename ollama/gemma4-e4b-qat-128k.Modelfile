@@ -27,5 +27,25 @@
 # No `num_batch` override is needed — sliding-window attention keeps both the
 # compute graph and the KV cache small, which is why the full 128k costs only
 # 0.2 GiB more than 64k.
+#
+# `num_thread 1` gives each runner one CPU thread. The default here is 4, and
+# seven runners at 4 threads each ask for 28 threads from an 8-thread CPU
+# (i3-10100F). The threads then wait for each other. Measured 2026-09-14,
+# 7 cards at once, default (4) against 1:
+#
+# | | default (4) | `num_thread 1` |
+# |---|---|---|
+# | Writing, direct cards a/b/c/g | 32.1 tok/s | **39.3 tok/s** |
+# | Writing, splitter cards d/e/f | 25.9 tok/s | **27.3 tok/s** |
+# | Writing, all 7 cards together | 206 tok/s | **239 tok/s** |
+# | Prefill, 5.2k tokens, direct cards | 1,355 tok/s | **1,417 tok/s** |
+# | Prefill, 5.2k tokens, splitter cards | 1,095 tok/s | 1,154 tok/s |
+# | Host CPU busy | 98-99% | 80-89% |
+#
+# One card alone reads at the same speed with 1 thread as with 4 (1,377
+# against 1,376 tok/s at 5.2k tokens, 997 against 997 at 17k), so the setting
+# costs nothing when the pool is quiet. Writing is about 90% of model time in
+# an analysis. Do not remove this line without a new measurement.
 FROM gemma4:e4b-it-qat
 PARAMETER num_ctx 131072
+PARAMETER num_thread 1
