@@ -165,7 +165,7 @@ Mount the volume read-write for the public copy. SQLite writes its `-wal` and `-
 
 **Every analysis fails with "No available vendor"** — the model asked for an indicator that does not exist, three times, and tripped the vendor circuit breaker. Fixed in this repo: bad arguments no longer count as vendor ill-health. If you see it on an older checkout, that is the cause.
 
-**Reddit `429 Too Many Requests`** — expected. The sentiment analyst scrapes a public RSS feed with no key, and degrades to "no posts found". At high concurrency it happens a lot, and the sentiment analyst is then working with materially less data than it would at low concurrency.
+**Reddit `429 Too Many Requests`** — expected on the RSS feed. The sentiment analyst reads a public RSS feed with no key, and a throttled subreddit is marked unavailable. At high concurrency it happens a lot, and the sentiment analyst then works with less data than it would at low concurrency. If you run trawl, set `REDDIT_TRAWL_URL` to avoid most of them. See [setup](setup.md#reddit).
 
 **The agent never trades** — **open `/setup` first.** It checks every requirement in one place and names the ones that are missing, which is faster than reading logs. The usual answers are `WEBULL_SANDBOX=1`, an empty `WEBULL_ACCOUNT_ID`, a model endpoint that does not answer, or the agent never having been switched on in Settings.
 

@@ -72,15 +72,21 @@ FRED_API_KEY=...
 
 **You probably cannot set it up anyway.** Reddit ended self-serve API app creation under its [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy). New applications go through an approval aimed at products, not personal tools.
 
-What you lose:
+**If you run [trawl](https://github.com/germondai/trawl), set `REDDIT_TRAWL_URL`** to its address, for example `http://host.docker.internal:8191`. The sentiment analyst then loads Reddit's HTML search page in trawl's browser. That page loads where the RSS feed returns `429`, and it shows score and comment counts. The page has no post bodies, so the fetcher reads the body of each post it shows, one request each: up to 15 more requests for an analysis. If trawl fails for a subreddit, that subreddit uses the RSS feed.
 
-| | RSS (default) | OAuth |
-|---|---|---|
-| Credentials | None | Approval required |
-| Rate limit | About 1 request a minute per IP | 100 a minute |
-| Post score and comment count | No | Yes |
+**Decide about Reddit's terms yourself.** Reddit does not allow automated access without its permission. A browser built to hide automation is a clearer case than a public RSS feed.
 
-The rate limit is the only real difference, and the RSS path handles it: a `429` backs off once, honours `Retry-After`, then reports "no posts found" for that subreddit rather than failing the analysis. **`429` warnings in the log are expected, not a fault** — you will see a lot of them at high concurrency.
+What each path gives you:
+
+| | RSS (default) | trawl | OAuth |
+|---|---|---|---|
+| Credentials | None | None, but a running trawl container | Approval required |
+| Rate limit | About 1 request a minute per IP | Not known. 18 of 18 pages loaded 2 s apart in a test on 2026-09-13 | 100 a minute |
+| Post score and comment count | No | Yes | Yes |
+| Post body excerpt | Every post | Every post | Every post |
+| Posts older than 7 days | Filtered by Reddit | Filtered by the fetcher, because the search page ignores `t=week` | Filtered by Reddit |
+
+**On the RSS path, `429` warnings in the log are expected, not a fault.** A `429` waits for `Retry-After`, or up to 60 seconds, and retries once per run. Then the subreddit is marked unavailable. The analyst reads "unavailable", never "no posts found", so throttling does not look like silence.
 
 ## The model
 

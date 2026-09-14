@@ -136,7 +136,7 @@ This is the strongest possible argument for feeding tool errors back to the mode
 
 ### The other noise worth knowing about
 
-**59 Reddit `429 Too Many Requests`**, across `r/stocks` and `r/investing`. Expected — the sentiment analyst scrapes Reddit's public RSS with no API key, and it degrades to "no posts found" rather than failing. But 59 in 83 minutes is far more than a normal sweep produces, and at fourteen concurrent the sentiment analyst is getting materially less data than it would at three. **This is a real cost of high concurrency that has nothing to do with the GPUs.**
+**59 Reddit `429 Too Many Requests`**, across `r/stocks` and `r/investing`. Expected — the sentiment analyst read Reddit's public RSS with no API key, and at the time a throttled subreddit read as "no posts found" rather than failing. Since 2026-09-13 it reads as unavailable. But 59 in 83 minutes is far more than a normal sweep produces, and at fourteen concurrent the sentiment analyst is getting materially less data than it would at three. **This is a real cost of high concurrency that has nothing to do with the GPUs.**
 
 **79 `macro_data unavailable`**, because `FRED_API_KEY` is unset on this host. Not a concurrency problem; it means the news analyst inferred rates and the yield curve from headlines instead of reading the series.
 

@@ -51,6 +51,8 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-13 — the sentiment analyst reads Reddit through a browser, and a throttled subreddit reads as unavailable, not silent.** The logs showed the RSS feed refusing r/stocks and r/investing after the first subreddit of an analysis, and the analyst was told "no posts found" for both. Upstream `7cc478a` now marks a failed fetch unavailable, and with `REDDIT_TRAWL_URL` set the fetcher loads Reddit's search page through the trawl container, with scores, comment counts, the body of every post shown, and no post older than 7 days. Sentiment reports from before the deploy that ships this do not compare with reports after it.
+
 **2026-09-13 — a later turn of a pass says why the agent is asked again.** The second turn of a pass repeated the reason the pass started — "A change to this app woke you" — as though it were a new wake; on 2026-09-13 the agent still read its own research result correctly, from the section below that line. A later turn now keeps the line as why the pass started, and adds why it is asked again: its orders were carried out, an analysis it asked to read is below, or part of its answer was refused.
 
 **2026-09-13 — the four analysts in one analysis run at the same time.** They ran one after another, although no analyst reads another's report; the debates still run in turn, so each analyst's first message and what the trader reads do not change. One analysis on the local pool takes about 11 minutes, not 16, so `duration_seconds`, the analysis time the agent is shown, and the electricity estimate do not compare across this date.

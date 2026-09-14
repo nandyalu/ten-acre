@@ -38,6 +38,15 @@ A held position stays in the portfolio — there is just nothing to fetch, and i
 
 ## Reddit/social-sentiment data source
 
-`TradingAgents/tradingagents/dataflows/reddit.py` scrapes Reddit's public RSS search feed (no API key). Occasional `429`/warning logs are expected and handled gracefully (retry-once-with-backoff, then degrades to "no posts found" for that subreddit) — not a bug unless it fails on *every* run. `stocktwits.py` exists in the same directory as an unused alternative if Reddit ever becomes unreliable enough to matter.
+`TradingAgents/tradingagents/dataflows/reddit.py` reads Reddit's public RSS search feed (no API key). A `429` warning in the logs is expected. The fetcher waits and retries once per run, then marks that subreddit `<unavailable: fetch failed, not an absence of posts>`. **A failed fetch never reads as "no posts found"** (upstream `7cc478a`, taken 2026-09-13), because the sentiment analyst must not treat throttling as silence. It is not a bug unless it fails on *every* run.
+
+**With `REDDIT_TRAWL_URL` set, the fetcher loads Reddit's HTML search page through the trawl container, and uses the RSS feed only when trawl fails.** On 2026-09-13, measured from this host, the RSS feed returned `429` after its first request, and 18 HTML search pages loaded through trawl 2 s apart all succeeded. The notes below constrain a future edit:
+
+- **Never use Reddit's JSON search through trawl.** It loads, but it returns far fewer results: 0 posts for GOOG in r/stocks where the HTML page showed 14. A short answer that looks like success is worse than a `429`. A single post's JSON is complete, which is why post bodies come from it.
+- **The parser returns `None` for a page it does not recognize.** It returns `[]` only when Reddit's `search-error-message` block says it found no results. A Reddit redesign must read as unavailable, never as silence.
+- **The search page has no post bodies.** The fetcher reads a body for every post it shows, one trawl request each, because the RSS feed carries a body for every post. On 2026-09-14 a first version read only the top 2 by score, and a same-moment comparison showed it gave less body text than RSS: 2 of 3 bodies in AAPL r/stocks. The same comparison found identical 7-day post sets on both paths in all 4 subreddits where both worked.
+- **Only the trawl path needs the 7-day filter.** The RSS feed respects `t=week`: its oldest post in that comparison was 6 days old. The search page ignores it and returned posts from as far back as March.
+- **`skipHttp` and `maxTier: 3` are deliberate.** Tier 1 is a plain fetch from this IP, which Reddit throttles like the RSS feed. Tier 4 needs a paid residential proxy.
+- **The live container reaches trawl at `http://host.docker.internal:8191`.** Trawl is on its own Docker network, `flaresolverr_default`. `stocktwits.py` exists in the same directory as an unused alternative if Reddit ever becomes unreliable enough to matter.
 
 The Webull OpenAPI SDK (`backend/services/quotes.py`, `backend/services/sandbox_broker.py`) is market-data + brokerage only (quotes, fundamentals, financials, trading) — it has no news-article or social-sentiment endpoints, so it can't replace `get_news`/`reddit.py`.

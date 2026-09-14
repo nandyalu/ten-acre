@@ -94,6 +94,11 @@ services:
       # Free from fred.stlouisfed.org. Without it the news analyst infers
       # rates and the yield curve from headlines, and says so in its report.
       - FRED_API_KEY=${FRED_API_KEY:-}
+      # A self-hosted trawl container, for example
+      # http://host.docker.internal:8191. The sentiment analyst then reads
+      # Reddit's search page through trawl's browser, where the RSS feed
+      # returns 429. Unset keeps the RSS feed. See docs/setup.md.
+      - REDDIT_TRAWL_URL=${REDDIT_TRAWL_URL:-}
       # Every LLM call written to disk, about 0.4 MB an analysis. Unset it to
       # record nothing. A dataset of past runs cannot be collected later.
       - LLM_TRACE_DIR=/app/data/tradingagents/traces
