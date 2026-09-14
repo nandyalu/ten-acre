@@ -34,6 +34,8 @@ On top of v0.4.1, the branch carries three groups of commits.
 | #1082 | A probability and risk/reward review on every trader proposal |
 | #1134 | Reddit OAuth2, with the RSS feed as the fallback |
 | #1122 | A candidate screener script and trade-horizon-aware prompts |
+| #1324 | The FRED API key removed from HTTP error text (taken 2026-09-14 as `2a57bfa`, `ecfac18`) |
+| #1328 | A StockTwits read that stops at 5 MiB (taken 2026-09-14 as `8e550e1`) |
 
 Commit `4c6c356` repairs how those picks fit together. #1189 (an unparseable rating becomes REVIEW) now arrives from upstream as `43fc275`. #1200 is no longer a separate commit on the branch.
 
@@ -50,6 +52,7 @@ Commit `4c6c356` repairs how those picks fit together. #1189 (an unparseable rat
 - `f195daa`: the four analysts of one analysis run at the same time.
 - `67fc9f5`: upstream `7cc478a` cherry-picked from v0.4.2, with the OAuth path kept.
 - `5260a28`: Reddit through a trawl browser when `REDDIT_TRAWL_URL` is set. See `market-data.md`.
+- `ce80173`: the FRED API key removed from connection errors and timeouts too. #1324 missed that path, and a `requests.ConnectionError` quotes the full URL with `api_key=`.
 
 ## Upstream releases after the base
 
@@ -67,7 +70,9 @@ git cherry -v HEAD origin/main                 # "+" = not on our branch
 |---|---|---|
 | `7cc478a` | A failed Reddit fetch shows as unavailable, not as "no posts found". The back-off without a `Retry-After` header goes from 5 s to 60 s, once per run. | **Taken** 2026-09-13. The merge kept the OAuth path. |
 | `1c44dd1` | Tells the Trader to state entry and stop as absolute prices. | **Declined.** Our `TraderProposal` has no price fields. The model states distances, and Python computes the prices, because model-written prices were unreliable (see `analysis-output.md`). Never apply this commit. |
-| the other 9 | Point-in-time fundamentals, an unsettled last bar, Alpha Vantage date trim, Kimi models, tests, cleanup. | Not reviewed yet. |
+| `ef383df` | A newest bar with no close no longer turns the whole price history into "no data". | **Taken** 2026-09-14 as `ca87aad`. Our analyses use today's date, so an unsettled bar can occur. No trace had the error text on 2026-09-14. |
+| `96111aa` | A run with a past `curr_date` no longer gets today's company profile. | **Take with the backtester.** Live runs are unchanged. |
+| `16f7fd6`, `ffd5d9a`, `d6ca23a`, `260c899`, `94113c8`, `d58b838`, `821848b` | Alpha Vantage date trim, logging cleanup, Kimi models, tests, comments. | **Take for an easier sync.** None of them changes a live run. We use yfinance, not Alpha Vantage. |
 
 Read `git log --stat` for each new commit before you take it. Do not merge `origin/main` as a whole: it would bring back `1c44dd1`.
 
