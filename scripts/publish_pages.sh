@@ -36,6 +36,27 @@ if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; th
   exit 1
 fi
 
+# The bundle learns where its data lives when the image is built
+# (SNAPSHOT_BASE_URL), and this container learns where to upload when it runs
+# (R2_SNAPSHOT_BUCKET). If the two disagree, the site shows no data and no
+# error. On 2026-09-12 an image was built without SNAPSHOT_BASE_URL, and the
+# public site was empty for two days. Stop before a wrong bundle replaces the
+# site on Pages.
+SNAPSHOT_ROOT=$(grep -rhoE 'snapshotRoot:[^,}]*' "$SITE_DIR" --include='main-*.js' | head -1 | cut -d: -f2- | tr -d "\`\"'")
+case "$SNAPSHOT_ROOT" in
+  http://*|https://*) BUNDLE_READS_URL=1 ;;
+  *) BUNDLE_READS_URL=0 ;;
+esac
+if [ -n "$BUCKET" ] && [ "$BUNDLE_READS_URL" -eq 0 ]; then
+  echo "R2_SNAPSHOT_BUCKET is set, but the bundle reads its data from '$SNAPSHOT_ROOT'. Rebuild the image with --build-arg SNAPSHOT_BASE_URL=<the bucket's public URL>. Refusing to start." >&2
+  exit 1
+fi
+if [ -z "$BUCKET" ] && [ "$BUNDLE_READS_URL" -eq 1 ]; then
+  echo "R2_SNAPSHOT_BUCKET is not set, but the bundle reads its data from '$SNAPSHOT_ROOT'. Set R2_SNAPSHOT_BUCKET, or rebuild the image without SNAPSHOT_BASE_URL. Refusing to start." >&2
+  exit 1
+fi
+echo "The bundle reads its data from '$SNAPSHOT_ROOT'."
+
 wrangler() { npx --yes wrangler@4.130.0 "$@"; }
 
 # One-time and idempotent. wrangler pages deploy does not create a project on
