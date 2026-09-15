@@ -139,7 +139,9 @@ def test_signal_stop_fires_when_price_reaches_the_analysis_level():
     alerts = _evaluate(snapshot, position=_position(avg_cost=95.0), stop_signal=_stop_signal(90.0))
     assert _types(alerts) == ["signal_stop"]
     assert alerts[0].dedupe_key == "signal_stop:11"
-    assert "$90.00 stop" in alerts[0].message
+    assert "$90.00 level" in alerts[0].message
+    assert "researched on" in alerts[0].message
+    assert "not a new analysis" in alerts[0].message
 
 
 def test_signal_stop_stays_quiet_above_the_level():

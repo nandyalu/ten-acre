@@ -214,15 +214,30 @@ def evaluate_ticker(
     # the other.
     if held and stop_signal is not None and stop_signal.stop_loss:
         if snapshot.price <= stop_signal.stop_loss:
+            # Reworded 2026-09-15, on probe evidence: the old wording ("X at
+            # $A reached the $B stop from the Hold signal...") carried three
+            # AVGO prices in one sentence with no stated direction, and read
+            # as a stop order that had already fired. Across 16 probe runs,
+            # nearly every one spent most of its reasoning trying to work out
+            # whether a sell had already happened instead of noticing the
+            # real fact -- this is a signal-derived level, not a broker
+            # order, and nothing sells unless the agent places one. Extended
+            # the same day to name the research date and say plainly that
+            # this is a rule firing against an old level, not new research --
+            # the agent picks its own research cadence now, so a signal
+            # behind a tracked ticker can be old, and the alert should not
+            # read as though it carries a fresh verdict. See the
+            # 2026-09-15 JOURNEY.md entry.
             alerts.append(
                 AlertCandidate(
                     ticker,
                     "signal_stop",
                     f"signal_stop:{stop_signal.id}",
-                    f"🛑 {ticker} at ${snapshot.price:,.2f} reached the "
-                    f"${stop_signal.stop_loss:,.2f} stop from the {stop_signal.decision} "
-                    f"signal of {stop_signal.signal_date}. That analysis called this the "
-                    "level where its thesis is wrong.",
+                    f"🛑 {ticker} fell to ${snapshot.price:,.2f}, at or below the "
+                    f"${stop_signal.stop_loss:,.2f} level set by the {stop_signal.decision} "
+                    f"signal researched on {stop_signal.signal_date}. This is a rule that "
+                    "fired against that old level, not a new analysis — decide today what "
+                    "to do about it. Nothing sells unless you place the order.",
                 )
             )
 
@@ -252,9 +267,10 @@ def evaluate_ticker(
                 ticker,
                 "target",
                 f"target:{target_signal.id}",
-                f"🎯 {ticker} reached the ${target_signal.price_target:,.2f} target from the "
-                f"{target_signal.decision} signal of {target_signal.signal_date} "
-                f"(now ${snapshot.price:,.2f}).",
+                f"🎯 {ticker} reached the ${target_signal.price_target:,.2f} target set by "
+                f"the {target_signal.decision} signal researched on {target_signal.signal_date} "
+                f"(now ${snapshot.price:,.2f}). This is a rule that fired against that old "
+                "level, not a new analysis — decide today what to do about it.",
             )
         )
 
