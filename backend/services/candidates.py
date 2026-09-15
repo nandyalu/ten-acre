@@ -13,9 +13,21 @@ worst possible thing to put in front of a swing-trading account of a few
 thousand dollars. Price and volume floors turn the same feed into names like
 INTC, NVDA and SMCI.
 
+Two more screens hand back bare tickers instead of a priced Webull row:
+QuiverQuant's congressional stock-trade table and Yahoo Finance's public
+trending-tickers feed. Both are verified against a real Webull snapshot
+before they can pass the same price/volume/move floors as everything else —
+a ticker pulled from a scraped page is not trusted data until priced.
+
 Blocking (HTTP + DB) — call via asyncio.to_thread.
 """
+import ast
+import json
 import logging
+import re
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 
 from backend.database import db
@@ -91,13 +103,97 @@ def _to_candidate(row: dict, source: str) -> Candidate | None:
     )
 
 
+_CONGRESS_URL = "https://www.quiverquant.com/congresstrading/"
+# The page's "Recent Trades" table looks JS-rendered (the shipped HTML has an
+# empty <tbody>) but the row data is not behind an API call at all — it is
+# inlined as a plain JS array literal, ``let recentTradesData = [[...], ...]``,
+# server-rendered on every page load. Confirmed live, 2026-09-15: 300 rows, no
+# login, no trawl needed — the array's syntax (quoted strings, bare numbers)
+# happens to parse as a Python literal too. The regex assumes the statement
+# ends at the first literal "];", which held for every row observed; a row
+# whose text ever contained that exact substring would truncate the parse, so
+# a syntax error here is read as "the page changed" and produces no tickers,
+# never a guess (`_fetch_text` failures already collapse to an empty set the
+# same way, so no separate handling is needed here).
+_CONGRESS_ARRAY_RE = re.compile(r"let recentTradesData = (\[.*?\]);", re.S)
+_TRENDING_URL = "https://query1.finance.yahoo.com/v1/finance/trending/US"
+
+
+def _fetch_text(url: str, headers: dict | None = None) -> str | None:
+    """One GET, one retry on a 429, capped read. None on any other failure.
+
+    The retry-once-on-429 shape matches TradingAgents' reddit.py, in case
+    either of these free feeds turns out to rate-limit the same way Reddit's
+    search feed does from the deployed host. Neither has shown a 429 in
+    testing from this box; if one starts, the fix is a source-specific fallback
+    (a trawl fetch of the same page, or a slower pace), not a shared one —
+    QuiverQuant's page and Yahoo's JSON endpoint have nothing else in common.
+    """
+    req = urllib.request.Request(url, headers=headers or {})
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.read(5 * 1024 * 1024).decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt == 1:
+                time.sleep(60)
+                continue
+            log.warning("Candidate text fetch failed for %s: %s", url, exc)
+            return None
+        except OSError as exc:
+            log.warning("Candidate text fetch failed for %s: %s", url, exc)
+            return None
+    return None
+
+
+def _congress_tickers() -> set[str]:
+    """Tickers from QuiverQuant's recent congressional-trades table."""
+    body = _fetch_text(_CONGRESS_URL, headers={"User-Agent": "Mozilla/5.0"})
+    if body is None:
+        return set()
+    match = _CONGRESS_ARRAY_RE.search(body)
+    if not match:
+        log.warning("QuiverQuant page came back without the trades table")
+        return set()
+    try:
+        rows = ast.literal_eval(match.group(1))
+    except (ValueError, SyntaxError):
+        log.warning("QuiverQuant's trades table did not parse as expected")
+        return set()
+    # Column 0 is the ticker, "-" when the trade has none (e.g. a trust or an
+    # instrument the site does not resolve to a symbol).
+    return {
+        str(row[0]).strip().upper()
+        for row in rows
+        if isinstance(row, list) and row and row[0] not in (None, "-", "")
+    }
+
+
+def _trending_tickers() -> set[str]:
+    """Yahoo Finance's public trending-tickers feed. Plain symbols, nothing
+    to parse out of text — the cleanest of the sources tried so far."""
+    body = _fetch_text(_TRENDING_URL)
+    if body is None:
+        return set()
+    try:
+        rows = json.loads(body)["finance"]["result"][0]["quotes"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        log.warning("Yahoo trending feed came back in an unexpected shape")
+        return set()
+    return {str(r.get("symbol", "")).strip().upper() for r in rows if r.get("symbol")}
+
+
 def fetch_candidates() -> list[Candidate]:
     """Screened names not already tracked, most liquid first.
 
-    Two screens, deliberately: the most active gives liquid names that are
-    simply busy, and the day's gainers give names that are moving. Neither is a
-    recommendation — they are the raw material an analysis is spent on, and the
-    analysis is what decides anything.
+    Two Webull screens, deliberately: the most active gives liquid names that
+    are simply busy, and the day's gainers give names that are moving. Two
+    text sources add names a price/volume screen cannot see at all — a
+    congressional trade, a name suddenly searched for — but they hand back
+    bare tickers, not priced rows, so they are verified against a real
+    Webull snapshot before they can reach the same filters as everything
+    else. Nothing here is a recommendation — it is raw material an analysis
+    is spent on, and the analysis is what decides anything.
     """
     client = quotes.get_api_client()
     if client is None:
@@ -130,6 +226,32 @@ def fetch_candidates() -> list[Candidate]:
             # First screen to surface a name keeps it — most active runs first,
             # so a liquid name is described as liquid rather than as a mover.
             if candidate and candidate.ticker not in found:
+                found[candidate.ticker] = candidate
+
+    # Bare tickers from the text sources, first source wins, a Webull screen
+    # above always wins over either (it already knows the price and volume;
+    # these still need verifying). One batched snapshot prices the lot in a
+    # single vendor request rather than one per ticker.
+    text_sources = (
+        ("congress trade (QuiverQuant)", _congress_tickers),
+        ("trending (Yahoo Finance)", _trending_tickers),
+    )
+    wanted: dict[str, str] = {}
+    for source, fetch in text_sources:
+        try:
+            tickers = fetch()
+        except Exception:
+            log.exception("Candidate text source failed for %s", source)
+            continue
+        for ticker in tickers:
+            if ticker not in found and ticker not in wanted:
+                wanted[ticker] = source
+    if wanted:
+        for row in quotes.get_snapshots(list(wanted)[:100]):
+            ticker = str(row.get("symbol", "")).strip().upper()
+            source = wanted.get(ticker)
+            candidate = _to_candidate(row, source) if source else None
+            if candidate:
                 found[candidate.ticker] = candidate
 
     # The watchlist covers every holding too: the agent may not untrack a

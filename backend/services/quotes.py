@@ -10,6 +10,7 @@ the working category cached per ticker.
 """
 import logging
 import os
+import re
 import threading
 import time
 
@@ -238,10 +239,10 @@ def _get_market_data():
     return _market_data
 
 
-def extract_price(payload) -> float | None:
-    """Pull a usable price out of a snapshot response, tolerating the shapes
-    Webull uses across endpoints: a bare list of snapshot dicts, a dict
-    wrapping that list, or a single dict; prices may arrive as strings."""
+def payload_rows(payload) -> list[dict]:
+    """Unwrap a Webull response to its list of row dicts, tolerating the
+    shapes used across endpoints: a bare list, a dict wrapping the list under
+    one of ``_LIST_KEYS``, or a single dict standing in for a one-row list."""
     if isinstance(payload, dict):
         for key in _LIST_KEYS:
             if isinstance(payload.get(key), list):
@@ -249,11 +250,18 @@ def extract_price(payload) -> float | None:
                 break
         else:
             payload = [payload]
-    if not isinstance(payload, list) or not payload:
+    if not isinstance(payload, list):
+        return []
+    return [row for row in payload if isinstance(row, dict)]
+
+
+def extract_price(payload) -> float | None:
+    """Pull a usable price out of a snapshot response; prices may arrive as
+    strings."""
+    rows = payload_rows(payload)
+    if not rows:
         return None
-    first = payload[0]
-    if not isinstance(first, dict):
-        return None
+    first = rows[0]
     for key in _PRICE_KEYS:
         value = first.get(key)
         if value in (None, ""):
@@ -315,3 +323,61 @@ def get_realtime_price(ticker: str) -> float | None:
             remember_category(ticker, category)
             return price
     return None
+
+
+_INVALID_SYMBOL_RE = re.compile(r"INVALID_SYMBOL.*?\[([^\]]+)\]")
+
+
+def _rejected_symbols(exc: Exception) -> set[str]:
+    """The symbols Webull named as not existing in the category, if that is
+    what this exception says — parsed from the vendor's own message text,
+    e.g. "...does not exist in the category. [ELN, EA, LBRDK]." The SDK
+    returns no typed field for this, only the message (see webull.md)."""
+    match = _INVALID_SYMBOL_RE.search(str(exc))
+    if not match:
+        return set()
+    return {s.strip() for s in match.group(1).split(",") if s.strip()}
+
+
+def get_snapshots(tickers: list[str], category: str = "US_STOCK") -> list[dict]:
+    """Batched snapshot for a list of tickers, one vendor request for up to
+    100 symbols. Returns rows shaped like the screener's — same
+    symbol/price/volume/change_ratio keys (confirmed against Webull's own
+    docs, 2026-09-15) — so a caller can hand them straight to
+    ``candidates._to_candidate``.
+
+    **The whole batch is refused, not just the bad symbol, when one ticker
+    does not exist in the category** — confirmed live 2026-09-15 (`ELN`,
+    `EA`, `LBRDK` sank a 100-ticker request with one `INVALID_SYMBOL` error).
+    A text source hands over bare tickers with no exchange-listing check
+    behind them, so this is routine here, unlike a Webull-screened candidate.
+    The names Webull calls out are stripped out and the request retried once
+    rather than losing every other ticker in the batch to one bad symbol.
+
+    Unlike ``get_realtime_price`` this does not fall back across categories:
+    it exists for candidate discovery, where a symbol that fails one category
+    is dropped rather than chased, the same way an invalid screener row is.
+    """
+    market_data = _get_market_data()
+    if market_data is None or not tickers:
+        return []
+    remaining = list(dict.fromkeys(tickers))
+    for _ in range(2):
+        if not remaining:
+            return []
+        try:
+            response = market_data_request(
+                lambda: market_data.get_snapshot(",".join(remaining), category),
+                f"a batch snapshot for {len(remaining)} ticker(s)",
+            )
+            return payload_rows(response.json())
+        except Exception as exc:
+            bad = _rejected_symbols(exc)
+            if not bad:
+                log.warning(
+                    "Webull batch snapshot failed for %d ticker(s)", len(remaining), exc_info=True,
+                )
+                return []
+            log.info("Webull rejected %d invalid symbol(s), retrying without them: %s", len(bad), sorted(bad))
+            remaining = [t for t in remaining if t not in bad]
+    return []
