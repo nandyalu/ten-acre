@@ -15,6 +15,14 @@ prompt already shows and what the agent can therefore name. A date is not
 unique — INTC has two analyses on 2026-09-08 and SMCI three on 2026-09-04 — so
 the newest of a day wins and the reply says how many others there were. Reading
 the wrong one and being told is better than naming one it cannot see.
+
+**Since 2026-09-15, a read also carries a short take from each of the four
+analysts** (market, sentiment, news, fundamentals) — see JOURNEY.md. Before
+this, those four reports were computed and stored for every analysis and never
+reached the agent at all: it traded on the Rating and the Executive Summary
+alone, with no way to check either against the evidence behind it. A missing
+section (an analysis run before this date, or one whose report rows never
+saved) is left out rather than shown as empty.
 """
 import datetime
 import logging
@@ -36,6 +44,24 @@ _MAX_CHARS = 1400
 # is the comparison this exists for.
 _SEARCH_LIMIT = 200
 
+# Per analyst section, not per read: four of these plus the rationale above
+# stays well under the twelve-times figure that the module docstring warns
+# against. Each report runs 3,000-8,000 characters and opens with its own
+# title, date and instrument lines before any real content, so this is short
+# enough to trim that boilerplate rather than deliver it whole, and does not
+# try to be cleverer than that — see the 2026-09-15 JOURNEY.md entry for why a
+# plain trim was chosen over parsing out a "verdict" line per report type.
+_SECTION_MAX_CHARS = 500
+
+# report_type (backend/database/models.py SignalReport) to the label shown
+# beside it, in the order the agent reads them.
+_ANALYST_SECTIONS = (
+    ("market_report", "Market"),
+    ("sentiment_report", "Sentiment"),
+    ("news_report", "News"),
+    ("fundamentals_report", "Fundamentals"),
+)
+
 
 def _parse_date(raw) -> datetime.date | None:
     text = str(raw or "").strip()
@@ -47,16 +73,32 @@ def _parse_date(raw) -> datetime.date | None:
         return None
 
 
-def _trim(text: str) -> str:
+def _trim(text: str, max_chars: int = _MAX_CHARS) -> str:
     """Cut on a paragraph boundary when there is one nearby, so the reply does
     not end mid-sentence."""
     body = (text or "").strip()
-    if len(body) <= _MAX_CHARS:
+    if len(body) <= max_chars:
         return body
-    cut = body.rfind("\n\n", 0, _MAX_CHARS)
-    if cut < _MAX_CHARS // 2:
-        cut = _MAX_CHARS
+    cut = body.rfind("\n\n", 0, max_chars)
+    if cut < max_chars // 2:
+        cut = max_chars
     return body[:cut].rstrip() + "\n[...truncated]"
+
+
+def _analyst_snapshot(signal_id: int) -> str:
+    """A short take from each of the four analyst reports, or "" when none are
+    on record — an analysis run before 2026-09-15, or a report row that never
+    saved. Not shown as an empty section: nothing to read is not the same as
+    the analysts having nothing to say."""
+    reports = db.get_signal_reports(signal_id)
+    lines = []
+    for report_type, label in _ANALYST_SECTIONS:
+        content = _trim(reports.get(report_type, ""), _SECTION_MAX_CHARS)
+        if content:
+            lines.append(f"{label} — {content}")
+    if not lines:
+        return ""
+    return "Each analyst's own report, in short:\n" + "\n\n".join(lines)
 
 
 def _newest_first(signals: list[Signal]) -> list[Signal]:
@@ -125,9 +167,12 @@ def read(ticker: str, on=None) -> str:
         header += f". {others} other analyses that day are not shown"
 
     body = _trim(signal.rationale or "")
+    snapshot = _analyst_snapshot(signal.id)
     if not body:
-        return f"{header}. It recorded no reasoning."
-    return f"{header}:\n{body}"
+        reply = f"{header}. It recorded no reasoning."
+    else:
+        reply = f"{header}:\n{body}"
+    return f"{reply}\n\n{snapshot}" if snapshot else reply
 
 
 def describe(readings: list[str]) -> list[str]:

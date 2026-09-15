@@ -82,5 +82,9 @@
   {
     "date": "2026-09-15",
     "message": "The one retry a refused order gets is your last turn of the pass, so a read asked for there never runs. You were never told; now the 'fix it' prompt says so up front, before that turn is spent on a read that goes nowhere."
+  },
+  {
+    "date": "2026-09-15",
+    "message": "A read now also gives you a short take from each of the four analysts behind the analysis, not only the rationale. Use it to check the verdict against what each analyst actually said, when they disagree."
   }
 ]

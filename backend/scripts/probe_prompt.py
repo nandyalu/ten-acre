@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from backend.database import db
-from backend.services import agent, agent_book, analysis, positions, research
+from backend.services import agent, agent_book, analysis, analysis_reader, positions, research
 
 _OUT = Path("data/probe")
 
@@ -128,7 +128,28 @@ def build_prompts() -> dict:
             **common,
         )
         out["held"] = held
+    # "read": what a read looks like since it started carrying a short take
+    # from each of the four analysts, not only the rationale (2026-09-15).
+    # Picks the newest signal that actually has analyst reports on record —
+    # an old row, or one whose reports never saved, would leave the section
+    # under test empty.
+    reported = _signal_with_reports()
+    if reported:
+        out["read"] = agent.build_prompt(
+            book, signals, prices,
+            readings=[analysis_reader.read(reported.ticker, str(reported.signal_date)[:10])],
+            **common,
+        )
+        out["read_signal"] = f"{reported.ticker} {reported.signal_date}"
     return out
+
+
+def _signal_with_reports():
+    """The newest signal that has at least one analyst report saved."""
+    for row in db.get_recent_signals(limit=200):
+        if row.id and db.get_signal_reports(row.id):
+            return row
+    return None
 
 
 def _raw_alerts() -> list[dict]:
@@ -200,7 +221,7 @@ def ask(base_url: str, system: str, user: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--turn", default="turn1", help="turn1 (a fresh pass) or turn2")
+    parser.add_argument("--turn", default="turn1", help="turn1, turn2, read, or one of the other variants build_prompts() names")
     parser.add_argument("--samples", type=int, default=2, help="serial samples; ignored with --parallel")
     parser.add_argument("--parallel", action="store_true", help="one sample per GPU, all at once")
     parser.add_argument("--base-url", default="http://localhost:11435/v1", help="serial endpoint")
