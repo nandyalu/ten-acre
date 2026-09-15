@@ -657,7 +657,6 @@ def build_prompt(
     lines.append("")
 
     if book.holdings:
-        lines.append("You currently hold:")
         price_ranges = price_ranges or {}
         exits_by_ticker = {
             h.ticker: {
@@ -667,6 +666,26 @@ def build_prompt(
             }
             for h in book.holdings
         }
+        # **A table, not a sentence (2026-09-15).** The prose line ran to nine
+        # clauses and buried "has ranged $X to $Y since you bought it" as the
+        # second-to-last — three probe runs, laser-focused on one holding with
+        # nothing else in the prompt to read, quoted every earlier clause on
+        # the line and never that one. Named columns read the same way the
+        # signals table already does, and **Stop**/**Target** now say `UNSET`
+        # outright rather than folding a missing exit into a sentence that
+        # reads the same whether one side is resting or neither is.
+        lines += [
+            "You currently hold. **Value** is quantity times price now, and is "
+            "also about what selling the whole position would raise, before "
+            "slippage. **Stop** and **Target** are what is actually resting at "
+            "the broker, not a level you asked for earlier — `UNSET` means "
+            "nothing is resting on that side, and a move against you on it "
+            "would not be caught.",
+            "",
+            "| Ticker | Shares | Avg cost | Price now | Range since purchase | Value"
+            " | Unrealized | % of account | Held | Stop | Target |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
         for h in book.holdings:
             value = f"${h.market_value:,.2f}" if h.market_value is not None else "unpriced"
             pnl = f"{h.unrealized_pnl:+,.2f}" if h.unrealized_pnl is not None else "unknown"
@@ -676,38 +695,31 @@ def build_prompt(
             # holding and a menu together, so it was invisible until the agent
             # first bought something.
             price_each = f"${h.price:,.2f}" if h.price is not None else "unavailable"
-            line = (
-                f"- {h.ticker}: {h.quantity:g} shares, average cost ${h.avg_cost:,.2f}, "
-                f"now {price_each} each, worth {value}, unrealized {pnl}"
-            )
             weight = book.weight_pct(h)
-            if weight is not None:
-                line += f", {weight:.0f}% of the account"
+            weight_text = f"{weight:.0f}%" if weight is not None else "—"
             held_days = h.held_days()
-            if held_days is not None:
-                line += f", held {held_days} day(s)"
-            # Entry, research and current price are three points; a name that
-            # dipped 20% and recovered looks identical to one that only ever
-            # climbed. The caller computes this (see price_range_since_purchase)
-            # — build_prompt only formats what it is handed.
+            held_text = f"{held_days}d" if held_days is not None else "—"
+            # The caller computes this (see price_range_since_purchase) — the
+            # entry, research and current price are three points, and a name
+            # that dipped 20% and recovered looks identical to one that only
+            # ever climbed without it. Placed beside Price now, not at the end
+            # of the row — see the 2026-09-15 JOURNEY.md entry: end-of-row was
+            # measured and never once read.
             price_range = price_ranges.get(h.ticker)
-            if price_range is not None:
-                low, high = price_range
-                line += f", has ranged ${low:,.2f} to ${high:,.2f} since you bought it"
+            range_text = (
+                f"${price_range[0]:,.2f}–${price_range[1]:,.2f}" if price_range else "—"
+            )
             # What is actually resting at the broker on this position. Without
             # it the model cannot tell an exit it should move from one that is
             # already where it wants it — or notice there is none at all.
             resting = exits_by_ticker.get(h.ticker, {})
-            if resting:
-                levels = ", ".join(
-                    f"{kind} at ${level:,.2f}" for kind, level in sorted(resting.items())
-                )
-                line += f". Currently protected by a resting {levels}"
-            else:
-                line += ". NOTHING is resting to close it"
-            if h.market_value:
-                line += f". Selling all {h.quantity:g} would raise about ${h.market_value:,.2f}"
-            lines.append(line)
+            stop_text = f"${resting['stop']:,.2f}" if resting.get("stop") else "UNSET"
+            target_text = f"${resting['target']:,.2f}" if resting.get("target") else "UNSET"
+            lines.append(
+                f"| {h.ticker} | {h.quantity:g} | ${h.avg_cost:,.2f} | {price_each}"
+                f" | {range_text} | {value} | {pnl} | {weight_text} | {held_text}"
+                f" | {stop_text} | {target_text} |"
+            )
     else:
         lines.append("You hold nothing. The whole account is in cash.")
     lines.append("")

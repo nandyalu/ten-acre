@@ -318,7 +318,7 @@ def test_the_prompt_explains_that_selling_funds_a_buy():
     # "what the agent is told" is both halves of what _ask sends.
     prompt = agent.SYSTEM_PROMPT + agent.build_prompt(book, [], {})
 
-    assert "Selling all 10 would raise about $970.00" in prompt
+    assert "| $97.00 | — | $970.00 | +70.00 |" in prompt
     assert "sell something" in prompt
 
 
@@ -768,7 +768,7 @@ def test_a_holding_shows_what_share_of_the_account_it_is():
     """It put 98% of the budget into one stock without ever being told that was
     what it was doing."""
     prompt = agent.build_prompt(_priced_book(), [], {})
-    assert "% of the account" in prompt
+    assert "% of account" in prompt
 
 
 def test_concentration_is_measured_against_equity_not_cost():
@@ -779,7 +779,7 @@ def test_concentration_is_measured_against_equity_not_cost():
 
 def test_a_holding_shows_how_long_it_has_been_held():
     """Nothing else in the book says a thesis has expired."""
-    assert "held 21 day(s)" in agent.build_prompt(_priced_book(), [], {})
+    assert "| 21d |" in agent.build_prompt(_priced_book(), [], {})
 
 
 def test_the_intended_holding_window_is_stated():
@@ -803,12 +803,14 @@ def test_a_holding_with_a_price_range_shows_it():
     book = _priced_book()
     ticker = book.holdings[0].ticker
     prompt = agent.build_prompt(book, [], {}, price_ranges={ticker: (85.0, 110.0)})
-    assert "has ranged $85.00 to $110.00 since you bought it" in prompt
+    assert "$85.00–$110.00" in prompt
 
 
-def test_a_holding_with_no_price_range_omits_the_line():
-    """No history yet (bought earlier today, say) reads as silent, not zero."""
-    assert "has ranged" not in agent.build_prompt(_priced_book(), [], {})
+def test_a_holding_with_no_price_range_shows_a_dash():
+    """No history yet (bought earlier today, say) reads as a dash, not zero
+    and not a guessed number."""
+    prompt = agent.build_prompt(_priced_book(), [], {})
+    assert "–" not in prompt
 
 
 def test_price_range_since_purchase_spans_completed_sessions_and_the_live_price(
@@ -1889,9 +1891,9 @@ def test_the_prompt_shows_what_is_resting_on_each_holding(monkeypatch):
 
     prompt = agent.build_prompt(book, [], {})
 
-    assert "resting stop at $315.04, target at $377.09" in prompt
+    assert "| $315.04 | $377.09 |" in prompt
     # The absence has to be as loud as the presence.
-    assert "NOTHING is resting to close it" in prompt
+    assert "| UNSET | UNSET |" in prompt
 
 
 def test_an_adjust_needs_a_position_to_rest_on(monkeypatch):

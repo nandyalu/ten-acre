@@ -48,6 +48,8 @@ Do not grep the reasoning for the words you wrote. **The model paraphrases**, an
 
 **Put a fact where it is already being read rather than repeating it.** A research result appeared twice — as a signals-table row and as a prose block — and the model reconciled the copies and kept the table. It was not ignoring the prose; it was picking the canonical copy. Marking the row fixed it. Adding emphasis to the prose had not.
 
+**A crowded row has blind spots too — moving a fact into a table is not automatically a fix.** A holding's price-range clause was ignored at the end of a nine-clause prose line; moved into a table, still ignored as the last column; moved again next to the price columns it belongs beside, still ignored — nine probe samples, three placements, zero reads. The model reports a fixed habitual set of facts about a holding (cost, price, days held, what is resting) and does not expand that set just because a column was added. Do not assume "it's a table now" closes the loop; probe again after the move.
+
 ## Things that will mislead you
 
 - **Sample size.** Temperature is 1. Four runs is a hint; run `--parallel` for seven at once.

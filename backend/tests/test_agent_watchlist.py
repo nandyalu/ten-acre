@@ -127,7 +127,7 @@ def test_a_menu_renders_for_a_book_that_holds_something(watching):
     )
 
     assert "order costs $0.05 and runs inside this pass" in prompt
-    assert "now $344.00 each" in prompt
+    assert "| $344.00 |" in prompt
 
 
 def test_signals_do_not_rebind_the_research_price_either(watching):
