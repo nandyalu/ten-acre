@@ -1055,6 +1055,11 @@ def build_prompt(
         '"next_wakeup_note": "what you want to remember from this pass", "orders": '
         '[{"ticker": "AAPL", "side": "buy", "quantity": 2, "reason": "why"},',
         ' {"ticker": "MSFT", "side": "adjust", "stop": 410.5, "reason": "why"},',
+        # Unconditional, unlike research/untrack below: the read rules above
+        # are never gated on watchlist or menu, so the example should not be
+        # either. prompt_evaluation.md flagged this order type as absent from
+        # the schema shown to the model — this was the one real gap.
+        ' {"ticker": "GOOGL", "side": "read", "date": "2026-09-08", "reason": "why"},',
         # Shown only where there is something to research — a menu of new
         # candidates, or a watchlist with something already on it.
         *(
