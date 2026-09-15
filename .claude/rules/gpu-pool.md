@@ -18,11 +18,23 @@ paths:
   **Every pool container bind-mounts the same host directory** at `/root/.ollama/models` (`/opt/stacks/ollama-gpus/ollama/models`), so a model pulled or built through any one of them is immediately visible to all. There is no per-backend model state to keep in sync, and adding a card needs no model work at all.
 - `ollama-proxy` (image `ollama-proxy:local`) replaced nginx. It is a small FastAPI app: least-active-connections routing, `CONCURRENCY_PER_BACKEND=1`, `WAIT_TIMEOUT=600` (queues rather than 503s), and a `/healthz` endpoint reporting per-backend health and active count. Still on host port 11435.
 
+**Since 2026-09-15 `choose_backend()` picks a direct-slot card before a riser card.** The riser cards (`-d`, `-e`, `-f`, PCIe 2.0 x1) write slower than the four direct cards. `RISER_BACKENDS` (default `ollama-pool-d,ollama-pool-e,ollama-pool-f`) marks them; a riser card is chosen only once every direct card is busy.
+
 **One analysis uses up to four GPUs, for about three minutes (since 2026-09-13).** The four analysts run at the same time, each with its own request in flight. The Bull/Bear debate, the trader and the risk debate then run in turn, one request at a time. Most of the extra GPU use still comes from running *several analyses at once*.
 
 Measured 2026-09-13, outside the app: one NVDA analysis alone took 10.4 to 11.8 min, against 16.2 min for the old sequential graph, with the analyst stage at 3.0 to 3.4 min against 8.6. Four analyses started together all finished in 14.9 min, with 7 cards busy and the host CPU at 97% mean. **The CPU limits the analyst stage**, for the same reason as the table below. The table was measured before this change and has not been measured again.
 
 **`gemma4-e4b-qat-128k` sets `num_thread 1` on purpose (2026-09-14).** Ollama's default is 4 threads for each runner, and seven runners then ask for 28 threads from the 8-thread i3-10100F. With 1 thread, the pool writes 16% faster and reads 5% faster when all 7 cards work, and one card alone reads at the same speed. The splitter cards (`-d`, `-e`, `-f`) gain only 5% when they write, probably because their PCIe 2.0 x1 uplink limits them. That cause is not proven. The measurements are in the Modelfile. A new model build for this pool needs the same test before it gets a thread count.
+
+**`num_thread 1` still holds now that the agent asks for one analysis at a time (measured 2026-09-15).** The table above was measured at 7 concurrent analyses, a load pattern the app no longer produces — every batch caller (daily sweep, watchdog, earnings check) was moved behind the agent's own $0.05-a-run decision, so the normal case is one analysis, four concurrent analysts, not seven or fourteen. Outside the app, one NVDA analysis at a time, on the production `gemma4-e4b-qat-128k` build against a test build differing only in `num_thread`:
+
+| | `num_thread 1` (production) | `num_thread 2` (test) |
+|---|---|---|
+| Wall clock | 9.90 min | 9.98 min |
+| Host CPU busy, mean | 31.9% | 42.8% |
+| Host CPU busy, peak | 76.3% | 90.0% |
+
+**Same wall clock, more CPU spent to get there.** The i3-10100F is no longer anywhere near saturated at this concurrency — the CPU-side work `num_thread` controls (tokenizing, sampling, and Gemma's host-RAM per-layer embeddings) was never this run's slow part, so giving it a second thread per runner bought nothing and only lit up more cores to do it. Kept `num_thread 1`. This also closes a CPU-upgrade question raised the same day: the host has headroom under the current one-at-a-time load, so a faster CPU (an i7-10700 or i7-11700 were the candidates, both used, $140-$180) would not shorten an analysis today. Revisit only if a future change reintroduces multiple analyses running together.
 
 That is about concurrency, not stickiness. **An earlier note here said the proxy scatters one analysis's ~20 calls across whichever backends are idle. That is no longer true**: the proxy polls each backend's `/api/ps` and prefers a free backend that already holds the requested model warm, so a *sequential* run stays on one card. Concurrent runs still spread, which is the intent.
 
