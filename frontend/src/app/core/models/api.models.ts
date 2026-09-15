@@ -425,11 +425,23 @@ export interface AgentEventOrder {
  * `prompt` and `response` are the point of the Events page: the counts and the
  * one-line reasoning describe a decision, and these two are it. Both are null
  * for passes before 2026-09-01 and cannot be backfilled. */
-/** One exchange inside a decision pass. */
+/** One exchange inside a decision pass.
+ *
+ * `reasoning` and `orders` are this turn's own — what the model said and
+ * asked for on this specific call, parsed the same way the backend parses
+ * every answer. Not the same thing as `AgentEvent.orders`: that is what
+ * actually happened across the whole pass, after screening; this is what one
+ * turn asked for, whether or not it was carried out. A read shows up here
+ * honestly as a read, even though a read never reaches `screen`.
+ *
+ * Optional because a run recorded before 2026-09-15 has turns with no such
+ * keys at all, and a published snapshot can be older still. */
 export interface DecisionTurn {
   prompt: string;
   response: string;
   thinking: string | null;
+  reasoning?: string;
+  orders?: AgentEventOrder[];
 }
 
 export interface AgentEvent {

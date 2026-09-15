@@ -47,7 +47,12 @@ def build_prompts() -> dict:
 
     book = agent_book.build_book(price_lookup=prices.get)
     decisions = {s.id: s.decision for s in db.get_recent_signals(limit=200) if s.id}
+    price_ranges = {
+        h.ticker: r for h in book.holdings
+        if (r := agent.price_range_since_purchase(h.ticker, h.opened, h.price)) is not None
+    }
     common = dict(
+        price_ranges=price_ranges,
         closed=agent_book.closed_trades(decisions=decisions),
         regime_line=agent.current_regime_line(),
         horizon_days=agent._horizon_days(),

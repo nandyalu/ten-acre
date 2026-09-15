@@ -27,72 +27,154 @@
   </div>
 
   <div class="card-body">
-    @if (event().reasoning) {
-      <p class="reasoning">{{ event().reasoning }}</p>
-    }
-
-    @if (notesIn(event()).length) {
-      <div class="agent-note">
-        <p class="agent-note-label">The agent asked for something</p>
-        @for (note of notesIn(event()); track $index) {
-          <p class="agent-note-text">{{ note }}</p>
+    <!-- A pass with more than one turn asked more than once — a refusal
+         earned a correction, or the agent read an analysis before deciding.
+         Each turn gets its own reasoning and its own list of what it asked
+         for, always visible: 2026-09-15 fixed a pass whose reasoning showed
+         only its last turn, hiding the two decisions it actually made. Turns
+         recorded before that date carry no `reasoning`/`orders` of their
+         own, so this falls back to the single summary below. -->
+    @if ((event().turns?.length ?? 0) > 1 && turnReasoning(event().turns![0])) {
+      @for (turn of event().turns ?? []; track $index) {
+        <p class="turn-label">Turn {{ $index + 1 }} of {{ event().turns?.length }}</p>
+        @if (turnReasoning(turn)) {
+          <p class="reasoning">{{ turnReasoning(turn) }}</p>
         }
-        <p class="hint">
-          Nothing acts on this automatically. It is the agent telling whoever maintains it what
-          would help — a tool it lacks, a number it cannot see. Building what it asks for is a
-          change like any other, and goes in the journal first.
-        </p>
-      </div>
-    }
-
-    @if (tradesIn(event()).length || event().refused.length || failedIn(event()).length) {
-      <ul class="orders">
-        @for (order of tradesIn(event()); track $index) {
-          <li>
-            <span class="side side--{{ order.side }}">{{ order.side }}</span>
-            <strong>{{ order.ticker }}</strong>
-            @if (order.quantity) {
-              <span>{{ order.quantity }}</span>
+        @if (turnNotesIn(turn).length) {
+          <div class="agent-note">
+            <p class="agent-note-label">The agent asked for something</p>
+            @for (note of turnNotesIn(turn); track $index) {
+              <p class="agent-note-text">{{ note }}</p>
             }
-            @if (order.reason) {
-              <span class="muted">{{ order.reason }}</span>
+          </div>
+        }
+        @if (turnTradesIn(turn).length) {
+          <ul class="orders">
+            @for (order of turnTradesIn(turn); track $index) {
+              <li>
+                <span class="side side--{{ order.side }}">{{ order.side }}</span>
+                <strong>{{ order.ticker }}</strong>
+                @if (order.quantity) {
+                  <span>{{ order.quantity }}</span>
+                }
+                @if (order.reason) {
+                  <span class="muted">{{ order.reason }}</span>
+                }
+              </li>
             }
-          </li>
+          </ul>
         }
-        @for (order of event().refused; track $index) {
-          <li>
-            <span class="side side--refused"><app-term key="refused" /></span>
-            <strong>{{ order.ticker }}</strong>
-            <span class="muted">{{ order.why }}</span>
-          </li>
-        }
-        @for (order of failedIn(event()); track $index) {
-          <li>
-            <span class="side side--refused"><app-term key="broker-said-no" /></span>
-            <strong>{{ order.ticker }}</strong>
-            <span class="muted">{{ order.why }}</span>
-          </li>
-        }
-      </ul>
-      @if (failedIn(event()).length) {
-        <p class="hint">
-          <strong>"Broker said no" is not the same as "refused".</strong> A refusal is the agent's
-          own arithmetic being wrong. This is an order it formed correctly that the broker would not
-          take — unsettled cash, a closed session, a symbol it will not trade. The agent is shown
-          these on its next few passes so it does not simply propose the same thing again.
-        </p>
       }
-      @if (event().refused.length) {
-        <!-- Worth explaining once per pass rather than assuming it reads
-             as self-evident: a refusal is the most revealing thing on the
-             page, and a reader who takes it for an error misses it. -->
-        <p class="hint">
-          A refusal is Python declining an order that cannot be executed as stated — more cash than
-          the agent holds, more shares than it owns, a stop that would trigger the moment it was
-          placed. <strong>The order is dropped, never resized.</strong> Shrinking it would quietly
-          turn the agent's decision into a different one, and the record would then describe a
-          strategy nobody chose. The agent is told what was refused and asked once more.
-        </p>
+      @if (event().refused.length || failedIn(event()).length) {
+        <!-- What a turn asked for above is not always what happened: an
+             order can still be refused, or the broker can decline one that
+             screened clean. Those are pass-wide outcomes, not one turn's,
+             so they stay a single list rather than trying to guess which
+             turn each belongs to. -->
+        <ul class="orders">
+          @for (order of event().refused; track $index) {
+            <li>
+              <span class="side side--refused"><app-term key="refused" /></span>
+              <strong>{{ order.ticker }}</strong>
+              <span class="muted">{{ order.why }}</span>
+            </li>
+          }
+          @for (order of failedIn(event()); track $index) {
+            <li>
+              <span class="side side--refused"><app-term key="broker-said-no" /></span>
+              <strong>{{ order.ticker }}</strong>
+              <span class="muted">{{ order.why }}</span>
+            </li>
+          }
+        </ul>
+        @if (failedIn(event()).length) {
+          <p class="hint">
+            <strong>"Broker said no" is not the same as "refused".</strong> A refusal is the agent's
+            own arithmetic being wrong. This is an order it formed correctly that the broker would
+            not take — unsettled cash, a closed session, a symbol it will not trade. The agent is
+            shown these on its next few passes so it does not simply propose the same thing again.
+          </p>
+        }
+        @if (event().refused.length) {
+          <p class="hint">
+            A refusal is Python declining an order that cannot be executed as stated — more cash
+            than the agent holds, more shares than it owns, a stop that would trigger the moment it
+            was placed. <strong>The order is dropped, never resized.</strong> Shrinking it would
+            quietly turn the agent's decision into a different one, and the record would then
+            describe a strategy nobody chose. The agent is told what was refused and asked once
+            more.
+          </p>
+        }
+      }
+    } @else {
+      @if (event().reasoning) {
+        <p class="reasoning">{{ event().reasoning }}</p>
+      }
+
+      @if (notesIn(event()).length) {
+        <div class="agent-note">
+          <p class="agent-note-label">The agent asked for something</p>
+          @for (note of notesIn(event()); track $index) {
+            <p class="agent-note-text">{{ note }}</p>
+          }
+          <p class="hint">
+            Nothing acts on this automatically. It is the agent telling whoever maintains it what
+            would help — a tool it lacks, a number it cannot see. Building what it asks for is a
+            change like any other, and goes in the journal first.
+          </p>
+        </div>
+      }
+
+      @if (tradesIn(event()).length || event().refused.length || failedIn(event()).length) {
+        <ul class="orders">
+          @for (order of tradesIn(event()); track $index) {
+            <li>
+              <span class="side side--{{ order.side }}">{{ order.side }}</span>
+              <strong>{{ order.ticker }}</strong>
+              @if (order.quantity) {
+                <span>{{ order.quantity }}</span>
+              }
+              @if (order.reason) {
+                <span class="muted">{{ order.reason }}</span>
+              }
+            </li>
+          }
+          @for (order of event().refused; track $index) {
+            <li>
+              <span class="side side--refused"><app-term key="refused" /></span>
+              <strong>{{ order.ticker }}</strong>
+              <span class="muted">{{ order.why }}</span>
+            </li>
+          }
+          @for (order of failedIn(event()); track $index) {
+            <li>
+              <span class="side side--refused"><app-term key="broker-said-no" /></span>
+              <strong>{{ order.ticker }}</strong>
+              <span class="muted">{{ order.why }}</span>
+            </li>
+          }
+        </ul>
+        @if (failedIn(event()).length) {
+          <p class="hint">
+            <strong>"Broker said no" is not the same as "refused".</strong> A refusal is the agent's
+            own arithmetic being wrong. This is an order it formed correctly that the broker would
+            not take — unsettled cash, a closed session, a symbol it will not trade. The agent is
+            shown these on its next few passes so it does not simply propose the same thing again.
+          </p>
+        }
+        @if (event().refused.length) {
+          <!-- Worth explaining once per pass rather than assuming it reads
+               as self-evident: a refusal is the most revealing thing on the
+               page, and a reader who takes it for an error misses it. -->
+          <p class="hint">
+            A refusal is Python declining an order that cannot be executed as stated — more cash
+            than the agent holds, more shares than it owns, a stop that would trigger the moment it
+            was placed. <strong>The order is dropped, never resized.</strong> Shrinking it would
+            quietly turn the agent's decision into a different one, and the record would then
+            describe a strategy nobody chose. The agent is told what was refused and asked once
+            more.
+          </p>
+        }
       }
     }
 
@@ -117,7 +199,9 @@
         <!-- A pass has more than one turn when the agent asked to read an
              analysis, or when a refused order earned it a correction. Before
              2026-09-10 only the last was kept, so a two-turn pass was
-             published as though it were one. -->
+             published as though it were one. The reasoning and orders for
+             each turn are already shown above; this panel is the raw JSON
+             underneath them, for whoever wants it verbatim. -->
         @if ((event().turns?.length ?? 0) > 1) {
           <p class="hint">
             This pass took {{ event().turns?.length }} turns. The agent answered, was given

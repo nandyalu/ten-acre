@@ -439,6 +439,45 @@ describe('DecisionsView', () => {
       expect(el.querySelector('.verbatim')?.textContent).toContain('You manage a $10,000 account');
     });
 
+    it("shows each turn's own reasoning and what it asked for, not only the pass's final one", async () => {
+      /** 2026-09-15: `event().reasoning` is only ever the last turn's — the
+       * one before it explained why it read INTC, and that explanation was
+       * parsed, used, and thrown away. With more act-turns now allowed, a
+       * reader needs the turn-by-turn story, not only the ending. */
+      const pass = event({
+        reasoning: 'Bought on the read.',
+        turns: [
+          {
+            prompt: 'the first prompt',
+            response:
+              '{"reasoning": "Reading INTC before deciding.", "orders": [{"side": "read", "ticker": "INTC"}]}',
+            thinking: null,
+            reasoning: 'Reading INTC before deciding.',
+            orders: [{ side: 'read', ticker: 'INTC', quantity: 0, reason: '' }],
+          },
+          {
+            prompt: 'the second prompt, carrying the analysis',
+            response:
+              '{"reasoning": "Bought on the read.", "orders": [{"side": "buy", "ticker": "INTC", "quantity": 4}]}',
+            thinking: null,
+            reasoning: 'Bought on the read.',
+            orders: [{ side: 'buy', ticker: 'INTC', quantity: 4, reason: '' }],
+          },
+        ],
+      });
+      service.eventsByMonth['2026-09'] = [pass];
+      const fixture = TestBed.createComponent(DecisionsView);
+      await fixture.whenStable();
+      const el = fixture.nativeElement as HTMLElement;
+
+      // No button click: the per-turn story must be visible without it —
+      // hidden behind "Show the prompt" is exactly the bug this fixes.
+      expect(el.textContent).toContain('Reading INTC before deciding.');
+      expect(el.textContent).toContain('Bought on the read.');
+      expect(el.querySelectorAll('.orders')[0]?.textContent).toContain('read');
+      expect(el.querySelectorAll('.orders')[0]?.textContent).toContain('INTC');
+    });
+
     it('survives a snapshot written before turns existed', async () => {
       // The static site serves whatever the last export left on disk, and a
       // file from before 2026-09-10 has no `turns` key at all.

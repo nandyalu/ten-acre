@@ -1,7 +1,12 @@
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
 
-import { AgentEvent, AgentEventOrder, AgentOrder } from '../../core/models/api.models';
+import {
+  AgentEvent,
+  AgentEventOrder,
+  AgentOrder,
+  DecisionTurn,
+} from '../../core/models/api.models';
 import { Term } from '../../shared/glossary/term';
 import { readerDateTime, readerTime } from '../../shared/market-time';
 import { CopyButton } from '../../shared/copy-button';
@@ -66,6 +71,23 @@ export class DecisionCard {
   /** Everything the pass did that was not a note. */
   tradesIn(event: AgentEvent): AgentEventOrder[] {
     return event.orders.filter((o) => o.side !== 'note');
+  }
+
+  /** What one turn itself said, before screening — its own reasoning and
+   * everything it asked for, note included. See `DecisionTurn` for why this
+   * is not the same claim as `tradesIn`/`notesIn`: those are what the whole
+   * pass actually did; this is what one call asked for, whether or not it
+   * was carried out. Absent on a turn recorded before 2026-09-15. */
+  turnReasoning(turn: DecisionTurn): string {
+    return turn.reasoning ?? '';
+  }
+
+  turnNotesIn(turn: DecisionTurn): string[] {
+    return (turn.orders ?? []).filter((o) => o.side === 'note').map((o) => o.reason);
+  }
+
+  turnTradesIn(turn: DecisionTurn): AgentEventOrder[] {
+    return (turn.orders ?? []).filter((o) => o.side !== 'note');
   }
 
   isOpen(which: 'prompt' | 'response' | 'thinking'): boolean {

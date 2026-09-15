@@ -70,5 +70,17 @@
   {
     "date": "2026-09-13",
     "message": "When something other than your own chosen time woke you, the prompt still said you had asked to be woken. It now says what woke you, and shows your note beside the time you wrote it for."
+  },
+  {
+    "date": "2026-09-15",
+    "message": "A holding's line now also names the low and high it has traded since you bought it, when known — not only the buy price, research price and current price."
+  },
+  {
+    "date": "2026-09-15",
+    "message": "You bundled a buy and an adjust beside a read, and both vanished with no trace. A read is still the only thing that runs from an answer that asks for one, but now you are told what rode along and did not run, so you can resend it."
+  },
+  {
+    "date": "2026-09-15",
+    "message": "The one retry a refused order gets is your last turn of the pass, so a read asked for there never runs. You were never told; now the 'fix it' prompt says so up front, before that turn is spent on a read that goes nowhere."
   }
 ]

@@ -34,7 +34,8 @@ from pathlib import Path
 
 from backend.database import db
 from backend.services import (
-    agent_book, analysis, analysis_reader, candidates, experiment, llm_content, llm_throttle,
+    agent_book, analysis, analysis_reader, bars, candidates, experiment, llm_content,
+    llm_throttle,
     llm_usage,
     market_clock,
     quotes, research, sandbox_broker, watchdog,
@@ -491,6 +492,42 @@ _TRIGGER_PHRASE = {
 }
 
 
+def price_range_since_purchase(
+    ticker: str, opened: datetime.date | None, current_price: float | None,
+    today: datetime.date | None = None,
+) -> tuple[float, float] | None:
+    """The low and high of a holding's price since it was bought.
+
+    Entry price, research price and current price are three points; a stock
+    that fell 20% and recovered looks identical to one that only ever climbed
+    when those are all the agent is shown. Completed sessions come from the
+    bar cache (never a direct vendor call, per market-data.md); the still-open
+    day is folded in from ``current_price``, already read once by the caller,
+    rather than a second live request per holding.
+
+    A caller, not build_prompt itself: build_prompt is a pure formatter over
+    data the caller already fetched (see ``prices`` below), and this one call
+    per holding touches the bar cache and, on a cold ticker, a vendor.
+
+    None when the purchase date is unknown or history has not settled yet —
+    a holding bought earlier today, for instance, has no completed session.
+    """
+    if opened is None:
+        return None
+    try:
+        history = bars.get_bars(ticker, opened, today=today or datetime.date.today())
+    except Exception:
+        log.exception("Could not read price history for %s", ticker)
+        return None
+    if not history:
+        return None
+    low = min(bar.low for bar in history)
+    high = max(bar.high for bar in history)
+    if current_price is not None:
+        low, high = min(low, current_price), max(high, current_price)
+    return low, high
+
+
 def build_prompt(
     book: agent_book.Book,
     signals: list,
@@ -510,6 +547,7 @@ def build_prompt(
     running_analyses: dict | None = None,
     changes: list[dict] | None = None,
     readings: list[str] | None = None,
+    dropped_with_read: list[dict] | None = None,
     outcomes: list[str] | None = None,
     researched_now: set | None = None,
     woke_because: str | None = None,
@@ -517,6 +555,7 @@ def build_prompt(
     alerts: list[dict] | None = None,
     earnings: list | None = None,
     planned_wakeup: "datetime.datetime | None" = None,
+    price_ranges: dict[str, tuple[float, float]] | None = None,
 ) -> str:
     """Everything the model gets. Written as plain figures rather than a table
     of jargon, because the numbers are the whole input and a misread one is a
@@ -574,6 +613,11 @@ def build_prompt(
         )
     if readings:
         asked_again.append('you asked to read an analysis (see "What you asked to read" below)')
+    if dropped_with_read:
+        asked_again.append(
+            'part of your last answer went with a read, so it was not carried out '
+            '(see "What was not carried out" below)'
+        )
     if rejected:
         asked_again.append(
             'part of your last answer was refused (see "Your previous answer was refused" below)'
@@ -614,6 +658,7 @@ def build_prompt(
 
     if book.holdings:
         lines.append("You currently hold:")
+        price_ranges = price_ranges or {}
         exits_by_ticker = {
             h.ticker: {
                 t.exit_kind: t.limit_price
@@ -641,6 +686,14 @@ def build_prompt(
             held_days = h.held_days()
             if held_days is not None:
                 line += f", held {held_days} day(s)"
+            # Entry, research and current price are three points; a name that
+            # dipped 20% and recovered looks identical to one that only ever
+            # climbed. The caller computes this (see price_range_since_purchase)
+            # — build_prompt only formats what it is handed.
+            price_range = price_ranges.get(h.ticker)
+            if price_range is not None:
+                low, high = price_range
+                line += f", has ranged ${low:,.2f} to ${high:,.2f} since you bought it"
             # What is actually resting at the broker on this position. Without
             # it the model cannot tell an exit it should move from one that is
             # already where it wants it — or notice there is none at all.
@@ -796,6 +849,15 @@ def build_prompt(
     if reading_lines:
         lines += reading_lines
 
+    if dropped_with_read:
+        lines += [
+            "",
+            "What was not carried out: your last answer also asked to read, and only "
+            "the read runs from an answer that asks for one. None of this happened:",
+            *(f"- {_describe_order(o)}" for o in dropped_with_read),
+            "Resend anything above that you still want, now that you have read it.",
+        ]
+
     if rejected:
         lines += [
             "",
@@ -813,6 +875,13 @@ def build_prompt(
                 if any(r.side == "research" and "watchlist is full" in r.why for r in rejected)
                 else []
             ),
+            # Caught live 2026-09-15, same pass as the read-and-order bug above:
+            # this is the pass's last turn, so a read asked for here was always
+            # dropped — but nothing told the agent that before it tried. Said up
+            # front now, so it spends this one chance fixing the order instead.
+            "A read does not run on this turn — it is your one chance to fix the",
+            "refusal above, not another chance to read. If you also want to read",
+            "something, leave it for your next turn or wakeup and fix the order now.",
         ]
 
     # What "no money" means here is what screen() refuses at: below the research
@@ -1659,9 +1728,20 @@ _MAX_READS_PER_PASS = 6
 _MAX_READ_TURNS = 3
 # **How many times the agent may act and then be asked again in one pass.**
 # Acting is not free the way reading is — each turn can move real money — so
-# this is tighter than the read budget. Three covers the case it exists for:
-# commission research, see the verdict and act on it, then see the fill.
-_MAX_ACT_TURNS = 3
+# this stays bounded rather than open-ended. Three only covered one ticker's
+# happy path: commission research, act on the verdict, see the fill. It left
+# no turn to rest a stop and target the broker refused at purchase, or to
+# correct a mistake once the fill was seen — both real, both already allowed
+# by this app's own tools.
+#
+# **Raised to 8 on 2026-09-15**, once research measured 9-10 minutes rather
+# than 16-20: a turn that commissions research holds `_pass_lock` for the
+# whole wait, so the old figure made even 3 of those turns a possible
+# hour-long pass. Not a number the model is ever told — see the read budget
+# above for the one that is — so this is a pure backstop, raised to see
+# whether the agent actually uses the room or keeps settling a pass in 2-3
+# turns regardless.
+_MAX_ACT_TURNS = 8
 
 
 # **Rules that never change, moved here on 2026-09-10.** They were rebuilt into
@@ -1724,6 +1804,16 @@ _FIXED_RULES = [
     "one place spending is encouraged, because a decision made on a verdict "
     "alone is the thing this is trying to avoid. Reading is not acting, "
     "though: a pass that only read is an idle pass, and the budget runs out.",
+    # Caught live 2026-09-15: an answer bundled a read with a buy and an
+    # adjust, and the buy and adjust vanished with no trace — not refused, not
+    # failed, nowhere the model could see it. A read changes the pass's flow
+    # rather than the book, so only the read runs; but the silence was the
+    # bug, not the drop itself.
+    "- **A read is the only thing that runs from an answer that asks for "
+    "one.** If your answer also has a buy, a sell, an adjust, an untrack or a "
+    "note, none of it is carried out — you will be shown the read's result "
+    "and asked again, and you must resend anything else you still want then. "
+    "Answer with only the read when you mean to read first and decide after.",
     "- Doing nothing is a valid answer, and often the right one.",
     "- You decide when you are next asked, and nothing else does. Put "
     "\"next_wakeup\" beside your orders as an ISO datetime — "
@@ -2336,6 +2426,13 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # larger than the slice the app lets it spend and an unsettled figure above
     # its own balance would be nonsense.
     unsettled = min(_unsettled_cash(), book.cash) if book.cash > 0 else 0.0
+    # Read once and shared with every turn of this pass, same reason as
+    # everything above: a retry describes the same holdings the first answer
+    # saw. One bar-cache read per holding, not per turn.
+    price_ranges = {
+        h.ticker: r for h in book.holdings
+        if (r := price_range_since_purchase(h.ticker, h.opened, h.price)) is not None
+    }
     # The exact prompt, kept so the Events page can show what was asked. A
     # retry replaces it, because the retry is the prompt the accepted orders
     # were actually screened from.
@@ -2350,6 +2447,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
                              planned_wakeup=planned_wakeup,
+                             price_ranges=price_ranges,
     )
     answer = _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
@@ -2379,6 +2477,11 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     read_budget, turn_budget = budget["reads"], budget["turns"]
     wants, proposed = _split_reads(proposed)
     read_any = bool(wants)
+    # Whatever rode along beside this read in the same answer. It is dropped
+    # here — proposed is about to be replaced by the next answer's orders —
+    # so it is shown once, in the very next prompt, or it is gone with no
+    # trace the model could ever read. See the 2026-09-15 JOURNEY.md entry.
+    dropped_with_read = proposed if wants else []
     while wants and read_budget > 0 and turn_budget > 0:
         taking = wants[:read_budget]
         read_budget -= len(taking)
@@ -2388,6 +2491,11 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
             "Re-asking after reading %s (%d read(s) and %d turn(s) left)",
             ", ".join(str(w.get("ticker")) for w in taking), read_budget, turn_budget,
         )
+        if dropped_with_read:
+            log.info(
+                "Not carried out, because it rode along with a read: %s",
+                [_describe_order(o) for o in dropped_with_read],
+            )
         shown = build_prompt(book, signals, prices, closed=closed,
                              regime_line=regime_line, horizon_days=horizon_days, menu=menu,
                              price=research.get_price(),
@@ -2399,13 +2507,16 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
                              planned_wakeup=planned_wakeup,
-                             readings=readings)
+                             price_ranges=price_ranges,
+                             readings=readings,
+                             dropped_with_read=dropped_with_read)
         answer = _ask(shown)
         spend = spend + _Spend.of(answer)
         turns.append(_turn(shown, answer))
         read_reasoning, proposed = parse_decision(answer)
         reasoning = read_reasoning or reasoning
         wants, proposed = _split_reads(proposed)
+        dropped_with_read = proposed if wants else []
     budget["reads"], budget["turns"] = read_budget, turn_budget
     if wants:
         # Out of budget with more asked for. Dropped rather than answered:
@@ -2430,13 +2541,22 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
-                             planned_wakeup=planned_wakeup)
+                             planned_wakeup=planned_wakeup,
+                             price_ranges=price_ranges)
     retry_answer = _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))
     retry_reasoning, retry_proposed = parse_decision(retry_answer)
-    # A read on the retry is dropped: the follow-up is already spent.
-    _, retry_proposed = _split_reads(retry_proposed)
+    # A read on the retry is dropped: the follow-up is already spent. The
+    # prompt now says this before the retry is asked for (2026-09-15), so this
+    # should be rare; logged rather than surfaced to the model, because there
+    # is no further turn left in this pass to show it in.
+    retry_wants, retry_proposed = _split_reads(retry_proposed)
+    if retry_wants:
+        log.info(
+            "Read ignored on the refusal retry (no turn left this pass): %s",
+            [w.get("ticker") for w in retry_wants],
+        )
     if not retry_proposed:
         # A retry that proposes nothing is a decision to stand pat; keep the
         # first answer's accepted orders rather than discarding them.
@@ -2456,11 +2576,33 @@ def _turn(prompt: str, answer) -> dict:
     Kept verbatim, like `Decision.prompt` and `Decision.response`, because
     behaviour here is mostly prompt and a turn nobody wrote down cannot be
     read back later.
+
+    **`reasoning` and `orders` added 2026-09-15**, so the events page can show
+    what each turn itself said and asked for, not only the pass's final
+    reasoning — which was always the *last* turn's, silently discarded for
+    every turn before it once `_MAX_ACT_TURNS` grew past a couple of turns.
+    Parsed with the same `parse_decision` the rest of the pipeline trusts,
+    including its repairs for malformed JSON, rather than a second parser in
+    the frontend that could read a turn differently than Python did. `orders`
+    here is what this turn *asked for* — read, buy, whatever it said — not
+    what was actually screened and executed; a read on a middle turn shows up
+    honestly as a read, even though it never reaches `screen`.
     """
+    reasoning, orders = parse_decision(answer)
     return {
         "prompt": str(prompt or ""),
         "response": str(answer or ""),
         "thinking": getattr(answer, "thinking", None),
+        "reasoning": reasoning,
+        "orders": [
+            {
+                "side": str(o.get("side", "")),
+                "ticker": str(o.get("ticker", "")),
+                "quantity": o.get("quantity") or 0,
+                "reason": str(o.get("reason") or ""),
+            }
+            for o in orders
+        ],
     }
 
 
@@ -2478,6 +2620,20 @@ def _split_reads(orders: list[dict]) -> tuple[list[dict], list[dict]]:
         else:
             rest.append(order)
     return reads, rest
+
+
+def _describe_order(order: dict) -> str:
+    """One order dict, in the model's own shape, as a line a person or the
+    model can read back — used only for what was dropped alongside a read,
+    where there is no Rejection object to format instead."""
+    side = str(order.get("side", "")).upper()
+    ticker = order.get("ticker", "")
+    quantity = order.get("quantity")
+    head = f"{side} {quantity:g} {ticker}" if quantity is not None else f"{side} {ticker}"
+    extra = [
+        f"{key} {order[key]:g}" for key in ("stop", "target") if order.get(key) is not None
+    ]
+    return f"{head} ({', '.join(extra)})" if extra else head
 
 
 class _Spend(NamedTuple):

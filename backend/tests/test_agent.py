@@ -399,6 +399,41 @@ def test_an_overspend_triggers_exactly_one_retry(monkeypatch):
     assert rejected == []
 
 
+def test_the_refusal_retry_prompt_says_a_read_wont_run_there():
+    rejections = [agent_book.Rejection("VT", "buy", 6, "costs $966.06 but only $22.20 is uninvested")]
+
+    prompt = agent.build_prompt(_book(cash=22.20), [], {}, rejected=rejections)
+
+    assert "A read does not run on this turn" in prompt
+
+
+def test_a_read_bundled_with_a_refusal_fix_is_dropped_but_the_fix_still_runs(monkeypatch):
+    """Caught while fixing the read-and-order bug above: the refusal retry is
+    the pass's last turn, so a read asked for there was always dropped — but
+    anything else in that same answer was never dropped, only the read was.
+    2026-09-15: the prompt now says this up front, and this pins that the
+    corrected order still executes."""
+    asked = []
+
+    def fake_ask(prompt):
+        asked.append(prompt)
+        if len(asked) == 1:
+            return '{"reasoning": "greedy", "orders": [{"ticker": "AAA", "side": "buy", "quantity": 10}]}'
+        return ('{"reasoning": "read first", "orders": ['
+                '{"ticker": "AAA", "side": "read"}, '
+                '{"ticker": "AAA", "side": "buy", "quantity": 2}]}')
+
+    monkeypatch.setattr(agent, "_ask", fake_ask)
+
+    reasoning, accepted, rejected = agent._decide(_book(cash=250.0), [], {"AAA": 100.0})
+
+    assert len(asked) == 2, "a read on the retry must not earn a third turn"
+    assert "A read does not run on this turn" in asked[1]
+    assert reasoning == "read first"
+    assert [o["quantity"] for o in accepted] == [2.0]
+    assert rejected == []
+
+
 def test_a_clean_answer_is_not_second_guessed(monkeypatch):
     asked = []
 
@@ -760,6 +795,57 @@ def test_the_intended_holding_window_is_stated():
 def test_no_horizon_means_no_holding_rule():
     """Better silent than asserting a window that was never configured."""
     assert "usually runs about" not in agent.build_prompt(_priced_book(), [], {})
+
+
+def test_a_holding_with_a_price_range_shows_it():
+    """Entry, research and current price are three points; this is what lets
+    the agent see the shape of the move between them."""
+    book = _priced_book()
+    ticker = book.holdings[0].ticker
+    prompt = agent.build_prompt(book, [], {}, price_ranges={ticker: (85.0, 110.0)})
+    assert "has ranged $85.00 to $110.00 since you bought it" in prompt
+
+
+def test_a_holding_with_no_price_range_omits_the_line():
+    """No history yet (bought earlier today, say) reads as silent, not zero."""
+    assert "has ranged" not in agent.build_prompt(_priced_book(), [], {})
+
+
+def test_price_range_since_purchase_spans_completed_sessions_and_the_live_price(
+    fake_bar_cache, monkeypatch,
+):
+    # Coverage already spans the ask, so no fetch should fire — but a real one
+    # would mean live network from a "pure" test, so it is disarmed either way.
+    monkeypatch.setattr(agent.bars, "refresh", lambda *a, **kw: 0)
+    opened = datetime.date(2026, 9, 1)
+    fake_bar_cache[("AAA", datetime.date(2026, 9, 1))] = dict(
+        date=datetime.date(2026, 9, 1), open=90.0, high=95.0, low=90.0, close=93.0, volume=1000,
+    )
+    fake_bar_cache[("AAA", datetime.date(2026, 9, 2))] = dict(
+        date=datetime.date(2026, 9, 2), open=93.0, high=98.0, low=92.0, close=97.0, volume=1000,
+    )
+    # The current price, 101, is above every stored bar — it must still widen
+    # the high, since it is the one point history has not settled into a bar
+    # for yet.
+    result = agent.price_range_since_purchase(
+        "AAA", opened, current_price=101.0, today=datetime.date(2026, 9, 3),
+    )
+    assert result == (90.0, 101.0)
+
+
+def test_price_range_since_purchase_is_none_without_a_purchase_date():
+    assert agent.price_range_since_purchase("AAA", None, current_price=100.0) is None
+
+
+def test_price_range_since_purchase_is_none_with_no_settled_history(fake_bar_cache, monkeypatch):
+    """Bought earlier today, say — nothing has been recorded as a completed
+    session yet. Read as silent (see the build_prompt test above), not as a
+    zero-width range at the current price."""
+    monkeypatch.setattr(agent.bars, "refresh", lambda *a, **kw: 0)
+    result = agent.price_range_since_purchase(
+        "AAA", datetime.date(2026, 9, 3), current_price=100.0, today=datetime.date(2026, 9, 3),
+    )
+    assert result is None
 
 
 def test_the_regime_line_leads_the_prompt():
@@ -2071,6 +2157,67 @@ def test_a_read_is_not_an_order(monkeypatch):
     assert rejected == []
 
 
+def test_an_order_bundled_with_a_read_is_not_carried_out(monkeypatch):
+    """A read changes the pass's control flow rather than the book. Caught
+    live 2026-09-15: a buy and an adjust riding along beside a read vanished
+    with no trace at all -- not rejected, not failed, nowhere the agent could
+    see it. Only the read may run from an answer that asks for one."""
+    replies = iter([
+        '{"reasoning": "read then buy", "orders": ['
+        '{"side": "read", "ticker": "INTC"}, '
+        '{"side": "buy", "ticker": "INTC", "quantity": 50}]}',
+        '{"reasoning": "done", "orders": []}',
+    ])
+    monkeypatch.setattr(agent, "_ask", lambda p: next(replies))
+    monkeypatch.setattr(agent.analysis_reader, "read", lambda t, on=None: "text")
+
+    _, accepted, rejected = agent._decide(_book(cash=10000.0), [], {"INTC": 100.0})
+
+    assert accepted == [], "the bundled buy must not be carried out silently"
+    assert rejected == [], "nor refused -- it never reached screening at all"
+
+
+def test_the_dropped_order_is_named_in_the_next_prompt(monkeypatch):
+    """The bug was the silence, not the drop. The next prompt now says
+    exactly what did not run, so the agent can resend it."""
+    asked = []
+    replies = iter([
+        '{"reasoning": "read then buy", "orders": ['
+        '{"side": "read", "ticker": "INTC"}, '
+        '{"side": "buy", "ticker": "INTC", "quantity": 50}, '
+        '{"side": "adjust", "ticker": "INTC", "stop": 89.71, "target": 115.96}]}',
+        '{"reasoning": "done", "orders": []}',
+    ])
+    monkeypatch.setattr(agent, "_ask", lambda p: asked.append(p) or next(replies))
+    monkeypatch.setattr(agent.analysis_reader, "read", lambda t, on=None: "text")
+
+    agent._decide(_book(cash=10000.0), [], {"INTC": 100.0})
+
+    assert "What was not carried out" in asked[1]
+    assert "BUY 50 INTC" in asked[1]
+    assert "ADJUST INTC" in asked[1] and "89.71" in asked[1] and "115.96" in asked[1]
+
+
+def test_a_plain_read_names_nothing_as_dropped(monkeypatch):
+    """No section at all when a read arrives alone, which is the normal case
+    -- this must not fire on every read, only a bundled one."""
+    asked = []
+    replies = _read_then('{"reasoning": "done", "orders": []}')
+    monkeypatch.setattr(agent, "_ask", lambda p: asked.append(p) or next(replies))
+    monkeypatch.setattr(agent.analysis_reader, "read", lambda t, on=None: "text")
+
+    agent._decide(_book(cash=250.0), [], {})
+
+    assert "What was not carried out" not in asked[1]
+
+
+def test_describe_order_formats_quantity_and_levels():
+    assert agent._describe_order({"side": "buy", "ticker": "INTC", "quantity": 50}) == "BUY 50 INTC"
+    assert agent._describe_order(
+        {"side": "adjust", "ticker": "INTC", "stop": 89.71, "target": 115.96}
+    ) == "ADJUST INTC (stop 89.71, target 115.96)"
+
+
 def test_it_may_read_several_analyses_before_deciding(monkeypatch):
     """A person deciding whether to buy reads the research first, and often
     more than one piece of it. Rationing that to a single analysis was a
@@ -2166,6 +2313,31 @@ def test_every_turn_of_a_pass_is_recorded(monkeypatch):
     assert decision.response == decision.turns[-1]["response"], (
         "prompt/response stay the last turn, which is what the orders were screened from"
     )
+
+
+def test_each_turn_carries_its_own_reasoning_and_what_it_asked_for(monkeypatch):
+    """The events page's half of this change (2026-09-15).
+
+    Before this, only the pass's final reasoning was kept — every earlier
+    turn's own reasoning was parsed, used to decide what happened next, and
+    then thrown away. With `_MAX_ACT_TURNS` raised, a pass can now run through
+    several genuinely different decisions in one row; showing only the last
+    one's reasoning would hide most of the story.
+    """
+    replies = _read_then('{"reasoning": "now I know", "orders": [{"ticker": "INTC", "side": "buy", "quantity": 4}]}')
+    monkeypatch.setattr(agent, "_ask", lambda p: next(replies))
+    monkeypatch.setattr(agent.analysis_reader, "read", lambda t, on=None: "the analysis")
+
+    decision = agent._decide(_book(cash=1000.0), [], {"INTC": 100.0})
+
+    assert decision.turns[0]["reasoning"] == "let me look"
+    assert decision.turns[0]["orders"] == [
+        {"side": "read", "ticker": "INTC", "quantity": 0, "reason": ""}
+    ]
+    assert decision.turns[1]["reasoning"] == "now I know"
+    assert decision.turns[1]["orders"] == [
+        {"side": "buy", "ticker": "INTC", "quantity": 4, "reason": ""}
+    ]
 
 
 def test_a_single_turn_pass_still_records_that_one_turn(monkeypatch):
