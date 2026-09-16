@@ -626,7 +626,7 @@ def build_prompt(
         woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
         asked_again=asked_again,
     )
-    lines.append("")
+    lines += ["", "---", ""]
     if regime_line:
         lines += [regime_line, ""]
     recent_changes = describe_recent_changes(changes or [])
@@ -654,7 +654,7 @@ def build_prompt(
             "step can fail and leave the position unprotected. Settled money is the safer "
             "purchase.",
         ]
-    lines.append("")
+    lines += ["", "---", ""]
 
     if book.holdings:
         price_ranges = price_ranges or {}
@@ -722,7 +722,7 @@ def build_prompt(
             )
     else:
         lines.append("You hold nothing. The whole account is in cash.")
-    lines.append("")
+    lines += ["", "---", ""]
 
     # **Both of these sit above the signal table, and that placement was
     # measured (2026-09-12).** They were between the two tables, at 42% and 47%
@@ -839,27 +839,34 @@ def build_prompt(
         lines.append("No new signals today.")
 
     history = describe_history(closed or [])
+    recent_failures = describe_recent_failures(failures or [])
+    timing = describe_analysis_timing(analysis_minutes or [], running_analyses or {})
+    recent_wakeups = describe_recent_wakeups(wakeups or [])
+    # One divider for the whole cluster, and only when it has something in
+    # it — an unconditional one here would sit right beside the next
+    # section's own divider (reading, or Rules) on a pass with no history,
+    # no failures, no timing and no wakeups, printing two rules in a row.
+    if history or recent_failures or timing or recent_wakeups:
+        lines += ["", "---", ""]
     if history:
         lines += ["", *history]
-
-    recent_failures = describe_recent_failures(failures or [])
     if recent_failures:
         lines += ["", *recent_failures]
-
-    timing = describe_analysis_timing(analysis_minutes or [], running_analyses or {})
     if timing:
         lines += ["", *timing]
-
-    recent_wakeups = describe_recent_wakeups(wakeups or [])
     if recent_wakeups:
         lines += ["", *recent_wakeups]
 
-    # What it asked to read on the previous turn. Placed with the refusals
-    # because both are replies to something it said, not new facts about the
-    # world, and it should read them as such.
+    # What it asked to read on the previous turn. Its own section, with its
+    # own break, since 2026-09-16 — it used to run on straight from "recent
+    # wakeups" with no divider, and read as that section's last line rather
+    # than a reply to something the agent said moments ago.
     reading_lines = analysis_reader.describe(readings or [])
     if reading_lines:
-        lines += reading_lines
+        lines += ["", "---", "", *reading_lines]
+
+    if dropped_with_read or rejected:
+        lines += ["", "---"]
 
     if dropped_with_read:
         lines += [
@@ -917,6 +924,8 @@ def build_prompt(
         # ticker or re-look, is this same $0.05 decision, and there is no
         # daily count on how many you may make: cash is what bounds it.
         lines += [
+            "",
+            "---",
             "",
             f"Nothing is analysed automatically, holdings included. A \"research\" order "
             f"costs ${price:,.2f} and runs inside this pass — you are shown what it found "
@@ -1001,6 +1010,8 @@ def build_prompt(
 
     lines += [
         "",
+        "---",
+        "",
         "Rules:",
         # **What the closed session actually stops, stated beside the orders
         # rather than only in the clock line (2026-09-12).** The first line of
@@ -1047,12 +1058,6 @@ def build_prompt(
                 "across every buy. Not each — in total.",
             ]
         ),
-        "- Some signals carry how good the analyst thought the bet was. The chance of",
-        "  working is their own estimate. Risk/reward compares what is gained if the",
-        "  target is reached against what is lost if the stop is hit. Expected value is",
-        "  in R-multiples, where one R is the amount risked: positive means the bet pays",
-        "  at the stated odds, negative means it does not. Signals without these numbers",
-        "  are not worse bets, only ones where the analyst did not say.",
         *(
             [
                 f"- You may only open a new position on a signal that meets the conviction "
@@ -1125,13 +1130,11 @@ def build_prompt(
             if horizon_days
             else []
         ),
-        # The note action. Two sentences, and the second is the load-bearing
-        # one: without it "I need better data" becomes a way to avoid deciding,
-        # and a pass that owed a decision returns a request instead.
-        '- If something is stopping you deciding well — a number you cannot '
-        'see, a tool you do not have, a rule that contradicts another — say so '
-        'with side "note". It reaches the people who maintain you. Nothing '
-        'acts on it automatically, so it is a message and not a request.',
+        "",
+        "---",
+        "",
+        "**Answer in this shape:**",
+        "",
         '{"reasoning": "one or two sentences", "next_wakeup": "2026-09-11T09:00", '
         '"next_wakeup_note": "what you want to remember from this pass", "orders": '
         '[{"ticker": "AAPL", "side": "buy", "quantity": 2, "reason": "why"},',
@@ -1155,6 +1158,7 @@ def build_prompt(
         # Always last, so exactly one line closes the array and the object no
         # matter which of the optional examples above are present.
         ' {"side": "note", "reason": "what would help you decide better"}]}',
+        "",
         "Use an empty list for orders if you want to hold everything.",
     ]
     return "\n".join(_unwrapped(lines))
@@ -1772,6 +1776,13 @@ _FIXED_RULES = [
     "Sell means they expect it to fall, so exit it if you hold it. Hold means "
     "no action is recommended — if you do not own it, a Hold is not a reason "
     "to buy it.",
+    "- Some signals carry how good the analyst thought the bet was. The chance "
+    "of working is their own estimate. Risk/reward compares what is gained if "
+    "the target is reached against what is lost if the stop is hit. Expected "
+    "value is in R-multiples, where one R is the amount risked: positive means "
+    "the bet pays at the stated odds, negative means it does not. Signals "
+    "without these numbers are not worse bets, only ones where the analyst "
+    "did not say.",
     # The one word that hides the most. A Hold on 2026-09-10 meant "keep a
     # fifth of the position and defend it below 102.70", and reached the agent
     # as the same word as a flat Hold. It spent a long stretch of one pass
@@ -1858,6 +1869,10 @@ _FIXED_RULES = [
     "wastes the day rather than saving it.",
     "- Before answering, add up what your buys cost and check it against your "
     "cash.",
+    "- If something is stopping you deciding well — a number you cannot see, "
+    "a tool you do not have, a rule that contradicts another — say so with "
+    "side \"note\". It reaches the people who maintain you. Nothing acts on it "
+    "automatically, so it is a message and not a request.",
     "- A note is never a substitute for a decision. Leave one if you have "
     "something to say, and still answer with what you want done today, "
     "including doing nothing.Reply with JSON only, in this exact shape:",

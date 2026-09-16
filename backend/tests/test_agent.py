@@ -1203,9 +1203,12 @@ def test_a_signal_without_conviction_numbers_says_nothing_about_them():
 
 
 def test_the_rules_explain_what_the_numbers_mean():
+    # Moved into SYSTEM_PROMPT on 2026-09-16 — it names no figure from this
+    # pass, so it belongs with the rules that never change, not the ones
+    # rebuilt every call. See .claude/rules/agent.md.
     sig = _Sig()
     sig.expected_value_r = 0.5
-    prompt = agent.build_prompt(_book(), [sig], {"AAA": 100.0})
+    prompt = agent.SYSTEM_PROMPT + agent.build_prompt(_book(), [sig], {"AAA": 100.0})
 
     assert "one R is the amount risked" in prompt
     # Defining them is information; ranking by them would be taking the

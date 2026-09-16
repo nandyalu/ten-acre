@@ -16,13 +16,17 @@ unique — INTC has two analyses on 2026-09-08 and SMCI three on 2026-09-04 — 
 the newest of a day wins and the reply says how many others there were. Reading
 the wrong one and being told is better than naming one it cannot see.
 
-**Since 2026-09-15, a read also carries a short take from each of the four
-analysts** (market, sentiment, news, fundamentals) — see JOURNEY.md. Before
-this, those four reports were computed and stored for every analysis and never
-reached the agent at all: it traded on the Rating and the Executive Summary
-alone, with no way to check either against the evidence behind it. A missing
-section (an analysis run before this date, or one whose report rows never
-saved) is left out rather than shown as empty.
+**Since 2026-09-15, a read also carries each analyst's own summary table**
+(market, sentiment, news, fundamentals), plus the full investment plan and
+trader's plan — see JOURNEY.md. Before this, those reports were computed and
+stored for every analysis and never reached the agent at all: it traded on
+the Rating and the Executive Summary alone, with no way to check either
+against the evidence behind it. **Restructured 2026-09-16**, from a 500-char
+prose trim of each report to the table each analyst already writes at the end
+of its own report — the trim cut mid-sentence and mid-argument, where a table
+is short, structured, and already the report's own summary. A missing table
+(an analysis run before a report started ending in one, or a report row that
+never saved) is left out, not shown empty.
 """
 import datetime
 import logging
@@ -44,23 +48,12 @@ _MAX_CHARS = 1400
 # is the comparison this exists for.
 _SEARCH_LIMIT = 200
 
-# Per analyst section, not per read: four of these plus the rationale above
-# stays well under the twelve-times figure that the module docstring warns
-# against. Each report runs 3,000-8,000 characters and opens with its own
-# title, date and instrument lines before any real content, so this is short
-# enough to trim that boilerplate rather than deliver it whole, and does not
-# try to be cleverer than that — see the 2026-09-15 JOURNEY.md entry for why a
-# plain trim was chosen over parsing out a "verdict" line per report type.
-_SECTION_MAX_CHARS = 500
-
-# report_type (backend/database/models.py SignalReport) to the label shown
-# beside it, in the order the agent reads them.
-_ANALYST_SECTIONS = (
-    ("market_report", "Market"),
-    ("sentiment_report", "Sentiment"),
-    ("news_report", "News"),
-    ("fundamentals_report", "Fundamentals"),
-)
+# Every analyst report ends with its own markdown table, per the analyst
+# prompts in TradingAgents/tradingagents/agents/analysts/ — the model is told
+# to "append a Markdown table at the end of the report to organize key
+# points". _last_table pulls that table (and whatever heading sits directly
+# above it) rather than guessing a fixed title, because each analyst names
+# its own table and the name varies run to run.
 
 
 def _parse_date(raw) -> datetime.date | None:
@@ -85,20 +78,76 @@ def _trim(text: str, max_chars: int = _MAX_CHARS) -> str:
     return body[:cut].rstrip() + "\n[...truncated]"
 
 
-def _analyst_snapshot(signal_id: int) -> str:
-    """A short take from each of the four analyst reports, or "" when none are
-    on record — an analysis run before 2026-09-15, or a report row that never
-    saved. Not shown as an empty section: nothing to read is not the same as
-    the analysts having nothing to say."""
-    reports = db.get_signal_reports(signal_id)
-    lines = []
-    for report_type, label in _ANALYST_SECTIONS:
-        content = _trim(reports.get(report_type, ""), _SECTION_MAX_CHARS)
-        if content:
-            lines.append(f"{label} — {content}")
-    if not lines:
+def _last_table(text: str) -> str:
+    """The last markdown table in a report, with whatever heading sits
+    directly above it. "" when the report has no table — an analysis run
+    before its report type started ending in one."""
+    lines = (text or "").strip().splitlines()
+    end = None
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip().startswith("|"):
+            end = i
+            break
+    if end is None:
         return ""
-    return "Each analyst's own report, in short:\n" + "\n\n".join(lines)
+    start = end
+    while start > 0 and lines[start - 1].strip().startswith("|"):
+        start -= 1
+    heading_idx = start - 1
+    while heading_idx >= 0 and not lines[heading_idx].strip():
+        heading_idx -= 1
+    block = lines[start : end + 1]
+    if heading_idx >= 0 and lines[heading_idx].strip().startswith("#"):
+        block = [lines[heading_idx].strip(), "", *block]
+    return "\n".join(block)
+
+
+def _analyst_snapshot(signal_id: int) -> str:
+    """Each analyst's own summary table, plus both plans in full — "" when
+    nothing is on record, an analysis run before 2026-09-15, or a report row
+    that never saved. Not shown as an empty section: nothing to read is not
+    the same as the analysts having nothing to say."""
+    reports = db.get_signal_reports(signal_id)
+    if not reports:
+        return ""
+    sections = []
+
+    market = _last_table(reports.get("market_report", ""))
+    if market:
+        sections.append(f"Market — {market}")
+
+    # The sentiment report opens with a deterministic header (band, score,
+    # confidence) ahead of its own narrative — see sentiment_analyst.py. Kept
+    # whole because it is the one figure this report exists to produce; the
+    # table underneath it is a bonus when the model wrote one.
+    sentiment_report = (reports.get("sentiment_report") or "").strip()
+    if sentiment_report:
+        head = "\n".join(sentiment_report.splitlines()[:2])
+        table = _last_table(sentiment_report)
+        sections.append(f"Sentiment — {head}" + (f"\n\n{table}" if table else ""))
+
+    news = _last_table(reports.get("news_report", ""))
+    if news:
+        sections.append(f"News — {news}")
+
+    fundamentals = _last_table(reports.get("fundamentals_report", ""))
+    if fundamentals:
+        sections.append(f"Fundamentals — {fundamentals}")
+
+    # Both plans in full, unlike the four reports above: each runs
+    # 1,000-1,800 characters, already is a summary, and is what the model's
+    # own final call actually drew on.
+    investment_plan = (reports.get("investment_plan") or "").strip()
+    if investment_plan:
+        sections.append(f"Investment plan — {investment_plan}")
+
+    trader_plan = (reports.get("trader_investment_plan") or "").strip()
+    if trader_plan:
+        sections.append(f"Trader's plan — {trader_plan}")
+
+    if not sections:
+        return ""
+    return "**Individual report summaries**\n\n" + "\n\n".join(sections)
 
 
 def _newest_first(signals: list[Signal]) -> list[Signal]:
@@ -172,7 +221,7 @@ def read(ticker: str, on=None) -> str:
         reply = f"{header}. It recorded no reasoning."
     else:
         reply = f"{header}:\n{body}"
-    return f"{reply}\n\n{snapshot}" if snapshot else reply
+    return f"{reply}\n\n---\n\n{snapshot}" if snapshot else reply
 
 
 def describe(readings: list[str]) -> list[str]:
@@ -183,7 +232,7 @@ def describe(readings: list[str]) -> list[str]:
     """
     if not readings:
         return []
-    lines = ["What you asked to read:", ""]
+    lines = ["**What you asked to read**", ""]
     for text in readings:
         lines += [text, ""]
     return lines

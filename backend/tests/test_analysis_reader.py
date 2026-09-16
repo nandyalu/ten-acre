@@ -100,29 +100,43 @@ def test_naming_no_ticker_is_answered_not_ignored():
     assert "named no ticker" in analysis_reader.read("")
 
 
-def test_a_read_carries_a_short_take_from_each_analyst(monkeypatch):
+def test_a_read_carries_each_analysts_summary_table(monkeypatch):
     """The four analyst reports never reached the agent before 2026-09-15 —
-    only the Rating and the rationale did. A read now adds a trimmed excerpt
-    of each, so the agent can check the verdict against the evidence."""
+    only the Rating and the rationale did. A read now adds each analyst's own
+    summary table (the one every analyst prompt is told to append), plus both
+    plans in full, so the agent can check the verdict against the evidence."""
     signal = _signal(1, "AAA", "2026-09-15", "Buy")
     monkeypatch.setattr(analysis_reader.db, "get_recent_signals", lambda **k: [signal])
     monkeypatch.setattr(
         analysis_reader.db, "get_signal_reports",
         lambda signal_id: {
-            "market_report": "FINAL TRANSACTION PROPOSAL: **BUY** — momentum is strong.",
-            "sentiment_report": "**Overall Sentiment:** Mixed.",
-            "news_report": "A supplier deal was announced this week.",
-            "fundamentals_report": "Margins expanded year over year.",
+            "market_report": (
+                "Momentum is strong.\n\n### Summary Table\n\n"
+                "| Indicator | Value |\n| :--- | :--- |\n| RSI | 61 |"
+            ),
+            "sentiment_report": "**Overall Sentiment:** Mixed.\n**Confidence:** Medium.\n\nNarrative here.",
+            "news_report": (
+                "A supplier deal was announced.\n\n### Key Takeaways\n\n"
+                "| Point | Impact |\n| :--- | :--- |\n| Deal | Positive |"
+            ),
+            "fundamentals_report": (
+                "Margins expanded.\n\n## Key Data Summary Table\n\n"
+                "| Metric | Value |\n| :--- | :--- |\n| P/E | 20 |"
+            ),
+            "investment_plan": "**Recommendation**: Overweight",
+            "trader_investment_plan": "**Action**: Buy",
         },
     )
 
     reply = analysis_reader.read("AAA")
 
-    assert "Each analyst's own report, in short:" in reply
-    assert "Market — FINAL TRANSACTION PROPOSAL" in reply
-    assert "Sentiment — **Overall Sentiment:** Mixed." in reply
-    assert "News — A supplier deal was announced this week." in reply
-    assert "Fundamentals — Margins expanded year over year." in reply
+    assert "**Individual report summaries**" in reply
+    assert "Market — ### Summary Table\n\n| Indicator | Value |" in reply
+    assert "Sentiment — **Overall Sentiment:** Mixed.\n**Confidence:** Medium." in reply
+    assert "News — ### Key Takeaways\n\n| Point | Impact |" in reply
+    assert "Fundamentals — ## Key Data Summary Table\n\n| Metric | Value |" in reply
+    assert "Investment plan — **Recommendation**: Overweight" in reply
+    assert "Trader's plan — **Action**: Buy" in reply
 
 
 def test_a_read_with_no_analyst_reports_omits_the_section(monkeypatch):
@@ -133,20 +147,26 @@ def test_a_read_with_no_analyst_reports_omits_the_section(monkeypatch):
     monkeypatch.setattr(analysis_reader.db, "get_recent_signals", lambda **k: [signal])
     monkeypatch.setattr(analysis_reader.db, "get_signal_reports", lambda signal_id: {})
 
-    assert "Each analyst's own report" not in analysis_reader.read("AAA")
+    assert "Individual report summaries" not in analysis_reader.read("AAA")
 
 
-def test_a_missing_section_is_skipped_not_shown_blank(monkeypatch):
-    """One analyst's report row failing to save should not blank the other
-    three, and should not print an empty line for the one that is missing."""
+def test_a_report_with_no_table_is_skipped_not_shown_blank(monkeypatch):
+    """A market report with no table (an old run, before every analyst
+    started appending one) should not blank the others, and should not print
+    an empty 'Market —' line."""
     signal = _signal(1, "AAA", "2026-09-15", "Buy")
     monkeypatch.setattr(analysis_reader.db, "get_recent_signals", lambda **k: [signal])
     monkeypatch.setattr(
         analysis_reader.db, "get_signal_reports",
-        lambda signal_id: {"market_report": "Uptrend intact."},
+        lambda signal_id: {
+            "market_report": "Uptrend intact, no table this run.",
+            "news_report": (
+                "### Summary\n\n| Point | Impact |\n| :--- | :--- |\n| Deal | Positive |"
+            ),
+        },
     )
 
     reply = analysis_reader.read("AAA")
 
-    assert "Market — Uptrend intact." in reply
-    assert "Sentiment —" not in reply
+    assert "Market —" not in reply
+    assert "News — ### Summary" in reply

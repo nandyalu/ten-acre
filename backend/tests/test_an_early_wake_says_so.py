@@ -206,6 +206,6 @@ def test_each_reason_names_a_section_that_is_really_there():
     refused = agent_book.Rejection(side="buy", ticker="INTC", quantity=5, why="not enough cash")
     prompt = agent.build_prompt(_book(), [], {}, rejected=[refused], readings=["the case for INTC"])
 
-    assert '"What you asked to read" below' in prompt and "What you asked to read:" in prompt
+    assert '"What you asked to read" below' in prompt and "**What you asked to read**" in prompt
     assert '"Your previous answer was refused" below' in prompt and "Your previous answer was refused." in prompt
     assert "What you just did, a moment ago" not in prompt
