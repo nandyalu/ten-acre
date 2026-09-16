@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-16
+
+- **Site** — A research order the agent commissioned now shows on the Decisions page as failed, not blank, when the analysis never finished. The order record only ever said `research TICKER`; whether it finished or failed was computed and then thrown away. A failed research now appears in the same red "not analysed" list a broker failure appears in, instead of looking identical to one that succeeded.
+
 ## 2026-09-14
 
 - **Dependencies** — The TradingAgents submodule takes three upstream fixes. A FRED error no longer carries the API key (upstream #1324, and our own fix for connection errors and timeouts, which that PR missed). The key could reach the model's `DATA_UNAVAILABLE` message, the logs, and a report on the public site. A StockTwits read stops at 5 MiB (#1328). A newest daily bar with no close no longer turns a stock's whole price history into "no data" (`ef383df`).

@@ -109,7 +109,9 @@ def test_the_rule_tells_the_agent_what_it_will_and_will_not_get():
 
 
 def test_every_wake_path_has_a_reason_the_agent_can_read():
-    for label in ("Alarm", "Wakeup", "Event-driven", "Final", "Change"):
+    for label in (
+        "Alarm", "Wakeup", "Event-driven", "Final", "Change", "Stop fill", "Unguarded position",
+    ):
         assert scheduler._WOKE_BECAUSE.get(label), label
 
 
@@ -120,6 +122,7 @@ def test_the_reason_reaches_run_once(monkeypatch):
         seen["why"] = woke_because
         return types.SimpleNamespace(
             acted=False, rejected=[], failed=[], notes=[], next_wakeup=None, skipped=None,
+            unguarded=[],
         )
 
     monkeypatch.setattr(scheduler.agent, "run_once", fake_run_once)

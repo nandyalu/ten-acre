@@ -2759,6 +2759,14 @@ class AgentRun:
     # Tickers it stopped watching. No money moves either way, but tomorrow's
     # sweep is smaller for it, so this is a decision and not housekeeping.
     untracked: list[str] = field(default_factory=list)
+    # Positions this pass left with no resting stop or target: a fill with no
+    # usable level, a buy whose bracket the broker refused, or a failed sell
+    # that could not get its exits back. Until 2026-09-16 this was a DB alert
+    # and a Discord line and nothing else — the agent could go up to four days
+    # not knowing one of its own positions had nothing under it. Scheduler
+    # reads this after the pass to wake the agent early; see
+    # _run_agent_pass_locked.
+    unguarded: list[str] = field(default_factory=list)
     # What the agent asked us for: a tool it lacks, data it cannot see, a rule
     # it finds contradictory. Nothing reads these automatically and nothing
     # acts on them — they are evidence about the prompt and the tool set, which
@@ -2925,6 +2933,7 @@ def _place(
     price: float | None,
     stops: dict[str, float],
     targets: dict[str, float],
+    run: "AgentRun | None" = None,
 ) -> dict:
     """Place one accepted order, as a bracket where that is possible.
 
@@ -2949,7 +2958,7 @@ def _place(
     if order["side"] != "buy":
         # Not a plain market order: the resting exits have to be cleared before
         # the broker will accept the sell, and put back if it fails.
-        return _sell_and_restore_on_failure(order)
+        return _sell_and_restore_on_failure(order, run=run)
 
     stop, target = usable_levels(ticker, stops.get(ticker), targets.get(ticker), price)
     if stop is None and price:
@@ -2968,7 +2977,9 @@ def _place(
     return sandbox_broker.place_market_order(ticker, "BUY", order["quantity"])
 
 
-def _record_unguarded(ticker: str, quantity: float, why: str) -> None:
+def _record_unguarded(
+    ticker: str, quantity: float, why: str, run: "AgentRun | None" = None
+) -> None:
     """Write down that a position was opened with nothing protecting it.
 
     Until this existed the failure was completely silent: no ledger row, no
@@ -2980,6 +2991,12 @@ def _record_unguarded(ticker: str, quantity: float, why: str) -> None:
     Recorded as an alert rather than a trade, because nothing was traded. The
     watchdog's alert table is already the place the dashboard reads for things
     that need a person.
+
+    **Also recorded on the pass itself, when one is running (2026-09-16).**
+    The alert used to be the only trace, which meant a person watching
+    Discord was the sole way this was ever noticed — the agent that just
+    caused it never learned, and neither did any later pass, since nothing
+    woke it early. See `run.unguarded` and `scheduler._run_agent_pass_locked`.
     """
     log.error("%s is unguarded: %s", ticker, why)
     try:
@@ -2995,6 +3012,8 @@ def _record_unguarded(ticker: str, quantity: float, why: str) -> None:
     except Exception:
         # An unrecordable alert must not undo a filled buy.
         log.exception("Couldn't record the unguarded-position alert for %s", ticker)
+    if run is not None:
+        run.unguarded.append(f"{ticker}: {why}")
 
 
 def atr_stop(ticker: str, price: float) -> float | None:
@@ -3130,7 +3149,7 @@ def _await_cancels(client_order_ids: list[str]) -> None:
         )
 
 
-def _sell_and_restore_on_failure(order: dict) -> dict:
+def _sell_and_restore_on_failure(order: dict, run: "AgentRun | None" = None) -> dict:
     """Sell a position, clearing its resting exits first.
 
     **The broker refuses a sell while exits rest on the position.** A bracketed
@@ -3160,11 +3179,13 @@ def _sell_and_restore_on_failure(order: dict) -> dict:
         )
     except Exception:
         if cancelled:
-            _restore_resting_exits(order["ticker"], cancelled)
+            _restore_resting_exits(order["ticker"], cancelled, run=run)
         raise
 
 
-def _restore_resting_exits(ticker: str, cancelled: list[dict]) -> None:
+def _restore_resting_exits(
+    ticker: str, cancelled: list[dict], run: "AgentRun | None" = None
+) -> None:
     """Put back the exits a failed sell had cleared.
 
     Best-effort, and loud when it fails. The shares are held either way, so
@@ -3177,7 +3198,12 @@ def _restore_resting_exits(ticker: str, cancelled: list[dict]) -> None:
         legs = sandbox_broker.place_exit_bracket(ticker, quantity, stop, target)
     except Exception as exc:
         log.exception("Could not restore the exits on %s after a failed sell", ticker)
-        _record_unguarded(ticker, quantity, f"a failed sell cleared them and they would not go back: {exc}")
+        _record_unguarded(
+            ticker,
+            quantity,
+            f"a failed sell cleared them and they would not go back: {exc}",
+            run=run,
+        )
         return
     for leg in legs:
         label = "stop-loss" if leg["kind"] == "stop" else "take-profit"
@@ -3262,7 +3288,8 @@ def _arm_exits(
     stop_price: float | None,
     target_price: float | None,
     client_order_id: str | None = None,
-) -> None:
+    run: "AgentRun | None" = None,
+) -> str | None:
     """Rest the exits under a position the agent just opened: a stop where the
     thesis is wrong, a take-profit where it has played out.
 
@@ -3275,33 +3302,36 @@ def _arm_exits(
     the shares are owned either way and raising here would leave the ledger
     disagreeing with the account. It is logged loudly instead — a position
     running naked is worth knowing about.
+
+    Returns the unguarded-position message when arming failed, or None on
+    success, so a caller mid-pass (2026-09-16) can put it in front of the
+    agent in the same breath rather than only in the alert log.
     """
     price = get_current_price(order["ticker"])
     stop_price, target_price = usable_levels(order["ticker"], stop_price, target_price, price)
 
     if not stop_price and not target_price:
-        _record_unguarded(
-            order["ticker"], order["quantity"], "the analysis gave no usable stop or target"
-        )
-        return
+        why = "the analysis gave no usable stop or target"
+        _record_unguarded(order["ticker"], order["quantity"], why, run=run)
+        return f"{order['ticker']}: {why}"
 
     # The shares have to exist before anything can rest against them.
     if client_order_id and not _await_fill(client_order_id):
-        _record_unguarded(
-            order["ticker"],
-            order["quantity"],
+        why = (
             f"the buy had not filled after {_FILL_WAIT_SECONDS}s, so exits could not be placed "
-            "against shares that may not exist",
+            "against shares that may not exist"
         )
-        return
+        _record_unguarded(order["ticker"], order["quantity"], why, run=run)
+        return f"{order['ticker']}: {why}"
     try:
         legs = sandbox_broker.place_exit_bracket(
             order["ticker"], order["quantity"], stop_price, target_price
         )
     except Exception as exc:
         log.exception("Couldn't arm exits for %s", order["ticker"])
-        _record_unguarded(order["ticker"], order["quantity"], f"the broker refused them: {exc}")
-        return
+        why = f"the broker refused them: {exc}"
+        _record_unguarded(order["ticker"], order["quantity"], why, run=run)
+        return f"{order['ticker']}: {why}"
     for leg in legs:
         label = "stop-loss" if leg["kind"] == "stop" else "take-profit"
         db.record_agent_trade(
@@ -3401,7 +3431,7 @@ def set_research_runner(runner) -> None:
     _research_runner = runner
 
 
-def _research_and_report(tickers: list[str]) -> list[str]:
+def _research_and_report(tickers: list[str]) -> tuple[list[str], dict[str, str]]:
     """Run the analyses the agent just commissioned, and hand back what they said.
 
     **This is the point of chaining.** The agent asked to have something looked
@@ -3412,13 +3442,23 @@ def _research_and_report(tickers: list[str]) -> list[str]:
 
     Each line carries the same trimmed rationale the `read` tool returns, so
     the agent does not have to spend a turn reading what it just paid for.
+
+    **Also returns which of `tickers` never produced a usable analysis
+    (2026-09-16).** Until then this was computed here and thrown away outside
+    of the lines above — the order record kept only `research TICKER` with a
+    blank reason, so the Decisions page could not tell a research that
+    finished from one that silently did not. The caller moves a failed ticker
+    from `run.researched` into `run.failed`, the same bucket a broker failure
+    already lands in.
     """
     if _research_runner is None:
         log.warning("No research runner installed; %s will not run in this pass", tickers)
-        return [
-            f"{t}: could not be analysed in this pass — nothing is set up to run it here."
-            for t in tickers
-        ]
+        why = "nothing is set up to run it here"
+        return (
+            [f"{t}: could not be analysed in this pass — {why}." for t in tickers],
+            {t: why for t in tickers},
+        )
+    failed: dict[str, str] = {}
     # **Research that cannot finish inside today's model requests is refused
     # here, before anything runs or is charged (2026-09-13).** An analysis makes
     # about twenty model calls. On a key with a daily cap, an analysis that
@@ -3431,28 +3471,35 @@ def _research_and_report(tickers: list[str]) -> list[str]:
         fits = left // llm_throttle.REQUESTS_PER_ANALYSIS
         if fits < len(tickers):
             why = llm_throttle.describe_daily_shortfall(left)
-            refused = [f"{t}: not analysed, and nothing was charged. {why}" for t in tickers[fits:]]
+            for t in tickers[fits:]:
+                refused.append(f"{t}: not analysed, and nothing was charged. {why}")
+                failed[t] = why
             log.info("Not enough model requests left today for %s", ", ".join(tickers[fits:]))
             tickers = tickers[:fits]
     if not tickers:
-        return refused
+        return refused, failed
     log.info("Running %s and waiting for the result, in the same pass", ", ".join(tickers))
     try:
         # What stopped each analysis that did not finish. A runner that
         # reports nothing — a test double — reports no failures.
-        failures = _research_runner(list(tickers)) or {}
+        run_failures = _research_runner(list(tickers)) or {}
     except Exception as exc:
         log.exception("In-pass research failed for %s", tickers)
-        return refused + [f"{t}: the analysis did not finish — {exc}" for t in tickers]
+        why = str(exc)
+        for t in tickers:
+            refused.append(f"{t}: the analysis did not finish — {exc}")
+            failed[t] = why
+        return refused, failed
     charge = research.get_price()
     lines = []
     for t in tickers:
-        if t in failures:
+        if t in run_failures:
             # **Never "it has finished" for an analysis that did not.** Until
             # 2026-09-13 every commissioned ticker got that line, and the
             # reasoning under it was the older analysis the table still held.
+            failed[t] = run_failures[t]
             lines.append(
-                f"**{t}: the analysis you ordered did not finish.** {failures[t]} "
+                f"**{t}: the analysis you ordered did not finish.** {run_failures[t]} "
                 f"Any row for {t} in the signals table is from an earlier analysis."
             )
             continue
@@ -3463,7 +3510,7 @@ def _research_and_report(tickers: list[str]) -> list[str]:
             f"as yours in the signals table, and this is the reasoning behind "
             f"it:\n{analysis_reader.read(t)}"
         )
-    return refused + lines
+    return refused + lines, failed
 
 
 def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, researched=None) -> list[str]:
@@ -3502,7 +3549,9 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
             outcomes.append(f"{order['ticker']}: no longer tracked.")
             continue
         if order["side"] == "adjust":
-            outcome = adjust_exits(order["ticker"], order.get("stop"), order.get("target"))
+            outcome = adjust_exits(
+                order["ticker"], order.get("stop"), order.get("target"), run=run
+            )
             log.info("Adjust %s: %s", order["ticker"], outcome["message"])
             if outcome["ok"]:
                 run.adjusted.append(outcome["message"])
@@ -3512,7 +3561,7 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
                 outcomes.append(f"{order['ticker']}: NOT adjusted — {outcome['message']}")
             continue
         try:
-            result = _place(order, prices.get(order["ticker"]), stops, targets)
+            result = _place(order, prices.get(order["ticker"]), stops, targets, run=run)
         except Exception as exc:  # broker refusal, network, bad symbol
             log.exception("Order failed for %s", order["ticker"])
             run.failed.append((order, str(exc)))
@@ -3536,19 +3585,38 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
             if result.get("exits") is not None:
                 _record_exits(order["ticker"], result["exits"])
             else:
-                _arm_exits(
+                unguarded = _arm_exits(
                     order,
                     stops.get(order["ticker"]),
                     targets.get(order["ticker"]),
                     client_order_id=result["client_order_id"],
+                    run=run,
                 )
+                if unguarded:
+                    # Told in the same breath as the fill, not only in the
+                    # alert log — the agent can act on it before this pass
+                    # even ends.
+                    outcomes.append(f"UNGUARDED — {unguarded}. Nothing rests under it.")
         # A sell has already cleared its own resting exits, before the order
         # went out — the broker refuses it otherwise. See _place.
     if research_wanted:
-        outcomes.extend(_research_and_report(research_wanted))
-        # So the next turn's signal table can mark the rows this pass paid for.
+        lines, failed = _research_and_report(research_wanted)
+        outcomes.extend(lines)
+        for t in research_wanted:
+            if t not in failed:
+                continue
+            # Commissioned optimistically in _commission_research, before the
+            # analysis itself was known to succeed or fail. A failure moves it
+            # into the same bucket a broker refusal already uses, so the
+            # Decisions page shows it as failed rather than as an ordinary
+            # research order with a blank reason.
+            if t in run.researched:
+                run.researched.remove(t)
+            run.failed.append(({"side": "research", "ticker": t, "quantity": 0}, failed[t]))
+        # So the next turn's signal table can mark the rows this pass paid
+        # for — only the ones that actually produced a signal.
         if researched is not None:
-            researched.update(research_wanted)
+            researched.update(t for t in research_wanted if t not in failed)
     return outcomes
 
 
@@ -4187,7 +4255,9 @@ def process_queued_arms() -> list[dict]:
     return results
 
 
-def adjust_exits(ticker: str, stop: float | None, target: float | None) -> dict:
+def adjust_exits(
+    ticker: str, stop: float | None, target: float | None, run: "AgentRun | None" = None
+) -> dict:
     """Move the exits resting under a position to new levels.
 
     The agent re-reads every holding each day, and until this existed it could
@@ -4244,11 +4314,17 @@ def adjust_exits(ticker: str, stop: float | None, target: float | None) -> dict:
             (h for h in agent_book.build_book().holdings if h.ticker == ticker), None
         )
         if position is not None:
-            _arm_exits(
+            unguarded = _arm_exits(
                 {"ticker": ticker, "side": "buy", "quantity": position.quantity},
                 levels.get("stop"),
                 levels.get("target"),
+                run=run,
             )
+            if unguarded:
+                # Until 2026-09-16 this call's result was never checked, so a
+                # broker refusal here still reported "placed" below.
+                armed = [(k, v) for k, v in armed if k not in levels]
+                failed.append(unguarded)
 
     parts = [f"moved {k} to ${v:,.2f}" for k, v in moved]
     parts += [f"placed {k} at ${v:,.2f}" for k, v in armed]

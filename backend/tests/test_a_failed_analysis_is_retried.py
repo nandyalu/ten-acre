@@ -250,12 +250,14 @@ def test_the_agent_is_told_a_failed_analysis_did_not_finish(monkeypatch):
     monkeypatch.setattr(agent.analysis_reader, "read", lambda ticker, date=None: f"the case for {ticker}")
     agent.set_research_runner(lambda tickers: {"SMR": "The model service refused the request. Nothing was charged."})
     try:
-        intc, smr = agent._research_and_report(["INTC", "SMR"])
+        lines, failed = agent._research_and_report(["INTC", "SMR"])
     finally:
         agent.set_research_runner(None)
+    intc, smr = lines
 
     assert "It has finished" in intc
     assert smr.startswith("**SMR: the analysis you ordered did not finish.** The model service refused")
     assert "It has finished" not in smr
     assert "the case for SMR" not in smr
     assert "from an earlier analysis" in smr
+    assert failed == {"SMR": "The model service refused the request. Nothing was charged."}

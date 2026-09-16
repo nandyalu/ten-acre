@@ -308,6 +308,34 @@ h3 {
   content: '▼';
 }
 
+/* A check or an exclamation beside an order's own type badge on the
+   Decisions page, so whether it went through does not rest on the badge's
+   colour alone — sell already shares its red with a refusal, which colour
+   alone cannot tell apart. Same rule as .money--pos/--neg above: generated
+   content, hidden from screen readers, because the word beside it (the
+   side, or "refused" / "broker said no" / "not analysed") already says it. */
+.status-icon::before {
+  margin-right: 0.2em;
+  font-size: 0.85em;
+  speak: never;
+}
+
+.status-icon--ok {
+  color: var(--pos);
+}
+
+.status-icon--ok::before {
+  content: '✓';
+}
+
+.status-icon--fail {
+  color: var(--neg);
+}
+
+.status-icon--fail::before {
+  content: '!';
+}
+
 /* Verbatim model input and output. Monospace, and never wrapped in a way that
    changes what the model was given. */
 .verbatim,

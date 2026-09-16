@@ -68,6 +68,18 @@ export class DecisionCard {
     return event.failed ?? [];
   }
 
+  /** Failed orders that were never a broker call in the first place — a
+   * research the agent paid for that did not finish. Split out from
+   * `failedIn` only for the two hint paragraphs below the list: the badge
+   * itself already reads `order.side` to pick its own label, row by row. */
+  researchFailedIn(event: AgentEvent): AgentOrder[] {
+    return this.failedIn(event).filter((o) => o.side === 'research');
+  }
+
+  brokerFailedIn(event: AgentEvent): AgentOrder[] {
+    return this.failedIn(event).filter((o) => o.side !== 'research');
+  }
+
   /** Everything the pass did that was not a note. */
   tradesIn(event: AgentEvent): AgentEventOrder[] {
     return event.orders.filter((o) => o.side !== 'note');

@@ -8,6 +8,7 @@ schedules it.
 """
 import asyncio
 import datetime
+import types
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -229,6 +230,41 @@ def test_a_failed_pass_still_leaves_an_alarm(quiv, monkeypatch):
     asyncio.run(scheduler._run_agent_pass_locked("test"))
 
     assert len(quiv["added"]) == 1
+
+
+def test_an_unguarded_position_pulls_the_alarm_forward(quiv, monkeypatch):
+    """A position that came out of this pass with nothing resting under it is
+    worth a fresh decision sooner than whatever the agent just chose — not a
+    wait of up to four days for its own next wakeup. Pulled forward after the
+    pass's own alarm is already set (2026-09-16), never during the pass
+    itself — see the comment at the call site for why that order matters."""
+    monkeypatch.setattr(
+        scheduler.agent, "run_once",
+        lambda woke_because=None: types.SimpleNamespace(
+            next_wakeup=_et(14, 0), unguarded=["ZBH: the broker refused them: boom"],
+            acted=True, rejected=[], failed=[], notes=[],
+        ),
+    )
+    monkeypatch.setattr(scheduler, "notify", lambda *a, **kw: asyncio.sleep(0))
+    monkeypatch.setattr(scheduler.agent, "format_run_embed", lambda run: None)
+
+    asyncio.run(scheduler._run_agent_pass_locked("test"))
+
+    assert quiv["added"] == [_et(14, 0)]  # the pass's own choice, set first
+    assert quiv["fired"] == ["task-1"]  # then pulled forward
+
+
+def test_a_pass_with_no_unguarded_position_does_not_touch_the_alarm(quiv, monkeypatch):
+    monkeypatch.setattr(
+        scheduler.agent, "run_once",
+        lambda woke_because=None: types.SimpleNamespace(
+            next_wakeup=_et(14, 0), unguarded=[], acted=False, rejected=[], failed=[], notes=[],
+        ),
+    )
+
+    asyncio.run(scheduler._run_agent_pass_locked("test"))
+
+    assert quiv["fired"] == []
 
 
 # --- waking for a new change note -----------------------------------------------

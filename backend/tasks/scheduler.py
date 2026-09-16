@@ -181,12 +181,21 @@ async def _settle_agent_fills() -> None:
     except Exception:
         log.exception("Couldn't settle agent orders")
         return
+    stopped = False
     for fill in settled:
         # A stop firing is the only trade here nobody chose to make, so it is
         # the one worth interrupting for. Ordinary fills already showed up in
         # the run that placed them.
         if fill["was_stop"] and fill["status"] == "filled":
             await notify(agent.format_stop_fill(fill))
+            stopped = True
+    if stopped:
+        # **Told to the agent, not only to Discord (2026-09-16).** A stop or
+        # target closing a position on its own used to reach a person and
+        # nobody else — the agent learned only whenever it next happened to
+        # wake for some other reason, up to four days later. Same trigger a
+        # sharp move or an earnings date already uses.
+        await _maybe_run_agent("Stop fill")
 
 
 async def _maybe_run_agent(label: str = "Event-driven") -> None:
@@ -449,6 +458,8 @@ _WOKE_BECAUSE = {
     "Earnings": "A company you track reports earnings soon. You did not ask for this pass.",
     "Final": "This is the last pass before the close. Anything you want done today has to be done now.",
     "Change": "A change to this app woke you. You did not ask for this pass.",
+    "Stop fill": "A resting stop or target closed one of your positions on its own. You did not ask for this pass.",
+    "Unguarded position": "A position of yours has nothing resting under it to protect it. You did not ask for this pass.",
 }
 # **No reason here promises a section.** One did — "see what it was, below" —
 # and the earnings path reaches the same pass with no alerts to show, so the
@@ -482,6 +493,15 @@ async def _run_agent_pass_locked(label: str) -> None:
         _replace_wakeup_alarm(market_clock.next_open())
         return
     _replace_wakeup_alarm(run.next_wakeup or market_clock.next_open())
+    if run.unguarded:
+        # **Pulled forward after the alarm above is set, never during the
+        # pass (2026-09-16).** Calling this from inside run_once itself is
+        # the mistake "Never ask the agent again from inside a pass" already
+        # warns about — the pass's own _replace_wakeup_alarm call would just
+        # overwrite it. Here the pass has already finished and chosen its own
+        # time; this only pulls that choice forward, the same way a new
+        # change note already does.
+        wake_agent_now("Unguarded position")
     # A note is worth posting even on a day it did nothing else: it is the
     # agent saying it is short of something, which is the point of having it.
     if run.acted or run.rejected or run.failed or run.notes:

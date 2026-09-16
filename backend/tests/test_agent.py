@@ -1655,6 +1655,38 @@ def test_the_same_unguarded_position_is_announced_once_a_day(monkeypatch):
     assert alerts[0]["dedupe_key"] == alerts[1]["dedupe_key"]
 
 
+def test_an_unguarded_position_is_told_to_the_pass_that_caused_it(monkeypatch):
+    """Until 2026-09-16 this was a DB alert and nothing else — the pass that
+    just opened the naked position never learned, and neither did any later
+    one, because nothing woke the agent early for it either."""
+    monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
+    monkeypatch.setattr(agent.db, "record_alert", lambda **kw: None)
+    run = agent.AgentRun()
+
+    message = agent._arm_exits(_order(), None, None, run=run)
+
+    assert message == "ZBH: the analysis gave no usable stop or target"
+    assert run.unguarded == ["ZBH: the analysis gave no usable stop or target"]
+
+
+def test_a_guarded_position_reports_nothing_unguarded(monkeypatch):
+    monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
+    monkeypatch.setattr(
+        agent.sandbox_broker, "place_exit_bracket",
+        lambda *a: [
+            {"kind": "stop", "client_order_id": "s", "placed_at": "now", "price": 95.30, "quantity": 10},
+            {"kind": "target", "client_order_id": "t", "placed_at": "now", "price": 101.50, "quantity": 10},
+        ],
+    )
+    monkeypatch.setattr(agent.db, "record_agent_trade", lambda **kw: None)
+    run = agent.AgentRun()
+
+    message = agent._arm_exits(_order(), 95.30, 101.50, run=run)
+
+    assert message is None
+    assert run.unguarded == []
+
+
 # --- arming a position by hand -------------------------------------------------
 
 
@@ -2000,7 +2032,10 @@ def test_adjusting_a_holding_with_nothing_resting_places_the_exits(monkeypatch):
         agent.agent_book, "build_book",
         lambda **k: _book(holdings=[("INTC", 3, 91.84)]),
     )
-    monkeypatch.setattr(agent, "_arm_exits", lambda order, s, t: armed.append((order["ticker"], s, t)))
+    monkeypatch.setattr(
+        agent, "_arm_exits",
+        lambda order, s, t, run=None: armed.append((order["ticker"], s, t)),
+    )
 
     result = agent.adjust_exits("INTC", 84.63, 104.56)
 

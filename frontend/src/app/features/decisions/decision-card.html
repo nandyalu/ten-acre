@@ -52,7 +52,9 @@
           <ul class="orders">
             @for (order of turnTradesIn(turn); track $index) {
               <li>
-                <span class="side side--{{ order.side }}">{{ order.side }}</span>
+                <span class="side side--{{ order.side }}">
+                  <span class="status-icon status-icon--ok"></span>{{ order.side }}
+                </span>
                 <strong>{{ order.ticker }}</strong>
                 @if (order.quantity) {
                   <span>{{ order.quantity }}</span>
@@ -74,25 +76,41 @@
         <ul class="orders">
           @for (order of event().refused; track $index) {
             <li>
-              <span class="side side--refused"><app-term key="refused" /></span>
+              <span class="side side--refused">
+                <span class="status-icon status-icon--fail"></span><app-term key="refused" />
+              </span>
               <strong>{{ order.ticker }}</strong>
               <span class="muted">{{ order.why }}</span>
             </li>
           }
           @for (order of failedIn(event()); track $index) {
             <li>
-              <span class="side side--refused"><app-term key="broker-said-no" /></span>
+              <span class="side side--refused">
+                <span class="status-icon status-icon--fail"></span>
+                @if (order.side === 'research') {
+                  <app-term key="research-failed" />
+                } @else {
+                  <app-term key="broker-said-no" />
+                }
+              </span>
               <strong>{{ order.ticker }}</strong>
               <span class="muted">{{ order.why }}</span>
             </li>
           }
         </ul>
-        @if (failedIn(event()).length) {
+        @if (brokerFailedIn(event()).length) {
           <p class="hint">
             <strong>"Broker said no" is not the same as "refused".</strong> A refusal is the agent's
             own arithmetic being wrong. This is an order it formed correctly that the broker would
             not take — unsettled cash, a closed session, a symbol it will not trade. The agent is
             shown these on its next few passes so it does not simply propose the same thing again.
+          </p>
+        }
+        @if (researchFailedIn(event()).length) {
+          <p class="hint">
+            <strong>"Not analysed" means the agent paid for a look that never finished</strong> —
+            the model service did not answer, or the day's request limit was reached. No broker was
+            involved, and a retry is never charged twice for the attempt that failed.
           </p>
         }
         @if (event().refused.length) {
@@ -129,7 +147,9 @@
         <ul class="orders">
           @for (order of tradesIn(event()); track $index) {
             <li>
-              <span class="side side--{{ order.side }}">{{ order.side }}</span>
+              <span class="side side--{{ order.side }}">
+                <span class="status-icon status-icon--ok"></span>{{ order.side }}
+              </span>
               <strong>{{ order.ticker }}</strong>
               @if (order.quantity) {
                 <span>{{ order.quantity }}</span>
@@ -141,25 +161,41 @@
           }
           @for (order of event().refused; track $index) {
             <li>
-              <span class="side side--refused"><app-term key="refused" /></span>
+              <span class="side side--refused">
+                <span class="status-icon status-icon--fail"></span><app-term key="refused" />
+              </span>
               <strong>{{ order.ticker }}</strong>
               <span class="muted">{{ order.why }}</span>
             </li>
           }
           @for (order of failedIn(event()); track $index) {
             <li>
-              <span class="side side--refused"><app-term key="broker-said-no" /></span>
+              <span class="side side--refused">
+                <span class="status-icon status-icon--fail"></span>
+                @if (order.side === 'research') {
+                  <app-term key="research-failed" />
+                } @else {
+                  <app-term key="broker-said-no" />
+                }
+              </span>
               <strong>{{ order.ticker }}</strong>
               <span class="muted">{{ order.why }}</span>
             </li>
           }
         </ul>
-        @if (failedIn(event()).length) {
+        @if (brokerFailedIn(event()).length) {
           <p class="hint">
             <strong>"Broker said no" is not the same as "refused".</strong> A refusal is the agent's
             own arithmetic being wrong. This is an order it formed correctly that the broker would
             not take — unsettled cash, a closed session, a symbol it will not trade. The agent is
             shown these on its next few passes so it does not simply propose the same thing again.
+          </p>
+        }
+        @if (researchFailedIn(event()).length) {
+          <p class="hint">
+            <strong>"Not analysed" means the agent paid for a look that never finished</strong> —
+            the model service did not answer, or the day's request limit was reached. No broker was
+            involved, and a retry is never charged twice for the attempt that failed.
           </p>
         }
         @if (event().refused.length) {

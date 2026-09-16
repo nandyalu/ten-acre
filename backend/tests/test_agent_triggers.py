@@ -34,6 +34,7 @@ def agent_stub(monkeypatch):
         notes = []
         next_wakeup = None
         skipped = None
+        unguarded = []
 
     def run_once(woke_because=None):
         # The reason is threaded from the scheduler since 2026-09-12, so the
@@ -149,6 +150,7 @@ def test_the_watchdog_settles_agent_fills(agent_stub, monkeypatch):
 
 def test_a_triggered_stop_is_announced(monkeypatch):
     posted = []
+    woke = []
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
     monkeypatch.setattr(
         scheduler.agent, "settle_pending",
@@ -159,12 +161,19 @@ def test_a_triggered_stop_is_announced(monkeypatch):
     async def fake_notify(*args, **kwargs):
         posted.append(args[0] if args else kwargs)
 
+    async def fake_maybe_run_agent(label="Event-driven"):
+        woke.append(label)
+
     monkeypatch.setattr(scheduler, "notify", fake_notify)
+    monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
     asyncio.run(scheduler._settle_agent_fills())
 
     assert len(posted) == 1
     assert "Stop triggered" in posted[0]
     assert "ZBH" in posted[0] and "92.00" in posted[0]
+    # 2026-09-16: a stop firing on its own is worth waking the agent for, not
+    # only worth telling a person on Discord.
+    assert woke == ["Stop fill"]
 
 
 def test_an_ordinary_fill_is_not_announced_again(monkeypatch):
@@ -223,7 +232,11 @@ def test_a_filled_take_profit_is_announced_as_a_target_hit(monkeypatch):
     async def fake_notify(*args, **kwargs):
         posted.append(args[0] if args else kwargs)
 
+    async def fake_maybe_run_agent(label="Event-driven"):
+        pass
+
     monkeypatch.setattr(scheduler, "notify", fake_notify)
+    monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
     asyncio.run(scheduler._settle_agent_fills())
 
     assert "Target reached" in posted[0]

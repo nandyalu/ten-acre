@@ -40,6 +40,13 @@ export const TERMS: Term[] = [
     long: 'Different from a refusal, and the difference matters. A refusal says the agent’s own arithmetic was wrong. This says the arithmetic was right and the world declined anyway. The agent is shown these on its next few passes so it does not simply propose the same thing again.',
   },
   {
+    id: 'research-failed',
+    label: 'not analysed',
+    short:
+      'The agent paid to have this looked at, and the analysis did not finish — no broker was involved.',
+    long: 'Different from a refusal or "broker said no": nothing about an order was wrong, because this was never an order. The model service did not answer, or the day’s request limit was reached, before the analysis could produce a verdict. Any row already on record for this ticker is from an earlier analysis, not this attempt, and a retry is never charged twice for the one that failed.',
+  },
+  {
     id: 'vs-spy',
     label: 'vs SPY',
     short: 'Whether a call beat the S&P 500 over its own window. The number that actually counts.',

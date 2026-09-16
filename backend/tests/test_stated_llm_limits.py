@@ -238,13 +238,14 @@ def test_research_that_cannot_finish_today_is_refused_before_it_runs(monkeypatch
     monkeypatch.setattr(agent.analysis_reader, "read", lambda ticker, date=None: "the case")
     agent.set_research_runner(lambda tickers: ran.extend(tickers))
     try:
-        lines = agent._research_and_report(["INTC", "SMR"])
+        lines, failed = agent._research_and_report(["INTC", "SMR"])
     finally:
         agent.set_research_runner(None)
 
     assert ran == ["INTC"]
     assert lines[0] == f"SMR: not analysed, and nothing was charged. {llm_throttle.REQUESTS_PER_ANALYSIS + 3} left."
     assert "INTC: the analysis YOU ordered" in lines[1]
+    assert failed == {"SMR": f"{llm_throttle.REQUESTS_PER_ANALYSIS + 3} left."}
 
 
 def test_with_no_daily_limit_research_is_not_checked(monkeypatch):
