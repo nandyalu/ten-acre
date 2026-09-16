@@ -51,7 +51,16 @@ MAX_DAILY_MOVE_PCT = 30.0
 # How many to ask each screen for, and how many to propose. The screens return
 # a couple of hundred; the point is a shortlist somebody will actually read.
 _PAGE_SIZE = 50
-MAX_PROPOSED = 8
+MAX_PROPOSED = 10
+
+# A global volume sort buried the two text sources every time: a
+# congressional trade or a searched-for ticker rarely outranks NVDA. Each
+# text source gets a floor of the menu instead, filled by its own most-liquid
+# names first; Webull fills whatever the floors leave unused.
+_RESERVED_SLOTS = {
+    "congress trade (QuiverQuant)": 3,
+    "trending (Yahoo Finance)": 2,
+}
 
 
 @dataclass
@@ -184,7 +193,7 @@ def _trending_tickers() -> set[str]:
 
 
 def fetch_candidates() -> list[Candidate]:
-    """Screened names not already tracked, most liquid first.
+    """Screened names not already tracked.
 
     Two Webull screens, deliberately: the most active gives liquid names that
     are simply busy, and the day's gainers give names that are moving. Two
@@ -194,6 +203,9 @@ def fetch_candidates() -> list[Candidate]:
     Webull snapshot before they can reach the same filters as everything
     else. Nothing here is a recommendation — it is raw material an analysis
     is spent on, and the analysis is what decides anything.
+
+    Each text source keeps `_RESERVED_SLOTS` of the menu for itself, most
+    liquid of its own names first; Webull fills the rest, most liquid first.
     """
     client = quotes.get_api_client()
     if client is None:
@@ -263,7 +275,18 @@ def fetch_candidates() -> list[Candidate]:
         c for c in found.values()
         if c.ticker not in tracked and c.ticker not in inactive
     ]
-    fresh.sort(key=lambda c: c.volume, reverse=True)
-    return fresh[:MAX_PROPOSED]
+
+    picked: list[Candidate] = []
+    for source, cap in _RESERVED_SLOTS.items():
+        bucket = sorted(
+            (c for c in fresh if c.source == source), key=lambda c: c.volume, reverse=True
+        )
+        picked.extend(bucket[:cap])
+
+    webull = sorted(
+        (c for c in fresh if c.source not in _RESERVED_SLOTS), key=lambda c: c.volume, reverse=True
+    )
+    picked.extend(webull[: MAX_PROPOSED - len(picked)])
+    return picked
 
 

@@ -188,6 +188,26 @@ def test_a_webull_screen_wins_over_a_text_source_for_the_same_ticker(screened):
     assert found[0].source == "most active"
 
 
+def test_text_sources_keep_their_reserved_slots_against_high_volume_webull_rows(screened):
+    """A congressional trade or a trending pick is almost always lower-volume
+    than a Webull most-active row, so a single volume sort buried them. Each
+    text source now keeps a floor of the menu for itself."""
+    active = [_row(f"HV{i}", volume=200_000_000 - i) for i in range(20)]
+    found = screened(
+        active=active,
+        congress=["C1", "C2", "C3"],
+        trending=["Y1", "Y2"],
+        snapshots=[
+            _row("C1", volume=1_000_000), _row("C2", volume=1_100_000), _row("C3", volume=1_200_000),
+            _row("Y1", volume=1_300_000), _row("Y2", volume=1_400_000),
+        ],
+    )
+    tickers = [c.ticker for c in found]
+    assert len(found) == candidates.MAX_PROPOSED
+    assert {"C1", "C2", "C3"}.issubset(tickers)
+    assert {"Y1", "Y2"}.issubset(tickers)
+
+
 def test_a_failing_text_source_does_not_lose_the_other(screened, monkeypatch):
     def broken():
         raise RuntimeError("reddit is down")

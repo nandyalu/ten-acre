@@ -996,7 +996,7 @@ def build_prompt(
             move = f", {candidate.change_pct:+.1f}% today" if candidate.change_pct is not None else ""
             lines.append(
                 f"- {candidate.ticker}: {candidate.name[:40]} at ${candidate.price:,.2f}"
-                f"{move}, {candidate.volume_m:,.1f}M shares traded"
+                f"{move}, {candidate.volume_m:,.1f}M shares traded, via {candidate.source}"
             )
 
     lines += [
