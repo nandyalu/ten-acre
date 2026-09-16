@@ -18,8 +18,9 @@ from backend.services import agent, agent_book
 
 
 class Candidate:
-    def __init__(self, ticker, price=100.0, volume=5_000_000, change_pct=1.0):
+    def __init__(self, ticker, price=100.0, volume=5_000_000, change_pct=1.0, source="most active"):
         self.ticker, self.price, self.volume, self.change_pct = ticker, price, volume, change_pct
+        self.source = source
         self.name = f"{ticker} Inc"
 
     @property

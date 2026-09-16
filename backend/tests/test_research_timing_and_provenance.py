@@ -48,8 +48,9 @@ def test_every_commission_runs_regardless_of_when(researchable, asked):
 class _Candidate:
     """The shape build_prompt reads, matching the stub in test_agent_research."""
 
-    def __init__(self, ticker, price=88.99, volume=17_400_000, change_pct=-1.2):
+    def __init__(self, ticker, price=88.99, volume=17_400_000, change_pct=-1.2, source="most active"):
         self.ticker, self.price, self.volume, self.change_pct = ticker, price, volume, change_pct
+        self.source = source
         self.name = f"{ticker} Inc"
 
     @property
