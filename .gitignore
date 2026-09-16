@@ -72,3 +72,9 @@ helpful-prs.md
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Scratch dumps of a built prompt, for a one-off before/after comparison.
+# The record of a real prompt is the AgentRun row it was built for, and
+# JOURNEY.md holds why it changed — these are neither.
+/prompt.md
+/prompt_updated.md
