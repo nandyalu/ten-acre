@@ -993,7 +993,7 @@ def build_prompt(
             lines.append(
                 "That is the limit, so nothing new can be tracked until you stop "
                 "watching something. Look for watched (unheld) tickers with stale or "
-                "never-analysed status and untrack them to free slots for new research."
+                "'never' analysed status and untrack them to free slots for new research."
             )
 
     if menu:
@@ -3830,7 +3830,7 @@ def run_once(woke_because: str | None = None) -> AgentRun:
                 o.get("quantity"),
                 o.get("stop"),
                 o.get("target"),
-                o.get("reason"),
+                o.get("date"),
             )
             for o in accepted
         ]
