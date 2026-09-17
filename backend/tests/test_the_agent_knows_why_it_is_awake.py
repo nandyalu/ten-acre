@@ -9,6 +9,7 @@ everything it works out is gone by the next one: the prompt carries prices and
 positions, never conclusions.
 """
 import datetime
+import json
 import types
 
 import pytest
@@ -159,3 +160,131 @@ def test_an_early_wake_still_shows_the_note(monkeypatch):
 
     assert "You did not ask for this pass" in prompt
     assert "waiting for the open" in prompt
+
+
+# --- a whole pass's notes, not only its last turn's (2026-09-17) --------------
+
+
+def test_encoding_no_notes_is_null():
+    assert agent._encode_wakeup_notes([]) is None
+
+
+def test_encoding_one_note_is_plain_text():
+    """The common case, and what every row before 2026-09-17 already holds —
+    a pass that wrote one note must not suddenly look different in the DB."""
+    assert agent._encode_wakeup_notes(["watching AAPL for a breakout"]) == "watching AAPL for a breakout"
+
+
+def test_encoding_several_notes_is_a_json_list():
+    encoded = agent._encode_wakeup_notes(["first note", "second note"])
+    assert encoded == '["first note", "second note"]'
+
+
+def test_reading_a_pre_2026_09_17_row_still_works(monkeypatch):
+    """A plain-text row from before this existed has no brackets — read back
+    as the one note it always was, no migration required."""
+    monkeypatch.setattr(
+        agent.db, "get_agent_runs",
+        lambda limit=1: [types.SimpleNamespace(wakeup_note="what I was waiting for")],
+    )
+
+    assert agent._last_pass_notes() == ["what I was waiting for"]
+
+
+def test_reading_several_notes_back_in_order(monkeypatch):
+    monkeypatch.setattr(
+        agent.db, "get_agent_runs",
+        lambda limit=1: [types.SimpleNamespace(
+            wakeup_note=agent._encode_wakeup_notes(["ruled out HPE at $59.83", "watching AVGO for $366.16"]),
+        )],
+    )
+
+    assert agent._last_pass_notes() == ["ruled out HPE at $59.83", "watching AVGO for $366.16"]
+    # The early-wake case still gets just the freshest one.
+    assert agent._last_wakeup_note() == "watching AVGO for $366.16"
+
+
+def test_no_runs_is_an_empty_list_not_none(monkeypatch):
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1: [])
+
+    assert agent._last_pass_notes() == []
+
+
+def test_a_pass_with_several_notes_shows_them_all_next_wakeup():
+    """Before this, only the *final* turn's note ever reached the next pass —
+    a note written earlier in a multi-turn pass and not restated in its last
+    answer was silently dropped at the pass boundary. See the 2026-09-17
+    JOURNEY.md entry."""
+    lines = agent.describe_wakeup(
+        None, "watching AVGO for $366.16",
+        last_pass_notes=["ruled out HPE at $59.83", "watching AVGO for $366.16"],
+    )
+    text = "\n".join(lines)
+
+    assert "ruled out HPE at $59.83" in text
+    assert "watching AVGO for $366.16" in text
+    assert "Notes you left yourself last pass" in text
+    assert text.index("ruled out HPE") < text.index("watching AVGO")
+
+
+def test_last_pass_notes_and_this_pass_notes_are_both_shown_and_distinct():
+    lines = agent.describe_wakeup(
+        None, "b",
+        last_pass_notes=["a", "b"],
+        pass_notes=["c"],
+    )
+    text = "\n".join(lines)
+
+    assert "Notes you left yourself last pass" in text
+    assert "earlier in this same pass" in text
+    assert text.index("Notes you left yourself last pass") < text.index("earlier in this same pass")
+
+
+def test_a_caller_passing_only_note_still_gets_the_old_single_note_rendering():
+    """Backward compatibility: a caller that never learned about
+    `last_pass_notes` (probe_prompt.py, older tests) must render exactly as
+    it did before this feature existed."""
+    prompt = agent.build_prompt(_book(), [], {}, wakeup_note="waiting to see if CRWV holds $88")
+
+    assert 'A note you left yourself last pass:** "waiting to see if CRWV holds $88"' in prompt
+
+
+def test_a_pass_that_writes_several_notes_records_all_of_them(monkeypatch):
+    """The wiring end to end: run_once must store what the whole pass wrote,
+    not just whatever the final turn's answer happened to contain."""
+    monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
+    monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
+    monkeypatch.setattr(agent, "is_enabled", lambda: True)
+    monkeypatch.setattr(agent, "settle_pending", lambda: [])
+    monkeypatch.setattr(agent, "_recent_signals", lambda: [])
+    monkeypatch.setattr(agent.db, "get_recent_signals", lambda limit=200: [])
+    monkeypatch.setattr(agent.agent_book, "closed_trades", lambda decisions=None: [])
+    monkeypatch.setattr(agent, "_price_map", lambda _t: {})
+    monkeypatch.setattr(agent.agent_book, "build_book", lambda price_lookup=None: _book())
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [])
+    monkeypatch.setattr(agent.research, "is_charging", lambda: False)
+
+    recorded = {}
+    monkeypatch.setattr(
+        agent.db, "record_agent_run",
+        lambda **kw: recorded.update(kw) or 1,
+    )
+
+    decisions = iter([
+        agent.Decision(
+            reasoning="turn1", accepted=[{"ticker": "ZZZ", "side": "cancel", "quantity": 0}],
+            rejected=[], prompt="p1",
+            response=json.dumps({"reasoning": "turn1", "next_wakeup_note": "first", "orders": []}),
+            turns=[{"prompt": "p1", "response": "r1"}],
+        ),
+        agent.Decision(
+            reasoning="turn2", accepted=[], rejected=[], prompt="p2",
+            response=json.dumps({"reasoning": "turn2", "next_wakeup_note": "second", "orders": []}),
+            turns=[{"prompt": "p2", "response": "r2"}],
+        ),
+    ])
+    monkeypatch.setattr(agent, "_decide", lambda *a, **kw: next(decisions))
+
+    agent.run_once()
+
+    assert recorded["wakeup_note"] == agent._encode_wakeup_notes(["first", "second"])

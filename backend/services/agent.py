@@ -634,6 +634,7 @@ def build_prompt(
     woke_because: str | None = None,
     wakeup_note: str | None = None,
     pass_notes: list[str] | None = None,
+    last_pass_notes: list[str] | None = None,
     alerts: list[dict] | None = None,
     earnings: list | None = None,
     planned_wakeup: "datetime.datetime | None" = None,
@@ -707,7 +708,7 @@ def build_prompt(
         )
     lines += describe_wakeup(
         woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
-        asked_again=asked_again, pass_notes=pass_notes,
+        asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
     )
     lines += ["", "---", ""]
     if regime_line:
@@ -2486,19 +2487,68 @@ def _last_planned_wakeup() -> "datetime.datetime | None":
 _EARLY_WAKE_MARGIN = datetime.timedelta(minutes=1)
 
 
-def _last_wakeup_note() -> str | None:
-    """The note the previous pass left for this one, if it left one.
+def _last_pass_notes() -> list[str]:
+    """Every note the previous pass wrote, oldest first — not only its last.
 
     Read from the newest run rather than matched to the alarm that fired: the
-    agent may be woken early by something else, and the note it left is still
-    what it was waiting for — arguably more useful then, because it explains
-    what the early wake interrupted.
+    agent may be woken early by something else, and the notes it left are
+    still what it was waiting for — arguably more useful then, because they
+    explain what the early wake interrupted.
+
+    **`AgentRun.wakeup_note` holds plain text for a pass that wrote one note,
+    unchanged since the column existed, and a JSON list for a pass that wrote
+    several (2026-09-17)** — the same convention `_record_run` already uses
+    for `turns`: no wrapper for the common single value, a list only when
+    there is more than one to keep apart. A row from before that date is
+    always the plain-text case, so this reads both without a migration or
+    caring which it has. Before this, only the *last* turn's note ever
+    reached the next pass — a note written in an earlier turn and not
+    restated in the final one was silently dropped. See the 2026-09-17
+    JOURNEY.md entry.
     """
     runs = db.get_agent_runs(limit=1)
     if not runs:
+        return []
+    raw = str(getattr(runs[0], "wakeup_note", None) or "").strip()
+    if not raw:
+        return []
+    if raw.startswith("["):
+        try:
+            notes = json.loads(raw)
+        except ValueError:
+            notes = None
+        if isinstance(notes, list):
+            return [str(n).strip()[:_WAKEUP_NOTE_MAX_CHARS] for n in notes if str(n).strip()]
+    return [raw[:_WAKEUP_NOTE_MAX_CHARS]]
+
+
+def _last_wakeup_note() -> str | None:
+    """The single most recent note the previous pass left, if it left one.
+
+    A thin wrapper over `_last_pass_notes` for the one caller that still
+    wants just the freshest note — the early-wake case, where the note tied
+    to the specific planned wakeup is what matters, not the pass's whole
+    history.
+    """
+    notes = _last_pass_notes()
+    return notes[-1] if notes else None
+
+
+def _encode_wakeup_notes(notes: list[str]) -> str | None:
+    """What actually gets stored in `AgentRun.wakeup_note` for the next pass
+    to read back with `_last_pass_notes`.
+
+    One note stores as itself, plain text — unchanged from before this
+    existed, and what every row before 2026-09-17 already holds. More than
+    one stores as a JSON list, the same convention `_record_run` already uses
+    for `turns`: no wrapper for the common case, a list only when there is
+    more than one value to keep apart.
+    """
+    if not notes:
         return None
-    note = str(getattr(runs[0], "wakeup_note", None) or "").strip()
-    return note[:_WAKEUP_NOTE_MAX_CHARS] or None
+    if len(notes) == 1:
+        return notes[0]
+    return json.dumps(notes)
 
 
 def describe_wakeup(
@@ -2509,6 +2559,7 @@ def describe_wakeup(
     now: "datetime.datetime | None" = None,
     asked_again: list[str] | None = None,
     pass_notes: list[str] | None = None,
+    last_pass_notes: list[str] | None = None,
 ) -> list[str]:
     """Why this pass is happening, and what the last pass left for this one.
 
@@ -2530,13 +2581,33 @@ def describe_wakeup(
 
     **`pass_notes` is the same handoff within one pass (2026-09-17).** A pass
     that acts and is asked again is several turns of one call chain, and
-    ``note`` above only ever carries the *previous pass's* note — stable all
-    the way through, because this pass has not been recorded yet. A note a
-    turn wrote for its own later turns had nowhere to land: seen live on
+    ``note`` alone only ever carried the *previous pass's* last note — stable
+    all the way through, because this pass has not been recorded yet. A note
+    a turn wrote for its own later turns had nowhere to land: seen live on
     2026-09-17, and see the JOURNEY.md entry the same day.
+
+    **`last_pass_notes` closes the matching gap one pass later (2026-09-17,
+    same day).** The previous pass could itself have been several turns, and
+    until this only its *final* turn's note ever reached this one — a note
+    from an earlier turn of that pass, never restated in its last answer, was
+    silently dropped at the pass boundary too. `note` stays what it was: the
+    single most recent note, used for the early-wake case below, where only
+    the note written for that specific planned time matters. Everywhere else,
+    `last_pass_notes` (its full history, oldest first) is shown instead of
+    `note` alone, not beside it — showing both would just repeat the last
+    entry twice.
     """
     early = planned is not None and planned > market_clock.now_et(now) + _EARLY_WAKE_MARGIN
-    if not woke_because and not note and not early and not asked_again and not pass_notes:
+    # A caller that only ever knew the old single-note contract — passing
+    # `note` and nothing else — gets exactly the old rendering: one note,
+    # the same text as before. Only `_decide` passes `last_pass_notes`
+    # explicitly, to unlock the multi-note case.
+    if last_pass_notes is None:
+        last_pass_notes = [note] if note else []
+    if (
+        not woke_because and not note and not early and not asked_again
+        and not pass_notes and not last_pass_notes
+    ):
         return []
     when = (
         planned.astimezone(market_clock.US_MARKET_TZ).strftime("%A %-d %B at %-I:%M %p Eastern")
@@ -2558,10 +2629,13 @@ def describe_wakeup(
     if note and early:
         lines.append(f'**The note you left for your wakeup on {when}:** "{note}"')
         lines.append("That wakeup has not come yet. This pass is earlier than the one you planned.")
-    elif note:
-        lines.append(
-            f'**A note you left yourself last pass:** "{note}"'
-        )
+    elif last_pass_notes:
+        if len(last_pass_notes) == 1:
+            lines.append(f'**A note you left yourself last pass:** "{last_pass_notes[0]}"')
+        else:
+            lines.append("**Notes you left yourself last pass, oldest first:**")
+            lines += [f'{i}. "{n}"' for i, n in enumerate(last_pass_notes, 1)]
+            lines.append("The last one is your most recent thinking from that pass.")
     elif early:
         lines.append(f"**You planned to wake on {when}.** This pass is earlier than that.")
     if pass_notes:
@@ -2574,7 +2648,7 @@ def describe_wakeup(
             lines.append(
                 "Where two disagree, the later one is your more recent thinking."
             )
-    if note or pass_notes:
+    if note or last_pass_notes or pass_notes:
         lines.append(
             "Those are your own words, not an instruction. The prices and "
             "positions below are current and the note is not — act on it only "
@@ -2654,7 +2728,12 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     earnings = _earnings_due()
     # What the agent said it wanted this wakeup for, on the pass that set
     # it. Its own words, carried across a gap it cannot remember across.
-    last_note = _last_wakeup_note()
+    # The full history, not only the last turn's note — see
+    # `_last_pass_notes`. `last_note` stays the single most recent one, for
+    # the early-wake case, which is about the note written for this specific
+    # planned time.
+    last_pass_notes = _last_pass_notes()
+    last_note = last_pass_notes[-1] if last_pass_notes else None
     # The time that note was written for. When it is still ahead, this pass is
     # early and the prompt says so.
     planned_wakeup = _last_planned_wakeup()
@@ -2693,7 +2772,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
-                             pass_notes=pass_notes,
+                             pass_notes=pass_notes, last_pass_notes=last_pass_notes,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
@@ -2755,7 +2834,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
-                             pass_notes=pass_notes,
+                             pass_notes=pass_notes, last_pass_notes=last_pass_notes,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
@@ -2792,7 +2871,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
-                             pass_notes=pass_notes,
+                             pass_notes=pass_notes, last_pass_notes=last_pass_notes,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges)
@@ -4229,6 +4308,11 @@ def run_once(woke_because: str | None = None) -> AgentRun:
     else:
         log.info("Act-turn budget spent; the pass ends here")
 
+    # Overwrites the raw last-turn value the loop above left in place — see
+    # `_encode_wakeup_notes`. The next pass reads this back with
+    # `_last_pass_notes`, and it must reflect the whole pass, not just the
+    # turn that happened to run last.
+    run.wakeup_note = _encode_wakeup_notes(notes_this_pass)
     _record_run(run)
     return run
 
