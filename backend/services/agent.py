@@ -1057,7 +1057,8 @@ def build_prompt(
             if book.cash < research_price_floor
             else [
                 f"- The buys you place must cost ${book.cash:,.2f} or less in total, added up "
-                "across every buy. Not each — in total.",
+                "across every buy. Not each — in total. If placing multiple buys in one turn, "
+                "allocate quantities so that sum(quantity × price) fits within your available cash.",
             ]
         ),
         *(
@@ -1800,8 +1801,8 @@ _FIXED_RULES = [
     "price and the target above it, or the order would execute the moment it "
     "was placed. Raising a stop as a position gains is how a profit is "
     "protected; today's analysis is what tells you where the thesis now "
-    "breaks. If a holding has nothing resting on it, an adjust places the "
-    "exits for the first time.",
+    "breaks. If a holding has an UNSET stop or is in unrealized profit, use "
+    "adjust to set or raise its stop to protect gains.",
     "- You can sell any position at any time, for your own reasons. You do not "
     "have to wait for a stop or a target to be reached, and you do not need "
     "an analyst to say Sell first. Taking a profit while it is there, cutting "
