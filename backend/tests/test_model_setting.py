@@ -28,6 +28,9 @@ def settings_store(monkeypatch):
 @pytest.fixture(autouse=True)
 def clear_model_cache(monkeypatch):
     monkeypatch.setattr(analysis, "_model_list_cache", (0.0, []))
+    monkeypatch.setattr(
+        analysis, "DEFAULT_CONFIG", {**analysis.DEFAULT_CONFIG, "llm_provider": "ollama"}
+    )
 
 
 def _fake_urlopen(models=(), error=None):
@@ -190,10 +193,9 @@ def test_the_model_list_is_authenticated_and_not_sent_as_urllib(monkeypatch):
     outright. The identical request returned 403 as urllib and 200 as curl,
     with nothing wrong with the key at all.
     """
-    from tradingagents.default_config import DEFAULT_CONFIG
     from backend.services import analysis
 
-    monkeypatch.setitem(DEFAULT_CONFIG, "llm_provider", "openai_compatible")
+    monkeypatch.setitem(analysis.DEFAULT_CONFIG, "llm_provider", "openai_compatible")
     monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "csk-secret")
 
     headers = analysis._models_auth_header()
@@ -205,10 +207,9 @@ def test_the_model_list_is_authenticated_and_not_sent_as_urllib(monkeypatch):
 def test_a_keyless_endpoint_still_identifies_itself(monkeypatch):
     """ollama needs no key, and must not be sent an empty Bearer — but it
     still gets a User-Agent, since nothing is gained by looking like urllib."""
-    from tradingagents.default_config import DEFAULT_CONFIG
     from backend.services import analysis
 
-    monkeypatch.setitem(DEFAULT_CONFIG, "llm_provider", "ollama")
+    monkeypatch.setitem(analysis.DEFAULT_CONFIG, "llm_provider", "ollama")
     monkeypatch.delenv("OPENAI_COMPATIBLE_API_KEY", raising=False)
 
     headers = analysis._models_auth_header()

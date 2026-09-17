@@ -232,6 +232,72 @@ _CHANGES_SEEN_KEY = "change_notes_seen"
 # why. backend/services/agent.py -> backend/ -> agent_changes.json.
 _CHANGES_FILE = Path(__file__).resolve().parent.parent / "agent_changes.json"
 
+_MEMORY_NOTES_KEY = "agent_memory_notes"
+_MEMORY_NOTE_MAX_CHARS = 500
+_MAX_MEMORY_NOTES = 10
+
+
+def get_memory_notes() -> list[str]:
+    """Persistent memory notes stored across turns and passes by the agent."""
+    stored = db.get_setting(_MEMORY_NOTES_KEY)
+    if not stored:
+        return []
+    try:
+        data = json.loads(stored)
+        if isinstance(data, list):
+            return [str(n).strip() for n in data if str(n).strip()][:_MAX_MEMORY_NOTES]
+    except Exception:
+        log.exception("Could not parse agent memory notes setting")
+    return []
+
+
+def set_memory_notes(notes: list[str]) -> None:
+    """Overwrite the agent's persistent memory notes."""
+    cleaned = [str(n).strip()[:_MEMORY_NOTE_MAX_CHARS] for n in notes if str(n).strip()][:_MAX_MEMORY_NOTES]
+    db.set_setting(_MEMORY_NOTES_KEY, json.dumps(cleaned))
+
+
+def add_memory_note(text: str) -> None:
+    """Add a persistent memory note if not already present."""
+    note = str(text or "").strip()[:_MEMORY_NOTE_MAX_CHARS]
+    if not note:
+        return
+    notes = get_memory_notes()
+    if note not in notes:
+        if len(notes) >= _MAX_MEMORY_NOTES:
+            notes.pop(0)  # FIFO cap eviction if max reached
+        notes.append(note)
+        set_memory_notes(notes)
+
+
+def remove_memory_note(text_or_index: str | int) -> bool:
+    """Remove a persistent memory note by text or 0-based index."""
+    notes = get_memory_notes()
+    if isinstance(text_or_index, int):
+        if 0 <= text_or_index < len(notes):
+            notes.pop(text_or_index)
+            set_memory_notes(notes)
+            return True
+        return False
+    target = str(text_or_index or "").strip()
+    if target in notes:
+        notes.remove(target)
+        set_memory_notes(notes)
+        return True
+    return False
+
+
+def describe_memory_notes() -> list[str]:
+    """Format persistent memory notes for the agent prompt."""
+    notes = get_memory_notes()
+    if not notes:
+        return []
+    return [
+        "## Your persistent memory notes across passes:",
+        "These are long-term notes you recorded previously that persist until you clear them:",
+        *(f"- {n}" for n in notes),
+    ]
+
 
 def load_change_notes() -> list[dict]:
     """Read backend/agent_changes.json, defensively.
@@ -492,6 +558,26 @@ _TRIGGER_PHRASE = {
 }
 
 
+def day_range_today(
+    ticker: str, current_price: float | None = None, today: datetime.date | None = None
+) -> tuple[float, float] | None:
+    """The low and high of today's price session so far for a ticker.
+
+    None when the session has no intraday or daily bar yet.
+    """
+    today = today or datetime.date.today()
+    try:
+        bar = bars._todays_bar(ticker, today)
+        if bar is not None:
+            low, high = bar.low, bar.high
+            if current_price is not None:
+                low, high = min(low, current_price), max(high, current_price)
+            return low, high
+    except Exception:
+        log.exception("Could not read today's price range for %s", ticker)
+    return None
+
+
 def price_range_since_purchase(
     ticker: str, opened: datetime.date | None, current_price: float | None,
     today: datetime.date | None = None,
@@ -556,6 +642,7 @@ def build_prompt(
     earnings: list | None = None,
     planned_wakeup: "datetime.datetime | None" = None,
     price_ranges: dict[str, tuple[float, float]] | None = None,
+    day_ranges: dict[str, tuple[float, float]] | None = None,
 ) -> str:
     """Everything the model gets. Written as plain figures rather than a table
     of jargon, because the numbers are the whole input and a misread one is a
@@ -632,6 +719,9 @@ def build_prompt(
     recent_changes = describe_recent_changes(changes or [])
     if recent_changes:
         lines += [*recent_changes, ""]
+    memory_notes = describe_memory_notes()
+    if memory_notes:
+        lines += [*memory_notes, ""]
     # Every "price now" in this prompt was read at the same moment, and the
     # agent asked which moment that was. Named once, used by both tables.
     as_of = market_clock.now_et().strftime("%Y-%m-%d %-I:%M %p ET")
@@ -761,14 +851,15 @@ def build_prompt(
         # mean, because those two are the pair that was being confused.
         lines += [
             f"Recent analyst signals. **Price now** is the price as of {as_of}; "
+            "**Day High** and **Day Low** are today's session range so far; "
             "**At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** "
             "are the analyst's proposed levels, not orders that exist. Rows are newest "
             "first, and **Analysed** carries the time because a ticker can be analysed "
             "more than once in a day.",
             "",
-            "| Ticker | Analysed (ET) | Decision | Price now | At analysis | Entry | Stop | Target |"
+            "| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target |"
             " Chance | R:R | You could buy | Why it ran |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         # Newest first, and sorted here rather than relied upon: the query
         # orders by `signal_date`, a calendar date, so two analyses of one
@@ -821,11 +912,14 @@ def build_prompt(
                 because = "**YOU paid for this one, in this pass, minutes ago.** It is here because you ordered it."
             else:
                 because = _TRIGGER_PHRASE.get(getattr(s, "trigger", None) or "", "").strip() or "—"
+            day_range = (day_ranges or {}).get(s.ticker)
+            day_high = f"${day_range[1]:,.2f}" if day_range else "—"
+            day_low = f"${day_range[0]:,.2f}" if day_range else "—"
             lines.append(
                 f"| {s.ticker} | {_analysed_at(s)} | {s.decision} | {price_text} | "
-                f"{money(getattr(s, 'price_at_signal', None))} | {money(s.entry_price)} | "
-                f"{money(s.stop_loss)} | {money(s.price_target)} | {chance} | {rr} | "
-                f"{afford_text} | {because} |"
+                f"{day_high} | {day_low} | {money(getattr(s, 'price_at_signal', None))} | "
+                f"{money(s.entry_price)} | {money(s.stop_loss)} | {money(s.price_target)} | "
+                f"{chance} | {rr} | {afford_text} | {because} |"
             )
         # Expected value is the analyst's own derivation from the levels above,
         # so it sits under the table rather than adding a column that is empty
@@ -949,15 +1043,19 @@ def build_prompt(
             f"You track {len(watchlist)} of at most {max_watchlist} tickers. **Moved since** "
             f"is the price as of {as_of} against the price at the most recent analysis of that "
             "ticker — a large move on a stale analysis is the signal that a fresh look may be "
-            "worth paying for.",
+            "worth paying for. Tickers left watched with stale or 'never' analysed status consume "
+            "watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.",
             "",
-            "| Ticker | Held? | Price now | Last analysed (ET) | Price then | Moved since | It said |",
-            "|---|---|---|---|---|---|---|",
+            "| Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         for ticker in sorted(watchlist):
             live = prices.get(ticker)
             price_text = f"${live:,.2f}" if live is not None else "unavailable"
             status = "held" if ticker in held_tickers else "watched"
+            day_range = (day_ranges or {}).get(ticker)
+            day_high = f"${day_range[1]:,.2f}" if day_range else "—"
+            day_low = f"${day_range[0]:,.2f}" if day_range else "—"
             # **Newest by time, not by date.** `get_recent_signals` orders by
             # `signal_date`, a calendar date, so two analyses of one ticker on
             # one day come back in row order — and this row showed INTC at
@@ -986,12 +1084,14 @@ def build_prompt(
                     pct = (live - last.price_at_signal) / last.price_at_signal * 100
                     move = f"{pct:+.1f}%"
             lines.append(
-                f"| {ticker} | {status} | {price_text} | {when} | {then} | {move} | {said} |"
+                f"| {ticker} | {status} | {price_text} | {day_high} | {day_low} | "
+                f"{when} | {then} | {move} | {said} |"
             )
         if len(watchlist) >= max_watchlist:
             lines.append(
                 "That is the limit, so nothing new can be tracked until you stop "
-                "watching something."
+                "watching something. Look for watched (unheld) tickers with stale or "
+                "'never' analysed status and untrack them to free slots for new research."
             )
 
     if menu:
@@ -1055,7 +1155,8 @@ def build_prompt(
             if book.cash < research_price_floor
             else [
                 f"- The buys you place must cost ${book.cash:,.2f} or less in total, added up "
-                "across every buy. Not each — in total.",
+                "across every buy. Not each — in total. If placing multiple buys in one turn, "
+                "allocate quantities so that sum(quantity × price) fits within your available cash.",
             ]
         ),
         *(
@@ -1283,6 +1384,7 @@ def parse_decision(text: str) -> tuple[str, list[dict]]:
 _SALVAGED = {
     "research": ("research", ("research",)),
     "note": ("note", ("note", "notes", "memo")),
+    "memory": ("memory", ("memory", "memories")),
 }
 # Values a model writes when it means "nothing here". Left out rather than
 # turned into an empty note.
@@ -1315,14 +1417,14 @@ def _as_orders(value, side: str) -> list[dict]:
         return [o for item in value for o in _as_orders(item, side)]
     if isinstance(value, dict):
         order = {**value, "side": side}
-        if side == "note" and not str(order.get("reason") or "").strip():
-            order["reason"] = str(value.get("note") or value.get("message") or "").strip()
-        return [order] if (side != "note" or order.get("reason")) else []
+        if side in ("note", "memory") and not str(order.get("reason") or "").strip():
+            order["reason"] = str(value.get("note") or value.get("message") or value.get("memory") or "").strip()
+        return [order] if (side not in ("note", "memory") or order.get("reason") or order.get("action")) else []
     text = str(value or "").strip()
     if text.lower() in _EMPTY:
         return []
-    if side == "note":
-        return [{"side": "note", "reason": text}]
+    if side in ("note", "memory"):
+        return [{"side": side, "reason": text}]
     # A bare string for a ticker-shaped side is the ticker.
     return [{"side": side, "ticker": text.upper()}]
 
@@ -1520,6 +1622,15 @@ def screen(
                 accepted.append(
                     {"side": "note", "ticker": ticker, "quantity": 0, "reason": text}
                 )
+            continue
+
+        if str(order.get("side", "")).lower().strip() == "memory":
+            text = str(order.get("reason") or order.get("text") or order.get("note") or order.get("memory") or "").strip()
+            action = str(order.get("action") or "").lower().strip()
+            idx = order.get("index")
+            accepted.append(
+                {"side": "memory", "ticker": ticker, "quantity": 0, "reason": text, "action": action, "index": idx}
+            )
             continue
 
         if str(order.get("side", "")).lower().strip() == "research":
@@ -1798,8 +1909,8 @@ _FIXED_RULES = [
     "price and the target above it, or the order would execute the moment it "
     "was placed. Raising a stop as a position gains is how a profit is "
     "protected; today's analysis is what tells you where the thesis now "
-    "breaks. If a holding has nothing resting on it, an adjust places the "
-    "exits for the first time.",
+    "breaks. If a holding has an UNSET stop or is in unrealized profit, use "
+    "adjust to set or raise its stop to protect gains.",
     "- You can sell any position at any time, for your own reasons. You do not "
     "have to wait for a stop or a target to be reached, and you do not need "
     "an analyst to say Sell first. Taking a profit while it is there, cutting "
@@ -1857,6 +1968,10 @@ _FIXED_RULES = [
     "Rather \"ruled out HPE at a $59.83 entry, worth another look under $56\", "
     "or \"holding AVGO until it breaks $366.16; sell if it closes below $354\". "
     "One or two sentences, and only if you have something worth carrying.",
+    "- **Write long-term persistent notes with side \"memory\".** Unlike \"next_wakeup_note\" "
+    "which only lasts until the next wakeup, a note written with side \"memory\" (e.g. "
+    "{\"side\": \"memory\", \"reason\": \"your long-term note\"}) is saved permanently "
+    "and injected into every prompt until cleared with {\"side\": \"memory\", \"action\": \"clear\"}.",
     "- You may ask for any time, including before the open, after the close and "
     "at the weekend. Research and planning work at any hour. Orders do not — "
     "the broker rejects one outright while the market is shut, and you will "
@@ -1875,7 +1990,7 @@ _FIXED_RULES = [
     "automatically, so it is a message and not a request.",
     "- A note is never a substitute for a decision. Leave one if you have "
     "something to say, and still answer with what you want done today, "
-    "including doing nothing.Reply with JSON only, in this exact shape:",
+    "including doing nothing. Reply with JSON only, in the shape specified below:",
 ]
 
 SYSTEM_PROMPT = (
@@ -2460,6 +2575,11 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         h.ticker: r for h in book.holdings
         if (r := price_range_since_purchase(h.ticker, h.opened, h.price)) is not None
     }
+    all_tickers = {s.ticker for s in signals} | set(watchlist)
+    day_ranges = {
+        ticker: r for ticker in all_tickers
+        if (r := day_range_today(ticker, prices.get(ticker))) is not None
+    }
     # The exact prompt, kept so the Events page can show what was asked. A
     # retry replaces it, because the retry is the prompt the accepted orders
     # were actually screened from.
@@ -2475,6 +2595,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              woke_because=woke_because, wakeup_note=last_note,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
+                             day_ranges=day_ranges,
     )
     answer = _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
@@ -2535,6 +2656,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              woke_because=woke_because, wakeup_note=last_note,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
+                             day_ranges=day_ranges,
                              readings=readings,
                              dropped_with_read=dropped_with_read)
         answer = _ask(shown)
@@ -2569,7 +2691,8 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
                              planned_wakeup=planned_wakeup,
-                             price_ranges=price_ranges)
+                             price_ranges=price_ranges,
+                             day_ranges=day_ranges)
     retry_answer = _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))
@@ -3555,6 +3678,24 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
             run.notes.append(order["reason"])
             log.info("Note from the agent: %s", order["reason"])
             continue
+        if order["side"] == "memory":
+            action = str(order.get("action") or "").lower().strip()
+            text = str(order.get("reason") or "").strip()
+            idx = order.get("index")
+            if action in ("clear", "clear_all") or text.lower() in ("clear", "clear_all", "clear all", "reset"):
+                set_memory_notes([])
+                outcomes.append("Memory notes: cleared all notes.")
+            elif action in ("remove", "delete") or (isinstance(idx, int) and idx >= 0):
+                if isinstance(idx, int) and remove_memory_note(idx):
+                    outcomes.append(f"Memory notes: removed note at index {idx}.")
+                elif text and remove_memory_note(text):
+                    outcomes.append(f"Memory notes: removed note '{text}'.")
+                else:
+                    outcomes.append("Memory notes: could not find note to remove.")
+            elif text:
+                add_memory_note(text)
+                outcomes.append(f'Memory notes: recorded "{text}".')
+            continue
         if order["side"] == "research":
             _commission_research(order, run)
             research_wanted.append(order["ticker"])
@@ -3820,7 +3961,17 @@ def run_once(woke_because: str | None = None) -> AgentRun:
         # but a small model can still hand back the same list, and executing it
         # twice would buy twice. Screening would catch the second buy only when
         # the cash had run out, which is far too late to rely on.
-        signature = [(o.get("side"), o.get("ticker"), o.get("quantity")) for o in accepted]
+        signature = [
+            (
+                o.get("side"),
+                o.get("ticker"),
+                o.get("quantity"),
+                o.get("stop"),
+                o.get("target"),
+                o.get("date"),
+            )
+            for o in accepted
+        ]
         if signature and signature == last_signature:
             log.info("The answer repeats the previous turn's orders; ending the pass")
             break
