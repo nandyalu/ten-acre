@@ -86,5 +86,9 @@
   {
     "date": "2026-09-15",
     "message": "A read now also gives you a short take from each of the four analysts behind the analysis, not only the rationale. Use it to check the verdict against what each analyst actually said, when they disagree."
+  },
+  {
+    "date": "2026-09-16",
+    "message": "Your note asking for Day High and Day Low columns in the tracked-tickers and recent analyst signals tables has been built and is now present beside 'Price now'."
   }
 ]

@@ -492,6 +492,26 @@ _TRIGGER_PHRASE = {
 }
 
 
+def day_range_today(
+    ticker: str, current_price: float | None = None, today: datetime.date | None = None
+) -> tuple[float, float] | None:
+    """The low and high of today's price session so far for a ticker.
+
+    None when the session has no intraday or daily bar yet.
+    """
+    today = today or datetime.date.today()
+    try:
+        bar = bars._todays_bar(ticker, today)
+        if bar is not None:
+            low, high = bar.low, bar.high
+            if current_price is not None:
+                low, high = min(low, current_price), max(high, current_price)
+            return low, high
+    except Exception:
+        log.exception("Could not read today's price range for %s", ticker)
+    return None
+
+
 def price_range_since_purchase(
     ticker: str, opened: datetime.date | None, current_price: float | None,
     today: datetime.date | None = None,
@@ -556,6 +576,7 @@ def build_prompt(
     earnings: list | None = None,
     planned_wakeup: "datetime.datetime | None" = None,
     price_ranges: dict[str, tuple[float, float]] | None = None,
+    day_ranges: dict[str, tuple[float, float]] | None = None,
 ) -> str:
     """Everything the model gets. Written as plain figures rather than a table
     of jargon, because the numbers are the whole input and a misread one is a
@@ -761,14 +782,15 @@ def build_prompt(
         # mean, because those two are the pair that was being confused.
         lines += [
             f"Recent analyst signals. **Price now** is the price as of {as_of}; "
+            "**Day High** and **Day Low** are today's session range so far; "
             "**At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** "
             "are the analyst's proposed levels, not orders that exist. Rows are newest "
             "first, and **Analysed** carries the time because a ticker can be analysed "
             "more than once in a day.",
             "",
-            "| Ticker | Analysed (ET) | Decision | Price now | At analysis | Entry | Stop | Target |"
+            "| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target |"
             " Chance | R:R | You could buy | Why it ran |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         # Newest first, and sorted here rather than relied upon: the query
         # orders by `signal_date`, a calendar date, so two analyses of one
@@ -821,11 +843,14 @@ def build_prompt(
                 because = "**YOU paid for this one, in this pass, minutes ago.** It is here because you ordered it."
             else:
                 because = _TRIGGER_PHRASE.get(getattr(s, "trigger", None) or "", "").strip() or "—"
+            day_range = (day_ranges or {}).get(s.ticker)
+            day_high = f"${day_range[1]:,.2f}" if day_range else "—"
+            day_low = f"${day_range[0]:,.2f}" if day_range else "—"
             lines.append(
                 f"| {s.ticker} | {_analysed_at(s)} | {s.decision} | {price_text} | "
-                f"{money(getattr(s, 'price_at_signal', None))} | {money(s.entry_price)} | "
-                f"{money(s.stop_loss)} | {money(s.price_target)} | {chance} | {rr} | "
-                f"{afford_text} | {because} |"
+                f"{day_high} | {day_low} | {money(getattr(s, 'price_at_signal', None))} | "
+                f"{money(s.entry_price)} | {money(s.stop_loss)} | {money(s.price_target)} | "
+                f"{chance} | {rr} | {afford_text} | {because} |"
             )
         # Expected value is the analyst's own derivation from the levels above,
         # so it sits under the table rather than adding a column that is empty
@@ -952,13 +977,16 @@ def build_prompt(
             "worth paying for. Tickers left watched with stale or 'never' analysed status consume "
             "watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.",
             "",
-            "| Ticker | Held? | Price now | Last analysed (ET) | Price then | Moved since | It said |",
-            "|---|---|---|---|---|---|---|",
+            "| Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         for ticker in sorted(watchlist):
             live = prices.get(ticker)
             price_text = f"${live:,.2f}" if live is not None else "unavailable"
             status = "held" if ticker in held_tickers else "watched"
+            day_range = (day_ranges or {}).get(ticker)
+            day_high = f"${day_range[1]:,.2f}" if day_range else "—"
+            day_low = f"${day_range[0]:,.2f}" if day_range else "—"
             # **Newest by time, not by date.** `get_recent_signals` orders by
             # `signal_date`, a calendar date, so two analyses of one ticker on
             # one day come back in row order — and this row showed INTC at
@@ -987,7 +1015,8 @@ def build_prompt(
                     pct = (live - last.price_at_signal) / last.price_at_signal * 100
                     move = f"{pct:+.1f}%"
             lines.append(
-                f"| {ticker} | {status} | {price_text} | {when} | {then} | {move} | {said} |"
+                f"| {ticker} | {status} | {price_text} | {day_high} | {day_low} | "
+                f"{when} | {then} | {move} | {said} |"
             )
         if len(watchlist) >= max_watchlist:
             lines.append(
@@ -2463,6 +2492,11 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         h.ticker: r for h in book.holdings
         if (r := price_range_since_purchase(h.ticker, h.opened, h.price)) is not None
     }
+    all_tickers = {s.ticker for s in signals} | set(watchlist)
+    day_ranges = {
+        ticker: r for ticker in all_tickers
+        if (r := day_range_today(ticker, prices.get(ticker))) is not None
+    }
     # The exact prompt, kept so the Events page can show what was asked. A
     # retry replaces it, because the retry is the prompt the accepted orders
     # were actually screened from.
@@ -2478,6 +2512,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              woke_because=woke_because, wakeup_note=last_note,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
+                             day_ranges=day_ranges,
     )
     answer = _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
@@ -2538,6 +2573,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              woke_because=woke_because, wakeup_note=last_note,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
+                             day_ranges=day_ranges,
                              readings=readings,
                              dropped_with_read=dropped_with_read)
         answer = _ask(shown)
@@ -2572,7 +2608,8 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
                              planned_wakeup=planned_wakeup,
-                             price_ranges=price_ranges)
+                             price_ranges=price_ranges,
+                             day_ranges=day_ranges)
     retry_answer = _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))
