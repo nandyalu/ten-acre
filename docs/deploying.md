@@ -130,6 +130,8 @@ LLM_MODEL=qwen-3.8-27b
 
 **Gemini's search-grounding tool needs a paid Google Cloud project.** Set `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING` to `true` to let the news analyst attach it. Left unset (the default), the news analyst never asks for it. Confirmed live: the Free tier gives Gemini 3 zero grounding quota, so turning this on without a billing account linked (Google's Tier 1) fails every news-analyst run under the Google provider with `429 RESOURCE_EXHAUSTED`.
 
+**To run grounding on the Free tier anyway, point only the news analyst at a different Google model.** Set `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING_MODEL` to a model outside the Gemini 3 family, e.g. `gemma-4-31b-it` — confirmed live to have open grounding quota on a Free-tier key. `quick_think_llm` and `deep_think_llm` stay on whatever model they already name; only the news analyst switches to this one, and only when grounding is also turned on above.
+
 ## Choosing a model, if you are running locally
 
 The rule this project learned the expensive way: **speed rules a model out; behaviour rules it in.**

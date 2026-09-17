@@ -9,6 +9,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 ## 2026-09-17
 
 - **Dependencies** — The TradingAgents submodule's news analyst can attach Google's search-grounding tool when the LLM is Gemini, behind a new `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING` flag that defaults off. Grounding needs a Google Cloud project with billing linked (Tier 1); confirmed live that the Free tier gives Gemini 3 zero grounding quota, and that mixing the built-in search tool with the existing custom tools needs an explicit `tool_config.include_server_side_tool_invocations` setting that the upstream PR did not set.
+- **Dependencies** — A new `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING_MODEL` setting lets the news analyst run on a different Google model than the rest of the app when grounding is on, e.g. a Gemma model with open grounding quota on a Free-tier key, while `quick_think_llm`/`deep_think_llm` stay on the main model.
 
 ## 2026-09-16
 
