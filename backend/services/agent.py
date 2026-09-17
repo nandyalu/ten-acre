@@ -949,7 +949,8 @@ def build_prompt(
             f"You track {len(watchlist)} of at most {max_watchlist} tickers. **Moved since** "
             f"is the price as of {as_of} against the price at the most recent analysis of that "
             "ticker — a large move on a stale analysis is the signal that a fresh look may be "
-            "worth paying for.",
+            "worth paying for. Tickers left watched with stale or 'never' analysed status consume "
+            "watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.",
             "",
             "| Ticker | Held? | Price now | Last analysed (ET) | Price then | Moved since | It said |",
             "|---|---|---|---|---|---|---|",
@@ -991,7 +992,8 @@ def build_prompt(
         if len(watchlist) >= max_watchlist:
             lines.append(
                 "That is the limit, so nothing new can be tracked until you stop "
-                "watching something."
+                "watching something. Look for watched (unheld) tickers with stale or "
+                "never-analysed status and untrack them to free slots for new research."
             )
 
     if menu:
@@ -1875,7 +1877,7 @@ _FIXED_RULES = [
     "automatically, so it is a message and not a request.",
     "- A note is never a substitute for a decision. Leave one if you have "
     "something to say, and still answer with what you want done today, "
-    "including doing nothing.Reply with JSON only, in this exact shape:",
+    "including doing nothing. Reply with JSON only, in the shape specified below:",
 ]
 
 SYSTEM_PROMPT = (
@@ -3820,7 +3822,17 @@ def run_once(woke_because: str | None = None) -> AgentRun:
         # but a small model can still hand back the same list, and executing it
         # twice would buy twice. Screening would catch the second buy only when
         # the cash had run out, which is far too late to rely on.
-        signature = [(o.get("side"), o.get("ticker"), o.get("quantity")) for o in accepted]
+        signature = [
+            (
+                o.get("side"),
+                o.get("ticker"),
+                o.get("quantity"),
+                o.get("stop"),
+                o.get("target"),
+                o.get("reason"),
+            )
+            for o in accepted
+        ]
         if signature and signature == last_signature:
             log.info("The answer repeats the previous turn's orders; ending the pass")
             break

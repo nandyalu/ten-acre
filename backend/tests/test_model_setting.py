@@ -28,6 +28,7 @@ def settings_store(monkeypatch):
 @pytest.fixture(autouse=True)
 def clear_model_cache(monkeypatch):
     monkeypatch.setattr(analysis, "_model_list_cache", (0.0, []))
+    monkeypatch.setitem(analysis.DEFAULT_CONFIG, "llm_provider", "ollama")
 
 
 def _fake_urlopen(models=(), error=None):
