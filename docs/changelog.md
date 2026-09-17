@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-17
+
+- **Dependencies** — The TradingAgents submodule's news analyst can attach Google's search-grounding tool when the LLM is Gemini, behind a new `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING` flag that defaults off. Grounding needs a Google Cloud project with billing linked (Tier 1); confirmed live that the Free tier gives Gemini 3 zero grounding quota, and that mixing the built-in search tool with the existing custom tools needs an explicit `tool_config.include_server_side_tool_invocations` setting that the upstream PR did not set.
+
 ## 2026-09-16
 
 - **Site** — A research order the agent commissioned now shows on the Decisions page as failed, not blank, when the analysis never finished. The order record only ever said `research TICKER`; whether it finished or failed was computed and then thrown away. A failed research now appears in the same red "not analysed" list a broker failure appears in, instead of looking identical to one that succeeded.
