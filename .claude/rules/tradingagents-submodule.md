@@ -53,6 +53,7 @@ Commit `4c6c356` repairs how those picks fit together. #1189 (an unparseable rat
 - `67fc9f5`: upstream `7cc478a` cherry-picked from v0.4.2, with the OAuth path kept.
 - `5260a28`: Reddit through a trawl browser when `REDDIT_TRAWL_URL` is set. See `market-data.md`.
 - `ce80173`: the FRED API key removed from connection errors and timeouts too. #1324 missed that path, and a `requests.ConnectionError` quotes the full URL with `api_key=`.
+- `7a6d4c2` (merge of fork PR #1) + `78dbb52`: the news analyst can attach Gemini's built-in search-grounding tool, behind `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING` (default off). The PR as submitted needed a fix: Gemini rejects `google_search` mixed with the analyst's custom tools unless `tool_config.include_server_side_tool_invocations` is set, confirmed against the live API. **Do not flip the default on** — the Free tier gives Gemini 3 zero grounding quota (`429 RESOURCE_EXHAUSTED` on every Gemini 3 model tested, including aliases like `gemini-flash-latest`), so turning it on unconditionally breaks the news analyst on any deployment without a Google Cloud billing account (Tier 1) linked. Gemma models (e.g. `gemma-4-31b-it`) had working grounding on the same Free-tier key — the block is Gemini-3-specific, not account-wide.
 
 ## Upstream releases after the base
 
