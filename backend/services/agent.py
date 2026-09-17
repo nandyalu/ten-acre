@@ -234,6 +234,7 @@ _CHANGES_FILE = Path(__file__).resolve().parent.parent / "agent_changes.json"
 
 _MEMORY_NOTES_KEY = "agent_memory_notes"
 _MEMORY_NOTE_MAX_CHARS = 500
+_MAX_MEMORY_NOTES = 10
 
 
 def get_memory_notes() -> list[str]:
@@ -244,7 +245,7 @@ def get_memory_notes() -> list[str]:
     try:
         data = json.loads(stored)
         if isinstance(data, list):
-            return [str(n).strip() for n in data if str(n).strip()]
+            return [str(n).strip() for n in data if str(n).strip()][:_MAX_MEMORY_NOTES]
     except Exception:
         log.exception("Could not parse agent memory notes setting")
     return []
@@ -252,7 +253,7 @@ def get_memory_notes() -> list[str]:
 
 def set_memory_notes(notes: list[str]) -> None:
     """Overwrite the agent's persistent memory notes."""
-    cleaned = [str(n).strip()[:_MEMORY_NOTE_MAX_CHARS] for n in notes if str(n).strip()]
+    cleaned = [str(n).strip()[:_MEMORY_NOTE_MAX_CHARS] for n in notes if str(n).strip()][:_MAX_MEMORY_NOTES]
     db.set_setting(_MEMORY_NOTES_KEY, json.dumps(cleaned))
 
 
@@ -263,6 +264,8 @@ def add_memory_note(text: str) -> None:
         return
     notes = get_memory_notes()
     if note not in notes:
+        if len(notes) >= _MAX_MEMORY_NOTES:
+            notes.pop(0)  # FIFO cap eviction if max reached
         notes.append(note)
         set_memory_notes(notes)
 

@@ -51,6 +51,14 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-16 — persistent long-term memory notes added for the agent (`side: "memory"`).** `next_wakeup_note` only carried notes to the next immediate wakeup pass. The agent now has persistent long-term memory notes that are stored in the database (`BotSetting`) and injected into every prompt until explicitly cleared or removed. Capped at 10 notes to prevent prompt crowding.
+
+**2026-09-16 — explicit multi-buy cash allocation guidance added to prompt rules.** The prompt rule for buying now explicitly reminds the model that when placing multiple buys in a single turn, it must allocate quantities so that `sum(quantity × price)` fits within available cash, reducing overspend refusals on multi-buy orders.
+
+**2026-09-16 — trailing stop protection guidance reworded in `adjust` rule.** The `adjust` rule now explicitly advises the agent to raise stops on unrealized profit or UNSET positions to protect gains and manage risk as trades progress.
+
+**2026-09-16 — watchlist untrack guidance added to prompt rules and table headers.** The rules and watchlist table header now instruct the agent to untrack watched (unheld) tickers with stale or 'never' analysed status to free watchlist slots for new research orders when the watchlist cap is reached.
+
 **2026-09-16 — 'Day High' and 'Day Low' columns added to the tracked tickers and recent analyst signals tables.** An agent note asked for immediate session high/low context beside "Price now" to judge daily volatility and support breaks before commissioning research. Built as `day_range_today` reading today's session range from the bar cache, and displayed in both tables beside "Price now".
 
 **2026-09-16 — the candidate menu reserves slots for congressional trades and Yahoo trending, instead of losing them to a volume sort.** Both text sources, added 2026-09-15, hand back real tickers that were then sorted into the menu by trading volume alongside the two Webull screens — and a Webull "most active" row is a volume leader by definition, so a congressional trade or a searched-for ticker almost never outranked one. Live containers ran several passes after deploy with neither source ever reaching the agent. `MAX_PROPOSED` goes from 8 to 10; `_RESERVED_SLOTS` guarantees congress up to 3 seats and trending up to 2, each filled by its own most-liquid names first, and Webull fills whatever is left. The menu line shown to the agent now also names the source (`via congress trade (QuiverQuant)`, `via trending (Yahoo Finance)`, `via most active`), so a read of the prompt can tell which screen actually surfaced a pick.
