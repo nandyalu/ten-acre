@@ -232,6 +232,69 @@ _CHANGES_SEEN_KEY = "change_notes_seen"
 # why. backend/services/agent.py -> backend/ -> agent_changes.json.
 _CHANGES_FILE = Path(__file__).resolve().parent.parent / "agent_changes.json"
 
+_MEMORY_NOTES_KEY = "agent_memory_notes"
+_MEMORY_NOTE_MAX_CHARS = 500
+
+
+def get_memory_notes() -> list[str]:
+    """Persistent memory notes stored across turns and passes by the agent."""
+    stored = db.get_setting(_MEMORY_NOTES_KEY)
+    if not stored:
+        return []
+    try:
+        data = json.loads(stored)
+        if isinstance(data, list):
+            return [str(n).strip() for n in data if str(n).strip()]
+    except Exception:
+        log.exception("Could not parse agent memory notes setting")
+    return []
+
+
+def set_memory_notes(notes: list[str]) -> None:
+    """Overwrite the agent's persistent memory notes."""
+    cleaned = [str(n).strip()[:_MEMORY_NOTE_MAX_CHARS] for n in notes if str(n).strip()]
+    db.set_setting(_MEMORY_NOTES_KEY, json.dumps(cleaned))
+
+
+def add_memory_note(text: str) -> None:
+    """Add a persistent memory note if not already present."""
+    note = str(text or "").strip()[:_MEMORY_NOTE_MAX_CHARS]
+    if not note:
+        return
+    notes = get_memory_notes()
+    if note not in notes:
+        notes.append(note)
+        set_memory_notes(notes)
+
+
+def remove_memory_note(text_or_index: str | int) -> bool:
+    """Remove a persistent memory note by text or 0-based index."""
+    notes = get_memory_notes()
+    if isinstance(text_or_index, int):
+        if 0 <= text_or_index < len(notes):
+            notes.pop(text_or_index)
+            set_memory_notes(notes)
+            return True
+        return False
+    target = str(text_or_index or "").strip()
+    if target in notes:
+        notes.remove(target)
+        set_memory_notes(notes)
+        return True
+    return False
+
+
+def describe_memory_notes() -> list[str]:
+    """Format persistent memory notes for the agent prompt."""
+    notes = get_memory_notes()
+    if not notes:
+        return []
+    return [
+        "## Your persistent memory notes across passes:",
+        "These are long-term notes you recorded previously that persist until you clear them:",
+        *(f"- {n}" for n in notes),
+    ]
+
 
 def load_change_notes() -> list[dict]:
     """Read backend/agent_changes.json, defensively.
@@ -653,6 +716,9 @@ def build_prompt(
     recent_changes = describe_recent_changes(changes or [])
     if recent_changes:
         lines += [*recent_changes, ""]
+    memory_notes = describe_memory_notes()
+    if memory_notes:
+        lines += [*memory_notes, ""]
     # Every "price now" in this prompt was read at the same moment, and the
     # agent asked which moment that was. Named once, used by both tables.
     as_of = market_clock.now_et().strftime("%Y-%m-%d %-I:%M %p ET")
@@ -1315,6 +1381,7 @@ def parse_decision(text: str) -> tuple[str, list[dict]]:
 _SALVAGED = {
     "research": ("research", ("research",)),
     "note": ("note", ("note", "notes", "memo")),
+    "memory": ("memory", ("memory", "memories")),
 }
 # Values a model writes when it means "nothing here". Left out rather than
 # turned into an empty note.
@@ -1347,14 +1414,14 @@ def _as_orders(value, side: str) -> list[dict]:
         return [o for item in value for o in _as_orders(item, side)]
     if isinstance(value, dict):
         order = {**value, "side": side}
-        if side == "note" and not str(order.get("reason") or "").strip():
-            order["reason"] = str(value.get("note") or value.get("message") or "").strip()
-        return [order] if (side != "note" or order.get("reason")) else []
+        if side in ("note", "memory") and not str(order.get("reason") or "").strip():
+            order["reason"] = str(value.get("note") or value.get("message") or value.get("memory") or "").strip()
+        return [order] if (side not in ("note", "memory") or order.get("reason") or order.get("action")) else []
     text = str(value or "").strip()
     if text.lower() in _EMPTY:
         return []
-    if side == "note":
-        return [{"side": "note", "reason": text}]
+    if side in ("note", "memory"):
+        return [{"side": side, "reason": text}]
     # A bare string for a ticker-shaped side is the ticker.
     return [{"side": side, "ticker": text.upper()}]
 
@@ -1552,6 +1619,15 @@ def screen(
                 accepted.append(
                     {"side": "note", "ticker": ticker, "quantity": 0, "reason": text}
                 )
+            continue
+
+        if str(order.get("side", "")).lower().strip() == "memory":
+            text = str(order.get("reason") or order.get("text") or order.get("note") or order.get("memory") or "").strip()
+            action = str(order.get("action") or "").lower().strip()
+            idx = order.get("index")
+            accepted.append(
+                {"side": "memory", "ticker": ticker, "quantity": 0, "reason": text, "action": action, "index": idx}
+            )
             continue
 
         if str(order.get("side", "")).lower().strip() == "research":
@@ -1889,6 +1965,10 @@ _FIXED_RULES = [
     "Rather \"ruled out HPE at a $59.83 entry, worth another look under $56\", "
     "or \"holding AVGO until it breaks $366.16; sell if it closes below $354\". "
     "One or two sentences, and only if you have something worth carrying.",
+    "- **Write long-term persistent notes with side \"memory\".** Unlike \"next_wakeup_note\" "
+    "which only lasts until the next wakeup, a note written with side \"memory\" (e.g. "
+    "{\"side\": \"memory\", \"reason\": \"your long-term note\"}) is saved permanently "
+    "and injected into every prompt until cleared with {\"side\": \"memory\", \"action\": \"clear\"}.",
     "- You may ask for any time, including before the open, after the close and "
     "at the weekend. Research and planning work at any hour. Orders do not — "
     "the broker rejects one outright while the market is shut, and you will "
@@ -3594,6 +3674,24 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
             # broker paths so a note can never reach one of them.
             run.notes.append(order["reason"])
             log.info("Note from the agent: %s", order["reason"])
+            continue
+        if order["side"] == "memory":
+            action = str(order.get("action") or "").lower().strip()
+            text = str(order.get("reason") or "").strip()
+            idx = order.get("index")
+            if action in ("clear", "clear_all") or text.lower() in ("clear", "clear_all", "clear all", "reset"):
+                set_memory_notes([])
+                outcomes.append("Memory notes: cleared all notes.")
+            elif action in ("remove", "delete") or (isinstance(idx, int) and idx >= 0):
+                if isinstance(idx, int) and remove_memory_note(idx):
+                    outcomes.append(f"Memory notes: removed note at index {idx}.")
+                elif text and remove_memory_note(text):
+                    outcomes.append(f"Memory notes: removed note '{text}'.")
+                else:
+                    outcomes.append("Memory notes: could not find note to remove.")
+            elif text:
+                add_memory_note(text)
+                outcomes.append(f'Memory notes: recorded "{text}".')
             continue
         if order["side"] == "research":
             _commission_research(order, run)
