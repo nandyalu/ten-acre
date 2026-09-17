@@ -814,6 +814,33 @@ def build_prompt(
         lines.append("You hold nothing. The whole account is in cash.")
     lines += ["", "---", ""]
 
+    # **A limit order that has not filled yet is otherwise invisible here.**
+    # Holdings above are filled positions; a GTC limit buy can sit unfilled
+    # for days without ever becoming one, and nothing else in this prompt
+    # says it exists — the outcome line that announced it belonged to the
+    # pass that placed it and is gone by the next one. Without this a later
+    # pass could forget an order it is still waiting on, or place a second
+    # one on the same ticker having lost track of the first (screening still
+    # protects the cash either way — see agent_book.build_book — but a
+    # forgotten order is still a confused decision).
+    pending_entries = [
+        t for t in db.get_pending_agent_trades() if not t.is_stop and t.limit_price
+    ]
+    if pending_entries:
+        lines += [
+            "**Orders you placed that have not filled yet.** Use side \"cancel\" "
+            "with the ticker to withdraw one you no longer want.",
+            "",
+            "| Ticker | Side | Shares | Limit price | Placed |",
+            "|---|---|---|---|---|",
+        ]
+        for t in pending_entries:
+            lines.append(
+                f"| {t.ticker} | {t.side} | {t.quantity:g} | ${t.limit_price:,.2f} "
+                f"| {t.placed_at.strftime('%Y-%m-%d %-I:%M %p')} |"
+            )
+        lines += ["", "---", ""]
+
     # **Both of these sit above the signal table, and that placement was
     # measured (2026-09-12).** They were between the two tables, at 42% and 47%
     # of the prompt, and four probe runs against the live book referenced
@@ -1239,7 +1266,10 @@ def build_prompt(
         '{"reasoning": "one or two sentences", "next_wakeup": "2026-09-11T09:00", '
         '"next_wakeup_note": "what you want to remember from this pass", "orders": '
         '[{"ticker": "AAPL", "side": "buy", "quantity": 2, "reason": "why"},',
+        ' {"ticker": "TSLA", "side": "buy", "quantity": 5, "order_type": "limit", '
+        '"limit_price": 240.00, "time_in_force": "gtc", "reason": "why"},',
         ' {"ticker": "MSFT", "side": "adjust", "stop": 410.5, "reason": "why"},',
+        ' {"ticker": "TSLA", "side": "cancel", "reason": "why"},',
         # Unconditional, unlike research/untrack below: the read rules above
         # are never gated on watchlist or menu, so the example should not be
         # either. prompt_evaluation.md flagged this order type as absent from
@@ -1602,6 +1632,10 @@ def screen(
     watchlist = set(db.get_watchlist())
     cash = book.cash
     held = {h.ticker: h.quantity for h in book.holdings}
+    # A running copy, not the opening one, for the same reason cash is
+    # running: cancelling a pending limit sell listed earlier in the same
+    # answer frees its shares for a sell listed after it.
+    reserved_shares = dict(book.reserved_shares)
     accepted: list[dict] = []
     rejected: list[agent_book.Rejection] = []
 
@@ -1751,6 +1785,32 @@ def screen(
                 {**order, "ticker": ticker, "side": "adjust", "quantity": quantity_held}
             )
             continue
+
+        if str(order.get("side", "")).lower().strip() == "cancel":
+            # Withdraws a still-unfilled entry order — never a resting
+            # protective exit, which stays reachable through adjust or a
+            # sell. Moves no cash directly; the cash it frees comes back
+            # through build_book's reservation once the row settles.
+            pending_entry = next(
+                (t for t in db.get_pending_agent_trades() if t.ticker == ticker and not t.is_stop),
+                None,
+            )
+            if pending_entry is None:
+                rejected.append(
+                    agent_book.Rejection(
+                        ticker=ticker, side="cancel", quantity=0,
+                        why="nothing pending to cancel",
+                    )
+                )
+                continue
+            if pending_entry.side == "sell":
+                # Frees the shares for a sell listed later in this same
+                # answer, the same way an untrack frees a watchlist slot.
+                reserved_shares[ticker] = max(
+                    0.0, reserved_shares.get(ticker, 0.0) - pending_entry.quantity
+                )
+            accepted.append({**order, "ticker": ticker, "side": "cancel", "quantity": 0})
+            continue
         running = agent_book.Book(
             budget=book.budget,
             cash=cash,
@@ -1758,6 +1818,7 @@ def screen(
             holdings=[
                 agent_book.Holding(ticker=t, quantity=q, avg_cost=0.0) for t, q in held.items()
             ],
+            reserved_shares=reserved_shares,
         )
         price = prices.get(ticker)
         rejection = agent_book.validate(order, running, price)
@@ -1777,8 +1838,16 @@ def screen(
                 )
                 continue
         if side == "buy":
-            cash -= quantity * price
-            held[ticker] = held.get(ticker, 0.0) + quantity
+            if str(order.get("order_type") or "").lower().strip() == "limit":
+                # Reserve at the stated limit price, the true worst case for
+                # a limit buy — and don't add the shares to the running
+                # `held` yet. A limit order may never fill this pass (or at
+                # all), so a later order in the same answer (an adjust, a
+                # sell, an untrack) must still see this ticker as not held.
+                cash -= quantity * float(order["limit_price"])
+            else:
+                cash -= quantity * price
+                held[ticker] = held.get(ticker, 0.0) + quantity
         else:
             # A sell is allowed without a price — you can always exit a
             # position — but unknown proceeds are counted as zero rather than
@@ -1917,6 +1986,23 @@ _FIXED_RULES = [
     "a loss before the stop gets to it, and trimming a position that has "
     "grown too large are all yours to decide on any pass. A resting stop is a "
     "floor under a position, not a reason to leave it alone.",
+    "- A buy or a sell defaults to a market order. Add \"order_type\": \"limit\" "
+    "and a \"limit_price\" to name your own price instead — a buy fills at "
+    "that price or better, a sell at that price or better. Add "
+    "\"time_in_force\": \"gtc\" to let it wait past today; leave it out, or "
+    "use \"day\", and it is gone at the close if it never filled.",
+    "- **A limit buy does NOT get a stop or target placed under it, even when "
+    "the signal has one.** It is not filled yet, and may not fill this pass "
+    "at all, so there is nothing to rest an exit on. The instant it fills you "
+    "are woken and told the fill price — set the stop and/or target yourself "
+    "then, with \"adjust\", off the price you actually got. A limit sell "
+    "needs no such follow-up: it can only close a position you already hold.",
+    "- **A GTC order keeps something tied up until it fills or you cancel "
+    "it** — a buy keeps its cash reserved, a sell keeps its shares "
+    "committed and unsellable again until it resolves. Neither is free to "
+    "leave sitting. Use side \"cancel\" with the ticker to withdraw one that "
+    "has not filled. This never touches a resting stop or target; move "
+    "those with \"adjust\", or sell the position.",
     # **The stance changed on 2026-09-10, from sparing to expected.** It read
     # "read when the reasoning would change what you do, not out of habit",
     # which is advice to hesitate. Reading is free and one pass can only do it
@@ -3091,12 +3177,26 @@ def _place(
     So a refused bracket falls back to the plain market order rather than
     failing the trade. The position is then armed the slower way, which is the
     behaviour this replaced and is still correct — just briefly exposed.
+
+    **A limit order never brackets.** It may sit unfilled for a session or,
+    under GTC, for days — the broker will not hold a combo's exit legs
+    inactive that long against a master that hasn't filled. A limit buy goes
+    out alone; the signal's stop/target, if any, are left unplaced, and
+    ``_describe_fill`` tells the agent to resend them with ``adjust`` once
+    the fill is confirmed, rather than this function guessing when that will
+    be.
     """
     ticker = order["ticker"]
     if order["side"] != "buy":
         # Not a plain market order: the resting exits have to be cleared before
         # the broker will accept the sell, and put back if it fails.
         return _sell_and_restore_on_failure(order, run=run)
+
+    if str(order.get("order_type") or "").lower().strip() == "limit":
+        return sandbox_broker.place_limit_order(
+            ticker, "BUY", order["quantity"], float(order["limit_price"]),
+            str(order.get("time_in_force") or "day").upper(),
+        )
 
     stop, target = usable_levels(ticker, stops.get(ticker), targets.get(ticker), price)
     if stop is None and price:
@@ -3287,6 +3387,28 @@ def _await_cancels(client_order_ids: list[str]) -> None:
         )
 
 
+def _clear_before_arming(ticker: str) -> None:
+    """Cancel and await whatever is already resting on a ticker, before a
+    fresh stop/target is placed under it.
+
+    Shared by ``_arm_exits`` and ``adjust_exits``'s arm-new branch, both of
+    which used to place a brand-new exit pair without checking first. That is
+    what actually jammed AVGO on 2026-09-17: a bracket refused a second time
+    on unsettled cash fell back to arming a second stop and target on top of
+    the first, so the broker saw more shares committed to sell than the
+    account owned and refused every later ``adjust`` with
+    ``OPENAPI_ORDER_NOT_SUPPORT_REVERSE_OPTION`` — identically, three times,
+    until an unrelated sell elsewhere in the pass cancelled the stale order as
+    a side effect. The sell path already cancelled first
+    (``_sell_and_restore_on_failure``); this gives arming the same guarantee.
+
+    A no-op when nothing is resting — ``_cancel_resting_exits`` returns an
+    empty list immediately, so a genuinely new position pays no extra wait.
+    """
+    cancelled = _cancel_resting_exits(ticker)
+    _await_cancels([c.get("client_order_id") for c in cancelled])
+
+
 def _sell_and_restore_on_failure(order: dict, run: "AgentRun | None" = None) -> dict:
     """Sell a position, clearing its resting exits first.
 
@@ -3308,10 +3430,20 @@ def _sell_and_restore_on_failure(order: dict, run: "AgentRun | None" = None) -> 
     **If the sell fails, the exits go back.** Between the cancel and the fill
     the shares have nothing under them, and leaving them that way would replace
     one defect with a worse one: a naked position that nothing reports.
+
+    **A limit sell needs the same cancel-first treatment as a market one.**
+    The broker refuses *any* new sell while something rests on the position —
+    the order type asked for doesn't change that.
     """
     cancelled = _cancel_resting_exits(order["ticker"])
     _await_cancels([c.get("client_order_id") for c in cancelled])
     try:
+        if str(order.get("order_type") or "").lower().strip() == "limit":
+            return sandbox_broker.place_limit_order(
+                order["ticker"], order["side"].upper(), order["quantity"],
+                float(order["limit_price"]),
+                str(order.get("time_in_force") or "day").upper(),
+            )
         return sandbox_broker.place_market_order(
             order["ticker"], order["side"].upper(), order["quantity"]
         )
@@ -3461,6 +3593,7 @@ def _arm_exits(
         )
         _record_unguarded(order["ticker"], order["quantity"], why, run=run)
         return f"{order['ticker']}: {why}"
+    _clear_before_arming(order["ticker"])
     try:
         legs = sandbox_broker.place_exit_bracket(
             order["ticker"], order["quantity"], stop_price, target_price
@@ -3530,6 +3663,11 @@ def settle_pending() -> list[dict]:
                 "was_stop": trade.is_stop,
                 "reason": trade.reason,
                 "status": "filled",
+                # Set only on a not-yet-filled *entry* order placed as a
+                # limit — a resting protective exit also carries limit_price,
+                # which is why "was_stop" has to be checked too before this
+                # means "a limit buy just filled and needs its exits."
+                "limit_price": trade.limit_price,
             })
         elif status in ("CANCELLED", "REJECTED", "FAILED", "EXPIRED"):
             db.settle_agent_trade(trade.client_order_id, status="rejected")
@@ -3540,6 +3678,7 @@ def settle_pending() -> list[dict]:
                 "price": None,
                 "was_stop": trade.is_stop,
                 "status": "rejected",
+                "limit_price": trade.limit_price,
             })
     return settled
 
@@ -3716,6 +3855,39 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
                 run.failed.append((order, outcome["message"]))
                 outcomes.append(f"{order['ticker']}: NOT adjusted — {outcome['message']}")
             continue
+        if order["side"] == "cancel":
+            # Re-checked here, not only trusted from screening: the pending
+            # order could have filled in the gap between screening this
+            # answer and reaching it, same as any other order in the list.
+            pending_entry = next(
+                (t for t in db.get_pending_agent_trades()
+                 if t.ticker == order["ticker"] and not t.is_stop),
+                None,
+            )
+            if pending_entry is None:
+                outcomes.append(f"{order['ticker']}: nothing pending to cancel.")
+                continue
+            try:
+                cancelled_ok = sandbox_broker.cancel_order(pending_entry.client_order_id)
+            except Exception as exc:
+                log.exception("Couldn't cancel the pending order on %s", order["ticker"])
+                run.failed.append((order, str(exc)))
+                outcomes.append(
+                    f"{order['ticker']}: the broker would NOT cancel the pending order — {exc}"
+                )
+                continue
+            if cancelled_ok:
+                db.settle_agent_trade(pending_entry.client_order_id, status="rejected")
+                outcomes.append(
+                    f"{order['ticker']}: cancelled the pending {pending_entry.side} of "
+                    f"{pending_entry.quantity:g}."
+                )
+            else:
+                outcomes.append(
+                    f"{order['ticker']}: the broker did not confirm the cancel — it may "
+                    "have just filled."
+                )
+            continue
         try:
             result = _place(order, prices.get(order["ticker"]), stops, targets, run=run)
         except Exception as exc:  # broker refusal, network, bad symbol
@@ -3726,6 +3898,7 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
                 f"{order['side']} of {order['quantity']} — {exc}"
             )
             continue
+        is_limit = str(order.get("order_type") or "").lower().strip() == "limit"
         db.record_agent_trade(
             ticker=order["ticker"],
             side=order["side"],
@@ -3734,12 +3907,15 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
             placed_at=result["placed_at"],
             reason=str(order.get("reason") or "")[:500] or None,
             signal_id=signal_by_ticker.get(order["ticker"]),
+            limit_price=float(order["limit_price"]) if is_limit else None,
         )
         run.placed.append(order)
         outcomes.append(_describe_fill(order, result, prices, stops, targets))
         if order["side"] == "buy":
             if result.get("exits") is not None:
                 _record_exits(order["ticker"], result["exits"])
+            elif is_limit:
+                pass  # _describe_fill already said this isn't armed yet.
             else:
                 unguarded = _arm_exits(
                     order,
@@ -3786,9 +3962,30 @@ def _describe_fill(order, result, prices, stops, targets) -> str:
     ticker = order["ticker"]
     price = prices.get(ticker)
     at = f" at about ${price:,.2f}" if price else ""
+    is_limit = str(order.get("order_type") or "").lower().strip() == "limit"
+
     if order["side"] != "buy":
+        if is_limit:
+            return (
+                f"{ticker}: limit sell of {order['quantity']:g} at "
+                f"${float(order['limit_price']):,.2f} placed, not yet filled."
+            )
         return f"{ticker}: sold {order['quantity']}{at}."
+
     stop, target = stops.get(ticker), targets.get(ticker)
+    if is_limit:
+        # Never bracketed — see _place. Nothing is resting under this yet,
+        # whether or not the signal had a usable stop/target, because a limit
+        # buy may not have filled at all. The agent is woken the instant it
+        # does (scheduler._settle_agent_fills, agent.format_limit_fill) and
+        # sets the exits itself then, off the real fill price.
+        note = ""
+        if stop or target:
+            note = " The signal's stop/target were NOT placed — resend them with adjust once this fills."
+        return (
+            f"{ticker}: limit buy of {order['quantity']:g} at "
+            f"${float(order['limit_price']):,.2f} placed, not yet filled.{note}"
+        )
     if result.get("exits") is not None:
         under = "The broker took the stop and target with it."
     elif stop or target:
@@ -4206,6 +4403,17 @@ def format_stop_fill(fill: dict) -> str:
     )
 
 
+def format_limit_fill(fill: dict) -> str:
+    """A limit buy filling is the other event nobody was waiting on this
+    pass: it never brackets (see ``_place``), so the shares land with nothing
+    resting under them until the agent sets a stop and/or target itself."""
+    return (
+        f"🟢 Limit buy filled: bought {fill['quantity']:g} {fill['ticker']} "
+        f"at ${fill['price']:,.2f}. Nothing is protecting these shares yet — "
+        "set a stop and/or target with adjust now."
+    )
+
+
 @dataclass
 class ResetResult:
     cancelled: int = 0
@@ -4480,6 +4688,11 @@ def adjust_exits(
             (h for h in agent_book.build_book().holdings if h.ticker == ticker), None
         )
         if position is not None:
+            # _arm_exits clears whatever is already resting before placing
+            # the new pair (see _clear_before_arming) — needed here too: the
+            # local ledger showing nothing resting is not proof the broker
+            # agrees, and arming on top of a stale broker-side exit is
+            # exactly what produced AVGO's repeated REVERSE_OPTION refusal.
             unguarded = _arm_exits(
                 {"ticker": ticker, "side": "buy", "quantity": position.quantity},
                 levels.get("stop"),

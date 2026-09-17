@@ -75,6 +75,12 @@ class Book:
     # and from realized_pnl; carried separately so a page can show how much of
     # a loss was research rather than trading, which are different problems.
     research_spent: float = 0.0
+    # Shares already promised to a pending, unfilled limit sell — a GTC one
+    # can rest for days. Kept apart from `holdings` rather than subtracted
+    # from it: the position is still real and still owned, and Holding.quantity
+    # feeds market value and the holdings table, so understating it there
+    # would misstate equity, not just what remains sellable. See `validate`.
+    reserved_shares: dict[str, float] = field(default_factory=dict)
 
     @property
     def invested(self) -> float:
@@ -200,12 +206,32 @@ def build_book(price_lookup=None) -> Book:
     # is a no-op, which is how the live deployment behaves; the experiment
     # deployment sets a price and the agent has to choose what to look at.
     researched = research.total_spent()
+    # A pending limit buy has moved no money yet — but unlike a market or
+    # bracket entry, which fills within the same pass or by the next open, a
+    # GTC limit buy can sit unfilled for days. Without reserving its cost, a
+    # later pass would see the same dollars as free and could commit them
+    # twice. A pending *market* order never carries a limit_price, so this
+    # only ever touches the new limit-order case.
+    reserved = sum(
+        t.quantity * t.limit_price
+        for t in trades
+        if t.status == "pending" and t.side == "buy" and t.limit_price
+    )
+    # The share-side mirror: a pending, unfilled limit sell has not reduced
+    # the position yet, but the shares are spoken for. Without this, a second
+    # pass — after the one that placed the limit sell, before it fills —
+    # would see the same shares as free to sell again.
+    reserved_shares: dict[str, float] = {}
+    for t in trades:
+        if t.status == "pending" and t.side == "sell" and not t.is_stop and t.limit_price:
+            reserved_shares[t.ticker] = reserved_shares.get(t.ticker, 0.0) + t.quantity
     return Book(
         budget=budget,
-        cash=budget - spent + received - researched,
+        cash=budget - spent + received - researched - reserved,
         realized_pnl=realized - researched,
         holdings=holdings,
         research_spent=researched,
+        reserved_shares=reserved_shares,
     )
 
 
@@ -262,10 +288,46 @@ def validate(order: dict, book: Book, price: float | None) -> Rejection | None:
     if quantity != int(quantity):
         return no(f"whole shares only, got {quantity}")
 
+    order_type = str(order.get("order_type") or "market").lower().strip()
+    if order_type not in ("market", "limit"):
+        return no(f"order_type must be market or limit, got {order_type!r}")
+    limit_price = order.get("limit_price")
+    if order_type == "limit":
+        try:
+            limit_price = float(limit_price)
+        except (TypeError, ValueError):
+            limit_price = None
+        if limit_price is None or limit_price <= 0:
+            return no("a limit order needs a positive limit_price")
+    time_in_force = str(order.get("time_in_force") or "day").lower().strip()
+    if time_in_force not in ("day", "gtc"):
+        return no(f"time_in_force must be day or gtc, got {time_in_force!r}")
+
     if side == "sell":
         held = next((h.quantity for h in book.holdings if h.ticker == ticker), 0.0)
-        if quantity > held + _QUANTITY_EPSILON:
+        # Shares already promised to a pending limit sell aren't free to sell
+        # again — a GTC one can rest for days across passes that each rebuild
+        # `holdings` from filled trades alone, which still shows them as held.
+        reserved = book.reserved_shares.get(ticker, 0.0)
+        available = held - reserved
+        if quantity > available + _QUANTITY_EPSILON:
+            if reserved > _QUANTITY_EPSILON:
+                return no(
+                    f"holds {held:g} shares but {reserved:g} are already committed to a "
+                    f"pending sell, leaving {max(available, 0.0):g} — cancel it first, or "
+                    f"sell fewer"
+                )
             return no(f"holds {held:g} shares, cannot sell {quantity:g} (no shorting)")
+        return None
+
+    # **A limit buy is screened at its own stated price, not the quote.** That
+    # price is the true worst case — a limit buy never fills above it — where
+    # a market buy's worst case has to be estimated from the quote instead.
+    if order_type == "limit":
+        cost = quantity * limit_price
+        if cost > book.cash + _CASH_EPSILON:
+            return no(f"costs ${cost:,.2f} at the limit price but only "
+                      f"${book.cash:,.2f} is uninvested")
         return None
 
     if price is None:

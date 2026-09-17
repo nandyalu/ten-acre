@@ -368,6 +368,71 @@ def place_market_order(ticker: str, side: str, quantity: float) -> dict:
     }
 
 
+def place_limit_order(
+    ticker: str, side: str, quantity: float, limit_price: float, time_in_force: str = "DAY"
+) -> dict:
+    """Place a plain limit order — an entry the agent chose a price for,
+    rather than the marketable-limit ``place_bracket_order`` sends on its own.
+
+    Not bracketed: a limit order may sit unfilled for a session or, under
+    ``GTC``, for days, and the broker will not hold a combo's exit legs
+    inactive that long against a master that has not filled. Exits for a
+    limit buy are armed separately, once the fill is confirmed — see
+    ``agent._execute_orders``.
+
+    Raises on refusal, like ``place_market_order`` — a silently skipped order
+    would leave the ledger claiming a position that does not exist.
+    """
+    _assert_sandbox()
+    side = side.upper()
+    if side not in ("BUY", "SELL"):
+        raise ValueError(f"side must be BUY or SELL, got {side!r}")
+    if quantity <= 0:
+        raise ValueError(f"quantity must be positive, got {quantity}")
+    if limit_price <= 0:
+        raise ValueError(f"limit_price must be positive, got {limit_price}")
+    time_in_force = time_in_force.upper()
+    if time_in_force not in ("DAY", "GTC"):
+        raise ValueError(f"time_in_force must be DAY or GTC, got {time_in_force!r}")
+    if side == "SELL":
+        _assert_not_short(ticker, quantity)
+
+    client = quotes.get_api_client()
+    account_id = get_paper_account_id()
+    if client is None or account_id is None:
+        raise RuntimeError("No simulated account available to trade")
+
+    from webull.trade.trade.v3.order_opration_v3 import OrderOperationV3
+
+    quantity_str = str(int(quantity))
+    client_order_id = uuid.uuid4().hex
+    order = {
+        "client_order_id": client_order_id,
+        "combo_type": "NORMAL",
+        "instrument_type": "EQUITY",
+        "entrust_type": "QTY",
+        "symbol": ticker.upper().strip(),
+        "market": "US",
+        "side": side,
+        "order_type": "LIMIT",
+        "limit_price": f"{limit_price:.2f}",
+        "time_in_force": time_in_force,
+        "quantity": quantity_str,
+        "support_trading_session": "CORE",
+    }
+    log.info(
+        "Placing simulated %s LIMIT %s x%s at %.2f (%s)",
+        side, order["symbol"], quantity_str, limit_price, time_in_force,
+    )
+    response = OrderOperationV3(client).place_order(account_id, [order])
+    body = response.json() if hasattr(response, "json") else response
+    return {
+        "client_order_id": client_order_id,
+        "placed_at": datetime.datetime.now(datetime.timezone.utc),
+        "response": body,
+    }
+
+
 # How far above the market to set a bracket's entry limit. A MASTER leg cannot
 # be a MARKET order (the broker answers INVALID_PARAMETER) and cannot be GTC
 # either, so the entry is a marketable limit: priced through the offer, it

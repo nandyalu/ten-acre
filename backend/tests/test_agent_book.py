@@ -14,7 +14,10 @@ from backend.database.models import AgentTrade
 from backend.services import agent_book
 
 
-def _trade(ticker="AAPL", side="buy", quantity=2, price=100.0, status="filled", order_id=None):
+def _trade(
+    ticker="AAPL", side="buy", quantity=2, price=100.0, status="filled", order_id=None,
+    limit_price=None,
+):
     return AgentTrade(
         ticker=ticker,
         side=side,
@@ -24,6 +27,7 @@ def _trade(ticker="AAPL", side="buy", quantity=2, price=100.0, status="filled", 
         client_order_id=order_id or f"{ticker}{side}{quantity}{price}{status}",
         placed_at=datetime.datetime(2026, 8, 11, 14, 30),
         filled_at=datetime.datetime(2026, 8, 11, 14, 30) if status == "filled" else None,
+        limit_price=limit_price,
     )
 
 
@@ -79,6 +83,67 @@ def test_a_pending_order_does_not_move_cash(book_of):
 
     assert book.cash == 1000.0
     assert book.holdings == []
+
+
+def test_a_pending_gtc_limit_buy_reserves_its_cost(book_of):
+    """A GTC limit buy can sit for days — unlike a market or bracket buy,
+    which fills within the same pass or by the next open — so its cost must
+    stay reserved or a later pass could commit the same dollars twice."""
+    book = book_of([
+        _trade(quantity=5, price=None, status="pending", limit_price=90.0, order_id="p1"),
+    ])
+
+    assert book.cash == pytest.approx(1000.0 - 5 * 90.0)
+
+
+def test_a_pending_limit_sell_reserves_its_shares(book_of):
+    """holdings is rebuilt from filled trades alone, so an unfilled limit
+    sell still shows the shares as held — the reservation is what stops a
+    later pass selling them again before the first sell resolves."""
+    book = book_of([
+        _trade(quantity=5, price=100.0, order_id="b1"),
+        _trade(
+            side="sell", quantity=5, price=None, status="pending",
+            limit_price=110.0, order_id="s1",
+        ),
+    ])
+
+    assert book.reserved_shares == {"AAPL": 5.0}
+    assert book.holdings[0].quantity == 5.0  # ownership itself is untouched
+
+
+def test_selling_beyond_what_a_pending_sell_already_reserved_is_refused(book_of):
+    book = book_of([
+        _trade(quantity=5, price=100.0, order_id="b1"),
+        _trade(
+            side="sell", quantity=5, price=None, status="pending",
+            limit_price=110.0, order_id="s1",
+        ),
+    ])
+    rejection = agent_book.validate(_order(side="sell", quantity=1), book, price=105.0)
+
+    assert rejection is not None
+    assert "already committed to a pending sell" in rejection.why
+
+
+def test_selling_what_a_pending_sell_left_unreserved_is_allowed(book_of):
+    book = book_of([
+        _trade(quantity=5, price=100.0, order_id="b1"),
+        _trade(
+            side="sell", quantity=2, price=None, status="pending",
+            limit_price=110.0, order_id="s1",
+        ),
+    ])
+    assert agent_book.validate(_order(side="sell", quantity=3), book, price=105.0) is None
+
+
+def test_a_pending_market_order_is_still_not_reserved(book_of):
+    """A pending market order never carries a limit_price, so the reservation
+    must only ever touch the new limit-order case — this guards that a plain
+    after-hours order isn't accidentally double-counted."""
+    book = book_of([_trade(quantity=5, price=None, status="pending", order_id="p1")])
+
+    assert book.cash == 1000.0
 
 
 def test_an_unpriced_holding_counts_at_cost_not_zero(book_of):
@@ -149,6 +214,48 @@ def test_a_buy_with_no_price_is_refused(book_of):
 )
 def test_malformed_orders_are_refused(book_of, order):
     assert agent_book.validate(order, book_of([]), price=10.0) is not None
+
+
+def test_a_limit_buy_within_its_own_limit_price_is_allowed(book_of):
+    book = book_of([])
+    order = {"ticker": "AAPL", "side": "buy", "quantity": 4, "order_type": "limit", "limit_price": 200.0}
+    # price=None on purpose: a limit buy is screened at its own stated price,
+    # not the quote, so it must not need one.
+    assert agent_book.validate(order, book, price=None) is None
+
+
+def test_a_limit_buy_beyond_its_own_limit_price_is_refused(book_of):
+    book = book_of([])
+    order = {"ticker": "AAPL", "side": "buy", "quantity": 10, "order_type": "limit", "limit_price": 200.0}
+    rejection = agent_book.validate(order, book, price=50.0)
+
+    assert rejection is not None
+    assert "at the limit price" in rejection.why
+
+
+@pytest.mark.parametrize("limit_price", [0, -5, None, "not-a-number"])
+def test_a_limit_order_needs_a_positive_limit_price(book_of, limit_price):
+    book = book_of([])
+    order = {"ticker": "AAPL", "side": "buy", "quantity": 1, "order_type": "limit", "limit_price": limit_price}
+    rejection = agent_book.validate(order, book, price=100.0)
+
+    assert rejection is not None
+    assert "limit_price" in rejection.why
+
+
+def test_an_unknown_order_type_is_refused(book_of):
+    book = book_of([])
+    order = {"ticker": "AAPL", "side": "buy", "quantity": 1, "order_type": "stop-loss"}
+    assert agent_book.validate(order, book, price=100.0) is not None
+
+
+def test_an_unknown_time_in_force_is_refused(book_of):
+    book = book_of([])
+    order = {
+        "ticker": "AAPL", "side": "buy", "quantity": 1,
+        "order_type": "limit", "limit_price": 100.0, "time_in_force": "fok",
+    }
+    assert agent_book.validate(order, book, price=100.0) is not None
 
 
 # --- closed round trips (what the agent learns from) ---------------------------

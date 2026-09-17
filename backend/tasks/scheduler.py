@@ -173,7 +173,8 @@ _last_agent_run: datetime.datetime | None = None
 
 async def _settle_agent_fills() -> None:
     """Bring the agent's ledger up to date with the broker, and say so when a
-    stop fired. Cheap — one request per still-open order, usually none."""
+    stop fired or a limit buy filled. Cheap — one request per still-open
+    order, usually none."""
     if not agent.is_enabled():
         return
     try:
@@ -182,6 +183,7 @@ async def _settle_agent_fills() -> None:
         log.exception("Couldn't settle agent orders")
         return
     stopped = False
+    limit_filled = False
     for fill in settled:
         # A stop firing is the only trade here nobody chose to make, so it is
         # the one worth interrupting for. Ordinary fills already showed up in
@@ -189,13 +191,22 @@ async def _settle_agent_fills() -> None:
         if fill["was_stop"] and fill["status"] == "filled":
             await notify(agent.format_stop_fill(fill))
             stopped = True
-    if stopped:
+        # A limit buy is the other case an ordinary fill doesn't cover: it
+        # never brackets (see agent._place), so it can land with nothing
+        # resting under it well after the pass that placed it ended. Checked
+        # after was_stop, not instead of it — a resting exit also carries
+        # limit_price, so "not was_stop" is what actually says "this is an
+        # entry order, not a protective one."
+        elif fill["side"] == "buy" and fill.get("limit_price") and fill["status"] == "filled":
+            await notify(agent.format_limit_fill(fill))
+            limit_filled = True
+    if stopped or limit_filled:
         # **Told to the agent, not only to Discord (2026-09-16).** A stop or
         # target closing a position on its own used to reach a person and
         # nobody else — the agent learned only whenever it next happened to
         # wake for some other reason, up to four days later. Same trigger a
         # sharp move or an earnings date already uses.
-        await _maybe_run_agent("Stop fill")
+        await _maybe_run_agent("Stop fill" if stopped else "Limit buy filled")
 
 
 async def _maybe_run_agent(label: str = "Event-driven") -> None:

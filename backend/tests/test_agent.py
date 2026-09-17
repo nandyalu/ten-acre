@@ -217,6 +217,7 @@ def test_a_filled_order_is_settled_with_its_real_price(monkeypatch):
     class Trade:
         client_order_id = "8a19ed7a58094353a96cbaf92877547d"
         ticker, side, quantity, is_stop, reason = "ZBH", "buy", 10.0, False, None
+        limit_price = None
 
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Trade()])
     monkeypatch.setattr(
@@ -230,6 +231,28 @@ def test_a_filled_order_is_settled_with_its_real_price(monkeypatch):
     assert settled["status"] == "filled"
     assert settled["price"] == 97.83
     assert settled["quantity"] == 10.0
+
+
+def test_a_filled_limit_buy_carries_its_limit_price_so_the_wake_can_tell_it_apart(monkeypatch):
+    """scheduler._settle_agent_fills tells a limit-buy fill apart from an
+    ordinary one by side=='buy', not was_stop, and limit_price set."""
+    filled = {
+        "status": "FILLED", "filled_quantity": "5", "filled_price": "95.00", "order_id": "x",
+    }
+
+    class Trade:
+        client_order_id = "abc"
+        ticker, side, quantity, is_stop, reason = "ZBH", "buy", 5.0, False, None
+        limit_price = 95.00
+
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Trade()])
+    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: filled)
+    monkeypatch.setattr(agent.db, "settle_agent_trade", lambda *a, **k: None)
+
+    [settled] = agent.settle_pending()
+
+    assert settled["was_stop"] is False
+    assert settled["limit_price"] == 95.00
 
 
 def test_a_partial_fill_records_what_filled_not_what_was_asked(monkeypatch):
@@ -246,6 +269,7 @@ def test_a_partial_fill_records_what_filled_not_what_was_asked(monkeypatch):
     class Trade:
         client_order_id = "abc"
         ticker, side, quantity, is_stop, reason = "AAA", "buy", 4.0, False, None
+        limit_price = None
 
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Trade()])
     monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: partial)
@@ -264,6 +288,7 @@ def test_a_rejected_order_is_marked_not_left_pending(monkeypatch):
     class Trade:
         client_order_id = "abc"
         ticker, side, quantity, is_stop, reason = "AAA", "buy", 4.0, False, None
+        limit_price = None
 
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Trade()])
     monkeypatch.setattr(
@@ -1395,6 +1420,137 @@ def test_a_sell_is_never_bracketed(monkeypatch):
     agent._place(_order(side="sell"), 98.41, {"ZBH": 95.30}, {"ZBH": 101.50})
 
 
+def test_a_limit_buy_never_brackets(monkeypatch):
+    """A limit buy may sit unfilled for a session or, under GTC, for days — the
+    broker will not hold a combo's exit legs inactive against a master that
+    hasn't filled, so this must go out alone, not through place_bracket_order
+    or place_market_order."""
+    monkeypatch.setattr(
+        agent.sandbox_broker, "place_bracket_order",
+        lambda *a: pytest.fail("a limit buy does not bracket"),
+    )
+    monkeypatch.setattr(
+        agent.sandbox_broker, "place_market_order",
+        lambda *a: pytest.fail("order_type limit must not fall back to a market order"),
+    )
+    calls = []
+    monkeypatch.setattr(
+        agent.sandbox_broker, "place_limit_order",
+        lambda *a: calls.append(a) or {"client_order_id": "x"},
+    )
+
+    order = {
+        "ticker": "ZBH", "side": "buy", "quantity": 3,
+        "order_type": "limit", "limit_price": 95.00, "time_in_force": "gtc",
+    }
+    agent._place(order, 98.41, {"ZBH": 95.30}, {"ZBH": 101.50})
+
+    assert calls == [("ZBH", "BUY", 3, 95.00, "GTC")]
+
+
+def test_execute_orders_skips_arming_for_an_unfilled_limit_buy(monkeypatch):
+    monkeypatch.setattr(
+        agent.sandbox_broker, "place_limit_order",
+        lambda *a: {"client_order_id": "x", "placed_at": None},
+    )
+    monkeypatch.setattr(
+        agent, "_arm_exits",
+        lambda *a, **k: pytest.fail("nothing has filled yet — there is nothing to arm"),
+    )
+    recorded = {}
+    monkeypatch.setattr(
+        agent.db, "record_agent_trade", lambda **kw: recorded.update(kw) or 1
+    )
+    order = {
+        "ticker": "ZBH", "side": "buy", "quantity": 3,
+        "order_type": "limit", "limit_price": 95.00, "reason": "why",
+    }
+
+    outcomes = agent._execute_orders([order], agent.AgentRun(), {"ZBH": 98.41}, {}, {}, {})
+
+    assert recorded["limit_price"] == 95.00
+    assert any("not yet filled" in line for line in outcomes)
+
+
+def test_execute_orders_cancels_a_pending_entry_order(monkeypatch):
+    pending = type(
+        "T", (), {"ticker": "TSLA", "is_stop": False, "client_order_id": "cid1",
+                   "side": "buy", "quantity": 5},
+    )()
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [pending])
+    settled = {}
+    monkeypatch.setattr(
+        agent.db, "settle_agent_trade",
+        lambda order_id, **kw: settled.update(order_id=order_id, **kw),
+    )
+    monkeypatch.setattr(agent.sandbox_broker, "cancel_order", lambda order_id: True)
+
+    outcomes = agent._execute_orders(
+        [{"ticker": "TSLA", "side": "cancel", "quantity": 0}], agent.AgentRun(), {}, {}, {}, {},
+    )
+
+    assert settled == {"order_id": "cid1", "status": "rejected"}
+    assert any("cancelled the pending buy of 5" in line for line in outcomes)
+
+
+def test_execute_orders_reports_a_cancel_with_nothing_pending(monkeypatch):
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [])
+
+    outcomes = agent._execute_orders(
+        [{"ticker": "TSLA", "side": "cancel", "quantity": 0}], agent.AgentRun(), {}, {}, {}, {},
+    )
+
+    assert any("nothing pending to cancel" in line for line in outcomes)
+
+
+def test_a_limit_buy_with_no_time_in_force_defaults_to_day(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        agent.sandbox_broker, "place_limit_order",
+        lambda *a: calls.append(a) or {"client_order_id": "x"},
+    )
+
+    order = {"ticker": "ZBH", "side": "buy", "quantity": 3, "order_type": "limit", "limit_price": 95.00}
+    agent._place(order, 98.41, {}, {})
+
+    assert calls == [("ZBH", "BUY", 3, 95.00, "DAY")]
+
+
+def test_describe_fill_for_an_unfilled_limit_buy_does_not_claim_a_price():
+    """It hasn't filled — reporting the quote as what it cost would be wrong,
+    and nothing should look armed until the fill is confirmed."""
+    order = {
+        "ticker": "ZBH", "side": "buy", "quantity": 3,
+        "order_type": "limit", "limit_price": 95.00,
+    }
+    line = agent._describe_fill(order, {"client_order_id": "x"}, {"ZBH": 98.41}, {}, {})
+
+    assert "limit buy of 3 at $95.00 placed, not yet filled" in line
+
+
+def test_describe_fill_for_a_limit_buy_says_the_signals_levels_were_not_placed():
+    order = {
+        "ticker": "ZBH", "side": "buy", "quantity": 3,
+        "order_type": "limit", "limit_price": 95.00,
+    }
+    line = agent._describe_fill(
+        order, {"client_order_id": "x"}, {"ZBH": 98.41}, {"ZBH": 90.0}, {"ZBH": 110.0}
+    )
+
+    assert "were NOT placed" in line
+    assert "adjust" in line
+
+
+def test_describe_fill_for_an_unfilled_limit_sell_does_not_claim_it_sold():
+    order = {
+        "ticker": "ZBH", "side": "sell", "quantity": 3,
+        "order_type": "limit", "limit_price": 101.00,
+    }
+    line = agent._describe_fill(order, {"client_order_id": "x"}, {"ZBH": 98.41}, {}, {})
+
+    assert "limit sell of 3 at $101.00 placed, not yet filled" in line
+
+
 def test_bracketed_exits_are_written_to_the_ledger(monkeypatch):
     """They rest at the broker either way; without a row the dashboard cannot
     show them and settlement cannot notice one filling."""
@@ -1931,6 +2087,49 @@ def test_the_prompt_shows_what_is_resting_on_each_holding(monkeypatch):
     assert "| UNSET | UNSET |" in prompt
 
 
+def test_the_prompt_shows_a_still_pending_limit_order(monkeypatch):
+    """A limit order can sit unfilled for days under GTC and is not a holding
+    yet, so nothing else in the prompt says it exists — the outcome line that
+    announced it belonged to the pass that placed it."""
+    pending = type(
+        "T", (), {
+            "ticker": "TSLA", "side": "buy", "quantity": 5.0, "is_stop": False,
+            "limit_price": 240.00, "placed_at": datetime.datetime(2026, 9, 16, 14, 30),
+        },
+    )()
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [pending])
+
+    prompt = agent.build_prompt(_book(), [], {})
+
+    assert "have not filled yet" in prompt
+    assert "| TSLA | buy | 5 | $240.00 |" in prompt
+
+
+def test_the_prompt_has_no_pending_section_when_nothing_is_pending(monkeypatch):
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [])
+
+    prompt = agent.build_prompt(_book(), [], {})
+
+    assert "have not filled yet" not in prompt
+
+
+def test_a_resting_protective_exit_is_not_shown_as_a_pending_entry(monkeypatch):
+    """A resting stop/target also carries a limit_price — is_stop is what
+    tells it apart from an unfilled entry order, and only the entry belongs
+    in this section."""
+    resting_exit = type(
+        "T", (), {
+            "ticker": "TSLA", "side": "sell", "quantity": 5.0, "is_stop": True,
+            "limit_price": 220.00, "placed_at": datetime.datetime(2026, 9, 16, 14, 30),
+        },
+    )()
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [resting_exit])
+
+    prompt = agent.build_prompt(_book(), [], {})
+
+    assert "have not filled yet" not in prompt
+
+
 def test_an_adjust_needs_a_position_to_rest_on(monkeypatch):
     accepted, rejected = agent.screen(
         [{"ticker": "AAPL", "side": "adjust", "stop": 200.0}], _book(), {"AAPL": 210.0}
@@ -1949,6 +2148,100 @@ def test_an_adjust_with_no_levels_is_refused():
 
     assert accepted == []
     assert "no new stop or target" in rejected[0].why
+
+
+def test_a_cancel_with_nothing_pending_is_refused(monkeypatch):
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [])
+
+    accepted, rejected = agent.screen([{"ticker": "TSLA", "side": "cancel"}], _book(), {})
+
+    assert accepted == []
+    assert "nothing pending" in rejected[0].why
+
+
+def test_a_cancel_with_a_pending_entry_order_is_accepted(monkeypatch):
+    pending = type("T", (), {"ticker": "TSLA", "is_stop": False, "side": "buy", "quantity": 5.0})()
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [pending])
+
+    accepted, rejected = agent.screen([{"ticker": "TSLA", "side": "cancel"}], _book(), {})
+
+    assert [o["side"] for o in accepted] == ["cancel"]
+    assert rejected == []
+
+
+def test_a_sell_beyond_the_reserved_remainder_is_rejected():
+    book = _book(holdings=[("AAA", 5, 10.0)])
+    book.reserved_shares = {"AAA": 5.0}
+
+    accepted, rejected = agent.screen(
+        [{"ticker": "AAA", "side": "sell", "quantity": 1}], book, {"AAA": 12.0}
+    )
+
+    assert accepted == []
+    assert "already committed to a pending sell" in rejected[0].why
+
+
+def test_cancelling_a_pending_sell_frees_its_shares_for_a_sell_listed_after_it(monkeypatch):
+    """The same ordering rule cash already gets: what an earlier order in the
+    same answer frees is available to an order listed after it."""
+    pending_sell = type(
+        "T", (), {"ticker": "AAA", "is_stop": False, "side": "sell", "quantity": 5.0},
+    )()
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [pending_sell])
+    book = _book(holdings=[("AAA", 5, 10.0)])
+    book.reserved_shares = {"AAA": 5.0}
+    orders = [
+        {"ticker": "AAA", "side": "cancel"},
+        {"ticker": "AAA", "side": "sell", "quantity": 5},
+    ]
+
+    accepted, rejected = agent.screen(orders, book, {"AAA": 12.0})
+
+    assert [o["side"] for o in accepted] == ["cancel", "sell"]
+    assert rejected == []
+
+
+def test_a_cancel_does_not_reach_for_a_resting_protective_exit(monkeypatch):
+    """cancel withdraws an unfilled entry order, never a resting stop/target —
+    those stay reachable only through adjust or a sell."""
+    resting_exit = type("T", (), {"ticker": "TSLA", "is_stop": True})()
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [resting_exit])
+
+    accepted, rejected = agent.screen([{"ticker": "TSLA", "side": "cancel"}], _book(), {})
+
+    assert accepted == []
+    assert "nothing pending" in rejected[0].why
+
+
+def test_a_limit_buy_is_screened_at_its_own_limit_price():
+    """The limit price is the true worst case for a limit buy — it never fills
+    above it — unlike a market buy, whose worst case is estimated from the
+    quote via entry_limit_price."""
+    book = _book(cash=500.0)
+    order = {
+        "ticker": "AAA", "side": "buy", "quantity": 6,
+        "order_type": "limit", "limit_price": 100.0,
+    }
+
+    accepted, rejected = agent.screen([order], book, {"AAA": 90.0})
+
+    assert accepted == []
+    assert "at the limit price" in rejected[0].why
+
+
+def test_a_limit_buy_within_cash_is_accepted_and_does_not_mark_shares_held():
+    """A limit buy may never fill this pass — a later order in the same
+    answer must still see it as not held."""
+    book = _book(cash=500.0)
+    orders = [
+        {"ticker": "AAA", "side": "buy", "quantity": 5, "order_type": "limit", "limit_price": 90.0},
+        {"ticker": "AAA", "side": "adjust", "stop": 80.0},
+    ]
+
+    accepted, rejected = agent.screen(orders, book, {"AAA": 95.0})
+
+    assert [o["side"] for o in accepted] == ["buy"]
+    assert "no exits to move" in rejected[0].why
 
 
 def test_an_adjust_moves_no_cash_and_no_shares():
