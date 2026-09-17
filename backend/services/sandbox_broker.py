@@ -441,6 +441,15 @@ def place_limit_order(
 # worse of the two.
 ENTRY_LIMIT_BUFFER_PCT = 0.5
 
+# The sandbox account refuses a buy unless its buying power is this much
+# above the order's own cost — a separate broker rule from the slippage
+# buffer above, and additive to it. Learned from a live refusal on
+# 2026-09-04 (OPENAPI_DAY_BUYING_POWER_INSUFFICIENT_M_NEW), not from the
+# docs. Shared with agent_book.validate(), the check that must refuse an
+# order before it ever reaches the broker; see the 2026-09-17 JOURNEY.md
+# entry for the refusal loop this closed.
+BUYING_POWER_MARGIN_PCT = 2.0
+
 
 def place_bracket_order(
     ticker: str,

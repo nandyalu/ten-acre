@@ -262,6 +262,26 @@ def entry_limit_price(price: float) -> float:
     return round(price * (1 + buffer / 100), 2)
 
 
+def buying_power_margin() -> float:
+    """The multiplier for cash an order must clear, on top of its own cost.
+
+    The sandbox account refuses a buy unless its buying power sits this much
+    above the order's cost — a broker-side cushion, separate from and
+    additive to the slippage buffer in ``entry_limit_price``. A live refusal
+    on 2026-09-04 exposed it; this check did not include it until 2026-09-17,
+    so an order that passed here could still be refused at the broker, and
+    the agent — never told the real number — would recompute from the raw
+    price and resend the same order. See the 2026-09-17 JOURNEY.md entry.
+
+    Imported lazily, like ``entry_limit_price``, and for the same reason.
+    """
+    try:
+        from backend.services.sandbox_broker import BUYING_POWER_MARGIN_PCT as margin
+    except Exception:  # noqa: BLE001 — a missing broker must not block a check
+        margin = 2.0
+    return 1 + margin / 100
+
+
 def validate(order: dict, book: Book, price: float | None) -> Rejection | None:
     """Whether an order the model asked for is *possible*. Not whether it is
     wise — allocation is the model's call (see backend/services/agent.py); this
@@ -323,10 +343,14 @@ def validate(order: dict, book: Book, price: float | None) -> Rejection | None:
     # **A limit buy is screened at its own stated price, not the quote.** That
     # price is the true worst case — a limit buy never fills above it — where
     # a market buy's worst case has to be estimated from the quote instead.
+    # The broker's buying-power cushion (see `buying_power_margin`) still
+    # applies: it is a balance rule, not a slippage rule, so a stated limit
+    # price does not excuse an order from it.
     if order_type == "limit":
-        cost = quantity * limit_price
+        cost = quantity * limit_price * buying_power_margin()
         if cost > book.cash + _CASH_EPSILON:
-            return no(f"costs ${cost:,.2f} at the limit price but only "
+            return no(f"costs ${cost:,.2f} at the limit price plus the broker's "
+                      f"{(buying_power_margin() - 1) * 100:g}% buying-power cushion, but only "
                       f"${book.cash:,.2f} is uninvested")
         return None
 
@@ -342,9 +366,18 @@ def validate(order: dict, book: Book, price: float | None) -> Rejection | None:
     # This refuses the order rather than shrinking it, like every other check
     # here. Resizing would quietly turn the model's decision into a different
     # one, and the record would then describe a strategy nobody chose.
-    cost = quantity * entry_limit_price(price)
+    #
+    # **Also screened against the broker's buying-power cushion, not only the
+    # entry limit.** Without it, an order could clear this check and still be
+    # refused at the broker for insufficient buying power — and the agent,
+    # never told the real number, would work out from the raw price that it
+    # could afford the same quantity and resend the identical order. Seen
+    # live on 2026-09-17: a refused 12-share AAPL buy, recomputed by the
+    # model from the refusal alone, resent unchanged.
+    cost = quantity * entry_limit_price(price) * buying_power_margin()
     if cost > book.cash + _CASH_EPSILON:
-        return no(f"costs ${cost:,.2f} at the entry limit but only "
+        return no(f"costs ${cost:,.2f} at the entry limit plus the broker's "
+                  f"{(buying_power_margin() - 1) * 100:g}% buying-power cushion, but only "
                   f"${book.cash:,.2f} is uninvested")
     return None
 

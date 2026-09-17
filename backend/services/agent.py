@@ -542,11 +542,6 @@ def describe_history(closed: list) -> list[str]:
 # What each trigger means, in the agent's own reading. Plain words rather than
 # the stored key: "move" tells it nothing, "run because the stock moved
 # unusually" tells it the analyst was reacting to something already priced in.
-# Webull wants buying power 2% above the estimated cost of a market order
-# during regular hours. Learned from a live refusal on 2026-09-04
-# (OPENAPI_DAY_BUYING_POWER_INSUFFICIENT_M_NEW), not from the docs. Without it
-# the top share of every affordable count is an order that can only fail.
-_BUYING_POWER_MARGIN = 1.02
 
 
 _TRIGGER_PHRASE = {
@@ -916,7 +911,7 @@ def build_prompt(
                 # afford -1 share(s)" on every signal line. Clamped, and the
                 # branch now tests for a positive count rather than a non-zero
                 # one, because those differ only when the answer is nonsense.
-                affordable = max(0, int(book.cash // (live * _BUYING_POWER_MARGIN)))
+                affordable = max(0, int(book.cash // (live * agent_book.buying_power_margin())))
                 afford_text = f"{affordable} share(s)" if affordable > 0 else "none, too dear"
             else:
                 afford_text = "no price"

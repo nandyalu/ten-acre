@@ -182,6 +182,30 @@ def test_a_buy_within_cash_is_allowed(book_of):
     assert agent_book.validate(_order(quantity=4), book, price=200.0) is None
 
 
+def test_a_buy_that_clears_the_entry_limit_but_not_the_buying_power_cushion_is_refused(book_of):
+    """A pattern seen live on 2026-09-17: an order passed this check — it
+    covered the 0.5% slippage buffer — and was still refused at the broker
+    for insufficient buying power, which wants a further 2% headroom. The
+    agent, never told the real number, recomputed from the raw price and
+    resent the identical order. This check must now catch what the broker
+    would, so the rejection carries the real reason instead of a second
+    round trip to the broker."""
+    book = book_of([], budget=1000.0)
+    # entry_limit_price(198.0) = 198.99. 5 x $198.99 = $994.95, inside the
+    # $1,000 cash. Only once the 2% buying-power cushion is added
+    # ($994.95 x 1.02 = $1,014.85) does it exceed cash.
+    rejection = agent_book.validate(_order(quantity=5), book, price=198.0)
+
+    assert rejection is not None
+    assert "buying-power cushion" in rejection.why
+
+
+def test_buying_power_margin_matches_the_broker_constant(book_of):
+    from backend.services.sandbox_broker import BUYING_POWER_MARGIN_PCT
+
+    assert agent_book.buying_power_margin() == 1 + BUYING_POWER_MARGIN_PCT / 100
+
+
 def test_selling_more_than_held_is_refused(book_of):
     book = book_of([_trade(quantity=2, price=100.0)])
     rejection = agent_book.validate(_order(side="sell", quantity=5), book, price=100.0)
