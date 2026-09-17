@@ -172,6 +172,35 @@ def test_the_prompt_never_mentions_the_brokers_balance():
     assert "1,000,000" not in prompt
 
 
+def test_pass_notes_are_shown_separately_from_last_passs_note():
+    """A note from the previous pass and notes written earlier in this same
+    pass are two different things — see the 2026-09-17 JOURNEY.md entry. Both
+    must be visible at once, and each labelled as what it is."""
+    lines = agent.describe_wakeup(
+        None, "avoid adding to INTC", pass_notes=["watching AAPL for a breakout above $50"],
+    )
+    text = "\n".join(lines)
+
+    assert "avoid adding to INTC" in text
+    assert "last pass" in text
+    assert "watching AAPL for a breakout above $50" in text
+    assert "earlier in this same pass" in text
+
+
+def test_pass_notes_accumulate_in_order():
+    lines = agent.describe_wakeup(
+        None, None, pass_notes=["first, watched XYZ", "second, dropped XYZ for ABC"],
+    )
+    text = "\n".join(lines)
+
+    assert text.index("first, watched XYZ") < text.index("second, dropped XYZ for ABC")
+    assert "more recent thinking" in text
+
+
+def test_no_wakeup_section_at_all_when_nothing_to_say():
+    assert agent.describe_wakeup(None, None) == []
+
+
 # --- settling fills ------------------------------------------------------------
 
 # The exact shape a live sandbox fill came back as on 2026-08-11. The status,
@@ -604,6 +633,58 @@ def test_the_price_map_covers_the_whole_watchlist(monkeypatch):
     agent.run_once()
 
     assert seen_tickers == [["HOOD", "SMCI"]]
+
+
+def test_a_note_written_mid_pass_is_shown_to_the_next_turn_of_the_same_pass(monkeypatch):
+    """Seen live on 2026-09-17: a note written in turn 1 of a pass was gone
+    by turn 2 — only the *previous pass's* note was ever threaded through
+    `_decide`, because `run.wakeup_note` isn't recorded until the pass ends.
+    `run_once` must now carry what this pass has written so far into every
+    later turn of the same call chain. See the JOURNEY.md entry."""
+    monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
+    monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
+    monkeypatch.setattr(agent, "is_enabled", lambda: True)
+    monkeypatch.setattr(agent, "settle_pending", lambda: [])
+    monkeypatch.setattr(agent, "_recent_signals", lambda: [])
+    monkeypatch.setattr(agent.db, "get_recent_signals", lambda limit=200: [])
+    monkeypatch.setattr(agent.agent_book, "closed_trades", lambda decisions=None: [])
+    monkeypatch.setattr(agent, "_price_map", lambda _t: {})
+    monkeypatch.setattr(agent.agent_book, "build_book", lambda price_lookup=None: _book())
+    # The turn-1 order is a no-op "cancel" on a ticker with nothing pending —
+    # it still produces an outcome line, which is what keeps run_once's
+    # act-turn loop going into a second turn.
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [])
+    monkeypatch.setattr(agent.research, "is_charging", lambda: False)
+
+    note = "watching AAPL for a breakout above $50"
+    calls = []
+    decisions = iter([
+        agent.Decision(
+            reasoning="turn1", accepted=[{"ticker": "ZZZ", "side": "cancel", "quantity": 0}],
+            rejected=[], prompt="p1",
+            response=json.dumps({"reasoning": "turn1", "next_wakeup_note": note, "orders": []}),
+            turns=[{"prompt": "p1", "response": "turn1 answer"}],
+        ),
+        agent.Decision(
+            reasoning="turn2", accepted=[], rejected=[], prompt="p2",
+            response='{"reasoning": "turn2", "orders": []}',
+            turns=[{"prompt": "p2", "response": "turn2 answer"}],
+        ),
+    ])
+
+    def fake_decide(*args, **kwargs):
+        # Copied, not the live list — run_once mutates the same object it
+        # passed in after this call returns, so a stored reference would
+        # silently pick up the next turn's append too.
+        calls.append(list(kwargs.get("pass_notes") or []))
+        return next(decisions)
+
+    monkeypatch.setattr(agent, "_decide", fake_decide)
+
+    agent.run_once()
+
+    assert calls[0] == [], "the first turn of a pass has no notes yet from this pass"
+    assert calls[1] == [note], "the second turn must see what the first turn just wrote"
 
 
 # --- learning from its own record ----------------------------------------------

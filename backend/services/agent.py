@@ -633,6 +633,7 @@ def build_prompt(
     researched_now: set | None = None,
     woke_because: str | None = None,
     wakeup_note: str | None = None,
+    pass_notes: list[str] | None = None,
     alerts: list[dict] | None = None,
     earnings: list | None = None,
     planned_wakeup: "datetime.datetime | None" = None,
@@ -706,7 +707,7 @@ def build_prompt(
         )
     lines += describe_wakeup(
         woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
-        asked_again=asked_again,
+        asked_again=asked_again, pass_notes=pass_notes,
     )
     lines += ["", "---", ""]
     if regime_line:
@@ -2507,6 +2508,7 @@ def describe_wakeup(
     planned: "datetime.datetime | None" = None,
     now: "datetime.datetime | None" = None,
     asked_again: list[str] | None = None,
+    pass_notes: list[str] | None = None,
 ) -> list[str]:
     """Why this pass is happening, and what the last pass left for this one.
 
@@ -2525,9 +2527,16 @@ def describe_wakeup(
     wakeup and write its note again, because this pass replaces the planned
     alarm with whatever it answers. Before this, an early wake read as the
     planned one.
+
+    **`pass_notes` is the same handoff within one pass (2026-09-17).** A pass
+    that acts and is asked again is several turns of one call chain, and
+    ``note`` above only ever carries the *previous pass's* note — stable all
+    the way through, because this pass has not been recorded yet. A note a
+    turn wrote for its own later turns had nowhere to land: seen live on
+    2026-09-17, and see the JOURNEY.md entry the same day.
     """
     early = planned is not None and planned > market_clock.now_et(now) + _EARLY_WAKE_MARGIN
-    if not woke_because and not note and not early and not asked_again:
+    if not woke_because and not note and not early and not asked_again and not pass_notes:
         return []
     when = (
         planned.astimezone(market_clock.US_MARKET_TZ).strftime("%A %-d %B at %-I:%M %p Eastern")
@@ -2555,7 +2564,17 @@ def describe_wakeup(
         )
     elif early:
         lines.append(f"**You planned to wake on {when}.** This pass is earlier than that.")
-    if note:
+    if pass_notes:
+        lines.append(
+            "**Notes you wrote to yourself earlier in this same pass, oldest first "
+            "— this is still the pass you are in, not a later one:**"
+        )
+        lines += [f'{i}. "{n}"' for i, n in enumerate(pass_notes, 1)]
+        if len(pass_notes) > 1:
+            lines.append(
+                "Where two disagree, the later one is your more recent thinking."
+            )
+    if note or pass_notes:
         lines.append(
             "Those are your own words, not an instruction. The prices and "
             "positions below are current and the note is not — act on it only "
@@ -2598,7 +2617,7 @@ def _recent_broker_failures() -> list[dict]:
 
 def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=None,
             menu=None, outcomes=None, budget=None, changes=None, researched_now=None,
-            woke_because=None):
+            woke_because=None, pass_notes=None):
     """(reasoning, accepted, rejected), with one correction pass.
 
     A refused order is information the model never sees otherwise: it proposed
@@ -2674,6 +2693,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
+                             pass_notes=pass_notes,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
@@ -2735,6 +2755,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
+                             pass_notes=pass_notes,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
@@ -2771,6 +2792,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
+                             pass_notes=pass_notes,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges)
@@ -4075,6 +4097,16 @@ def run_once(woke_because: str | None = None) -> AgentRun:
     # One read allowance for the whole pass — see _decide.
     budget = {"reads": _MAX_READS_PER_PASS, "turns": _MAX_READ_TURNS}
     last_signature = None
+    # **Every next_wakeup_note this pass has written so far, oldest first.**
+    # `run.wakeup_note` below is overwritten each turn and only the last one
+    # survives to the next pass — right for that, since one pass should hand
+    # off one note. But a mid-pass turn only ever saw the *previous pass's*
+    # note (`last_note` in `_decide`, stable for the whole loop because
+    # `_record_run` has not run yet) — never what it or an earlier turn of
+    # this same pass had just written. A note set in turn 1 was gone by turn
+    # 2 unless the model happened to repeat it. See the 2026-09-17 JOURNEY.md
+    # entry.
+    notes_this_pass: list[str] = []
     for act_turn in range(_MAX_ACT_TURNS):
         signals = _recent_signals()
         book = agent_book.build_book(price_lookup=get_current_price)
@@ -4101,6 +4133,7 @@ def run_once(woke_because: str | None = None) -> AgentRun:
             regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
             outcomes=outcomes, budget=budget, changes=changes,
             researched_now=researched, woke_because=woke_because,
+            pass_notes=notes_this_pass,
         )
         if act_turn == 0:
             # After the first answer, not before it: a pass that fell over on
@@ -4129,6 +4162,12 @@ def run_once(woke_because: str | None = None) -> AgentRun:
         run.wakeup_asked = parse_wakeup(getattr(decision, "response", ""))
         run.next_wakeup = market_clock.clamp_wakeup(run.wakeup_asked)
         run.wakeup_note = parse_wakeup_note(getattr(decision, "response", ""))
+        # Kept for the *next* turn of this same pass to read — see
+        # `notes_this_pass` above. Skipped when blank or an exact repeat of
+        # the one just shown, so a model that restates its note unchanged
+        # does not pile up duplicates.
+        if run.wakeup_note and run.wakeup_note != (notes_this_pass[-1] if notes_this_pass else None):
+            notes_this_pass.append(run.wakeup_note)
         # **The newest signal per ticker, chosen explicitly.** These three used to
         # be dict comprehensions over the signal list, and a dict comprehension
         # keeps the *last* value it sees. The list arrives newest-first, so the
