@@ -1,8 +1,8 @@
 {
   "name": "claude-usage-bar",
   "displayName": "Claude usage bar",
-  "description": "Shows the token and prompt cache figures of the newest Claude Code session in the status bar.",
-  "version": "0.1.0",
+  "description": "Shows the token, prompt cache, cost and graft figures of the live Claude Code sessions in the status bar, with a details pane for all of them.",
+  "version": "0.2.0",
   "publisher": "local",
   "private": true,
   "license": "UNLICENSED",
@@ -18,5 +18,29 @@
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./extension.js"
+  "main": "./extension.js",
+  "files": [
+    "extension.js",
+    "package.json",
+    "README.md"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeUsageBar.showDetails",
+        "title": "Claude usage: show sessions"
+      }
+    ],
+    "configuration": {
+      "title": "Claude usage bar",
+      "properties": {
+        "claudeUsageBar.warnTokens": {
+          "type": "number",
+          "default": 150000,
+          "minimum": 1000,
+          "description": "Context size in tokens above which the status bar item turns to the warning color. Keep it equal to CONTEXT_NUDGE_TOKENS, the line the context-nudge hook uses."
+        }
+      }
+    }
+  }
 }
