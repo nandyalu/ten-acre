@@ -36,7 +36,9 @@ RUN sed -i "s#snapshotRoot: '/data'#snapshotRoot: '${SNAPSHOT_BASE_URL}'#" \
 # The public configuration: no /settings route, and every /api/... call
 # redirected to a static file by static-data.interceptor.ts. See
 # frontend/angular.json's "public" configuration and app.routes.public.ts.
-RUN npm run build -- --configuration=production,public --output-path=dist/frontend-public
+# That configuration also names its own outputPath, dist/frontend-public, so
+# this build never lands in backend/web where the default build goes.
+RUN npm run build -- --configuration=production,public
 
 FROM node:22-slim
 
@@ -45,7 +47,7 @@ FROM node:22-slim
 RUN npm install -g wrangler@4.130.0
 
 WORKDIR /publisher
-COPY --from=frontendbuilder /frontend-build/dist/frontend-public/browser ./site/
+COPY --from=frontendbuilder /frontend-build/dist/frontend-public ./site/
 COPY scripts/publish_pages.sh ./publish.sh
 RUN chmod +x ./publish.sh
 

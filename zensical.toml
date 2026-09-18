@@ -1,6 +1,10 @@
 [project]
 site_name = "Ten Acre"
 site_url = "https://nandyalu.github.io/ten-acre/"
+# Inside the backend package, where backend/app.py serves it at /docs and
+# where a wheel of the app carries it. The Dockerfile and the release workflow
+# read it from the same place.
+site_dir = "backend/site"
 site_description = "An autonomous AI agent trading a simulated account with $10,000. It picks what to research, pays for it, and every decision it makes is on the record."
 repo_url = "https://github.com/nandyalu/ten-acre"
 repo_name = "nandyalu/ten-acre"

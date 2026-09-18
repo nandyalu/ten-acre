@@ -27,14 +27,13 @@ import datetime
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-
+from backend import paths
 from backend.database import db
 from backend.services import (
     agent, agent_book, analysis, analysis_reader, decision_schema, llm_gemini, positions, research,
 )
 
-_OUT = Path("data/probe")
+_OUT = paths.data_dir() / "probe"
 
 
 def build_prompts() -> dict:

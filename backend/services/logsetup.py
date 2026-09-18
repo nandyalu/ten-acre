@@ -21,9 +21,9 @@ import logging
 import logging.handlers
 import os
 
-# Beside trading.db, in the volume that already survives a rebuild.
-LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "logs")
-LOG_FILE = os.path.join(LOG_DIR, "trading-experiment.log")
+from backend import paths
+
+LOG_FILE_NAME = "trading-experiment.log"
 
 # Ten files of 5 MB. At the volume this app produces — a few hundred lines a
 # day, plus a burst per analysis — that is comfortably more than a month, which
@@ -48,16 +48,21 @@ def configure(level: int = logging.INFO) -> str | None:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
             return getattr(handler, "baseFilename", None)
 
+    # Beside trading.db, in the one directory that already survives a rebuild.
+    # Resolved here and not at import, so a .env loaded after this module is
+    # imported still decides where the log goes.
+    log_dir = paths.data_dir() / "logs"
+    log_file = log_dir / LOG_FILE_NAME
     try:
-        os.makedirs(LOG_DIR, exist_ok=True)
+        os.makedirs(log_dir, exist_ok=True)
         handler = logging.handlers.RotatingFileHandler(
-            LOG_FILE, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8"
+            log_file, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8"
         )
     except OSError:
         # Deliberately not raising. Losing the log is bad; refusing to start
         # because of it is worse.
         logging.getLogger("trading-experiment.logsetup").exception(
-            "Could not open %s — logging to stdout only", LOG_FILE
+            "Could not open %s — logging to stdout only", log_file
         )
         return None
 

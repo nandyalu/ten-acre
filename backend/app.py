@@ -33,11 +33,14 @@ from backend.tasks.scheduler import register_jobs, scheduler
 
 log = logging.getLogger("trading-experiment.app")
 
-# backend/app.py -> bot -> /app (repo root in the container, repo root locally)
-# — same convention the old docs_server.py used for `site/`.
-_BASE_DIR = Path(__file__).resolve().parent.parent
-_WEB_DIR = _BASE_DIR / "web"
-_SITE_DIR = _BASE_DIR / "site"
+# The built dashboard and the built docs live inside the package, at
+# backend/web and backend/site. A checkout, the container and an installed
+# copy (uv tool install) then all look in one place, and a wheel carries both
+# folders with the code. The build tools write there directly: angular.json
+# sets the dashboard's outputPath and zensical.toml sets site_dir.
+_PACKAGE_DIR = Path(__file__).resolve().parent
+_WEB_DIR = _PACKAGE_DIR / "web"
+_SITE_DIR = _PACKAGE_DIR / "site"
 
 
 @asynccontextmanager

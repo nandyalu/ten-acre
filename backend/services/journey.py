@@ -25,6 +25,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 
+from backend import paths
 from backend.database import db
 from backend.services import agent_book, research
 
@@ -259,10 +260,10 @@ def to_markdown(days: list[Day], title: str = "The analyst's journey") -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-# Beside the database and the logs, in the volume that survives a rebuild.
-# A story kept only inside a container is a story you lose the first time you
-# change an environment variable.
-JOURNEY_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "journey")
+# Beside the database and the logs, in the data directory that survives a
+# rebuild. A story kept only inside a container is a story you lose the first
+# time you change an environment variable.
+JOURNEY_DIR = str(paths.data_dir() / "journey")
 
 _MONTH_NAMES = (
     "January", "February", "March", "April", "May", "June",

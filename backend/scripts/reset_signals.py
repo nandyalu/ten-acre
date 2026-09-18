@@ -101,7 +101,7 @@ def main() -> int:
 
     if not args.yes:
         print("\nDry run. Re-run with --yes to delete.")
-        print("Take a copy of data/trading.db first.")
+        print("Take a copy of trading.db in the data directory first.")
         return 0
 
     deleted = wipe(models)

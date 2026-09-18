@@ -26,6 +26,7 @@ import logging
 import os
 from typing import Any, Callable
 
+from backend import paths
 from backend.api.routes import agent as agent_routes
 from backend.api.routes import digest as digest_routes
 from backend.api.routes import regime as regime_routes
@@ -38,10 +39,10 @@ from backend.database import db
 
 log = logging.getLogger("trading-experiment.snapshot_export")
 
-# Beside data/journey/, in the volume that survives a rebuild — this is a
+# Beside journey/, in the data directory that survives a rebuild — this is a
 # generated artifact, not application state, but it still has to survive a
 # redeploy between one export and the next.
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "public_snapshot")
+OUTPUT_DIR = str(paths.data_dir() / "public_snapshot")
 
 # Far above anything this experiment will produce. Big enough to mean "every
 # signal there is" without the exporter needing to know the true count.

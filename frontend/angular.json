@@ -17,6 +17,10 @@
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/main.ts",
+            "outputPath": {
+              "base": "../backend/web",
+              "browser": ""
+            },
             "tsConfig": "tsconfig.app.json",
             "assets": [
               {
@@ -50,6 +54,10 @@
               "sourceMap": true
             },
             "public": {
+              "outputPath": {
+                "base": "dist/frontend-public",
+                "browser": ""
+              },
               "fileReplacements": [
                 {
                   "replace": "src/environments/environment.ts",

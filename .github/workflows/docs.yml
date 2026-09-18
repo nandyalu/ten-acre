@@ -47,9 +47,10 @@ jobs:
       # surprise change in a published page.
       - run: uvx zensical==0.0.59 build
 
+      # zensical.toml's site_dir puts the build inside the backend package.
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: backend/site
 
   deploy:
     needs: build

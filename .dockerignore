@@ -3,7 +3,8 @@
 TradingAgents/.git/
 frontend/node_modules/
 frontend/dist/
-site/
+backend/web/
+backend/site/
 data/
 **/__pycache__/
 *.pyc

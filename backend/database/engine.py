@@ -1,4 +1,3 @@
-import os
 from contextlib import contextmanager
 from functools import wraps
 from sqlite3 import OperationalError as SQLiteOperationalError
@@ -11,11 +10,15 @@ from sqlmodel import SQLModel, Session, create_engine
 
 import logging
 
+from backend import paths
+
 logger = logging.getLogger("database_engine")
 
-# Lands on /app/data/trading.db in the container (the persisted
-# trading_bot_data volume) and data/trading.db for local/venv runs.
-_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "trading.db")
+# trading.db in the data directory: /app/data in the container (the persisted
+# agent_data volume), data/ in a checkout, ~/.local/share/ten-acre for an
+# installed copy. backend/paths.py has the rules. Resolved at import, so the
+# environment must be loaded before this module is — backend/main.py does that.
+_DB_PATH = paths.data_dir() / "trading.db"
 sqlite_url = f"sqlite:///{_DB_PATH}"
 engine = create_engine(
     sqlite_url,
