@@ -26,6 +26,7 @@ import datetime
 import hashlib
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ from backend.services import (
     market_clock,
     quotes, research, sandbox_broker, watchdog,
 )
+from backend.services import decision_schema, fundamentals, llm_gemini
 from backend.services.positions import get_current_price
 from backend.services.sizing import get_atr, suggest_position
 from backend.notifications.embed import Color, Embed
@@ -413,7 +415,7 @@ def describe_recent_changes(changes: list[dict]) -> list[str]:
     return lines
 
 
-def describe_recent_wakeups(wakeups: list[dict]) -> list[str]:
+def describe_recent_wakeups(wakeups: list[dict], brief: bool = False) -> list[str]:
     """What the agent's own chosen cadence has produced.
 
     **A wakeup costs it nothing, so the obvious failure is asking for the
@@ -431,10 +433,19 @@ def describe_recent_wakeups(wakeups: list[dict]) -> list[str]:
         return []
     recent = wakeups[-_WAKEUPS_SHOWN:]
     idle = sum(1 for w in recent if not w.get("acted"))
-    lines = ["Your recent wakeups, and whether each one led to an action:"]
-    for w in recent:
-        at = w.get("at", "")
-        lines.append(f"- {at}: {'acted' if w.get('acted') else 'did nothing'}")
+    if brief:
+        # The count is the feedback; the six timestamps were the cost. On the
+        # tool channel (2026-09-17) the list is one line, and the advice
+        # below stays.
+        lines = [
+            f"Your last {len(recent)} wakeups: {len(recent) - idle} led to an action, "
+            f"{idle} did nothing."
+        ]
+    else:
+        lines = ["Your recent wakeups, and whether each one led to an action:"]
+        for w in recent:
+            at = w.get("at", "")
+            lines.append(f"- {at}: {'acted' if w.get('acted') else 'did nothing'}")
     if idle == len(recent) and len(recent) >= 3:
         lines.append(
             f"All {idle} did nothing. Waking more often does not make the market move — "
@@ -528,20 +539,200 @@ def describe_history(closed: list) -> list[str]:
             f"{trade.return_pct:+.1f}% over {trade.held_days} day(s){origin}"
         )
 
-    # The pattern most worth naming: this model bought a stock whose only signal
-    # was Hold, and put 98% of the budget into it.
-    on_hold = [t for t in closed if (t.signal_decision or "").lower() == "hold"]
-    if len(on_hold) >= 2:
-        hold_wins = sum(1 for t in on_hold if t.won)
-        lines.append(
-            f"Of the {len(on_hold)} you bought on a Hold signal, {hold_wins} made money."
-        )
+    lines += _hold_pattern(closed)
     return lines
+
+
+def _hold_pattern(closed: list) -> list[str]:
+    """The pattern most worth naming: this model bought a stock whose only
+    signal was Hold, and put 98% of the budget into it. Said once it has
+    happened twice, on both channels."""
+    on_hold = [t for t in closed if (t.signal_decision or "").lower() == "hold"]
+    if len(on_hold) < 2:
+        return []
+    hold_wins = sum(1 for t in on_hold if t.won)
+    return [f"Of the {len(on_hold)} you bought on a Hold signal, {hold_wins} made money."]
+
+
+def describe_history_brief(closed: list) -> list[str]:
+    """The totals in one line, on the tool channel (2026-09-17). The trades
+    themselves are the `track_record` fetch. The Hold pattern stays, because
+    it is the one line of the record that names a habit rather than a number."""
+    if not closed:
+        return []
+    wins = sum(1 for t in closed if t.won)
+    net = sum(t.pnl for t in closed)
+    held = sum(t.held_days for t in closed) / len(closed)
+    return [
+        f"Your own past trades: {len(closed)} closed, {wins} profitable, {net:+,.2f} net, "
+        f"held {held:.0f} days on average. Call track_record for each one with what the "
+        "analyst said at entry.",
+        *_hold_pattern(closed),
+    ]
 
 
 # What each trigger means, in the agent's own reading. Plain words rather than
 # the stored key: "move" tells it nothing, "run because the stock moved
 # unusually" tells it the analyst was reacting to something already priced in.
+
+
+def describe_menu(menu: list) -> list[str]:
+    """The screened candidates, one line each, under a header that says what
+    they are not: a recommendation. [] when the screen returned nothing.
+
+    Shared by the prompt on the JSON channel and by the ``candidates`` fetch
+    on the tool channel, so the two cannot drift.
+    """
+    if not menu:
+        return []
+    lines = [
+        "Nothing has been analysed on these yet — they are screened for being liquid and "
+        "actively traded, not for being good. Researching one buys an analyst's opinion, "
+        "not a position today:",
+    ]
+    for candidate in menu:
+        move = f", {candidate.change_pct:+.1f}% today" if candidate.change_pct is not None else ""
+        lines.append(
+            f"- {candidate.ticker}: {candidate.name[:40]} at ${candidate.price:,.2f}"
+            f"{move}, {candidate.volume_m:,.1f}M shares traded, via {candidate.source}"
+        )
+    return lines
+
+
+def _last_analysis(ticker: str):
+    """The newest priced analysis of a ticker, or None.
+
+    **Newest by time, not by date.** `get_recent_signals` orders by
+    `signal_date`, a calendar date, so two analyses of one ticker on one day
+    come back in row order — and the watchlist row showed INTC at $106.24
+    while the signals table above showed a later one at $100.44, a 5.5% move.
+    The agent read both and asked which was current. Same sort as
+    analysis_reader._newest_first, and local for the same reason: every other
+    caller reads that ordering. An analysis with no price is skipped, because
+    "moved since" needs one.
+    """
+    recent = sorted(
+        db.get_recent_signals(ticker, limit=20),
+        # getattr throughout: several tests pass signal-shaped stand-ins
+        # rather than the model, the same way the Decision unpacking and the
+        # trigger phrase already do.
+        key=lambda x: (str(x.signal_date)[:10],
+                       str(getattr(x, "created_at", "") or ""),
+                       getattr(x, "id", 0) or 0),
+        reverse=True,
+    )[:1]
+    return recent[0] if recent and recent[0].price_at_signal else None
+
+
+# A move since the last analysis worth naming in the one-line watchlist. Five
+# percent on a one-to-two-week horizon is the kind of move the watchdog also
+# reports; below it the line would name half the list on any ordinary day.
+_BRIEF_MOVE_PCT = 5.0
+
+
+def describe_watchlist_brief(
+    watchlist: list[str], max_watchlist: int, prices: dict[str, float | None]
+) -> list[str]:
+    """One line in place of the table, on the tool channel (2026-09-17).
+
+    The table is a fetch there (`watchlist`). What this keeps is the ambient
+    signal the table existed for: a name that was never looked at, or one
+    that has moved since it was, is named here so the agent can decide
+    whether a fetch or a fresh look is worth it. Everything else in the table
+    is one call away.
+    """
+    never: list[str] = []
+    moved: list[str] = []
+    for ticker in sorted(watchlist):
+        last = _last_analysis(ticker)
+        if last is None:
+            never.append(ticker)
+            continue
+        live = prices.get(ticker)
+        if live is None:
+            continue
+        pct = (live - last.price_at_signal) / last.price_at_signal * 100
+        if abs(pct) >= _BRIEF_MOVE_PCT:
+            moved.append(f"{ticker} {pct:+.1f}%")
+    line = f"You track {len(watchlist)} of at most {max_watchlist} tickers."
+    if never:
+        line += f" Never analysed: {', '.join(never)}."
+    if moved:
+        line += (
+            f" Moved {_BRIEF_MOVE_PCT:.0f}% or more since their last analysis: "
+            f"{', '.join(moved)}."
+        )
+    line += (
+        " Call watchlist for every one with its price now, its last analysis and "
+        "what it said."
+    )
+    lines = [line]
+    if len(watchlist) >= max_watchlist:
+        lines.append(
+            "That is the limit, so nothing new can be tracked until you untrack a "
+            "watched name you no longer plan to trade."
+        )
+    return lines
+
+
+def describe_watchlist(
+    watchlist: list[str],
+    max_watchlist: int,
+    book: agent_book.Book,
+    prices: dict[str, float | None],
+    day_ranges: dict[str, tuple[float, float]] | None,
+    as_of: str,
+) -> list[str]:
+    """Every tracked ticker, priced and dated, so staleness is something the
+    agent can see rather than something it has to remember.
+
+    Held names are marked apart from watched-only ones because only the second
+    kind can be dropped, and hiding that invites orders Python refuses. A table
+    for the same reason the signals are one: the prose ran the live price and
+    the price at the last analysis into one sentence, and "moved since" is a
+    comparison between exactly those two.
+
+    Shared by the prompt and by the ``watchlist`` fetch, like ``describe_menu``.
+    """
+    held_tickers = {h.ticker for h in book.holdings}
+    lines = [
+        f"You track {len(watchlist)} of at most {max_watchlist} tickers. **Moved since** "
+        f"is the price as of {as_of} against the price at the most recent analysis of that "
+        "ticker — a large move on a stale analysis is the signal that a fresh look may be "
+        "worth paying for. Tickers left watched with stale or 'never' analysed status consume "
+        "watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.",
+        "",
+        "| Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for ticker in sorted(watchlist):
+        live = prices.get(ticker)
+        price_text = f"${live:,.2f}" if live is not None else "unavailable"
+        status = "held" if ticker in held_tickers else "watched"
+        day_range = (day_ranges or {}).get(ticker)
+        day_high = f"${day_range[1]:,.2f}" if day_range else "—"
+        day_low = f"${day_range[0]:,.2f}" if day_range else "—"
+        last = _last_analysis(ticker)
+        when = then = move = said = "never"
+        if last is not None:
+            when = _analysed_at(last)
+            then = f"${last.price_at_signal:,.2f}"
+            said = last.decision
+            move = "—"
+            if live is not None:
+                pct = (live - last.price_at_signal) / last.price_at_signal * 100
+                move = f"{pct:+.1f}%"
+        lines.append(
+            f"| {ticker} | {status} | {price_text} | {day_high} | {day_low} | "
+            f"{when} | {then} | {move} | {said} |"
+        )
+    if len(watchlist) >= max_watchlist:
+        lines.append(
+            "That is the limit, so nothing new can be tracked until you stop "
+            "watching something. Look for watched (unheld) tickers with stale or "
+            "'never' analysed status and untrack them to free slots for new research."
+        )
+    return lines
 
 
 _TRIGGER_PHRASE = {
@@ -640,6 +831,7 @@ def build_prompt(
     planned_wakeup: "datetime.datetime | None" = None,
     price_ranges: dict[str, tuple[float, float]] | None = None,
     day_ranges: dict[str, tuple[float, float]] | None = None,
+    answer_by_tool: bool = False,
 ) -> str:
     """Everything the model gets. Written as plain figures rather than a table
     of jargon, because the numbers are the whole input and a misread one is a
@@ -956,10 +1148,15 @@ def build_prompt(
     else:
         lines.append("No new signals today.")
 
-    history = describe_history(closed or [])
+    # On the tool channel the track record and the wakeup list are one line
+    # each (2026-09-17); the trades themselves are a fetch away, and six
+    # timestamps said less than their count does.
+    history = (
+        describe_history_brief(closed or []) if answer_by_tool else describe_history(closed or [])
+    )
     recent_failures = describe_recent_failures(failures or [])
     timing = describe_analysis_timing(analysis_minutes or [], running_analyses or {})
-    recent_wakeups = describe_recent_wakeups(wakeups or [])
+    recent_wakeups = describe_recent_wakeups(wakeups or [], brief=answer_by_tool)
     # One divider for the whole cluster, and only when it has something in
     # it — an unconditional one here would sit right beside the next
     # section's own divider (reading, or Rules) on a pass with no history,
@@ -1016,9 +1213,18 @@ def build_prompt(
             # this is the pass's last turn, so a read asked for here was always
             # dropped — but nothing told the agent that before it tried. Said up
             # front now, so it spends this one chance fixing the order instead.
-            "A read does not run on this turn — it is your one chance to fix the",
-            "refusal above, not another chance to read. If you also want to read",
-            "something, leave it for your next turn or wakeup and fix the order now.",
+            # On the tool channel a read is a fetch inside the same call, so
+            # the retry can still read before it fixes the order, and this
+            # warning would be untrue there.
+            *(
+                []
+                if answer_by_tool
+                else [
+                    "A read does not run on this turn — it is your one chance to fix the",
+                    "refusal above, not another chance to read. If you also want to read",
+                    "something, leave it for your next turn or wakeup and fix the order now.",
+                ]
+            ),
         ]
 
     # What "no money" means here is what screen() refuses at: below the research
@@ -1035,7 +1241,7 @@ def build_prompt(
         floors.append(f"risk/reward of at least {min_risk_reward:.2f}")
     conviction_line = " and ".join(floors)
 
-    if (watchlist and max_watchlist) or menu:
+    if (watchlist and max_watchlist) or menu or answer_by_tool:
         # Shared by the watchlist and the candidate menu below, so the price
         # is explained exactly once. Since 2026-09-08 nothing is analysed
         # automatically — not even what is held — so every analysis, new
@@ -1052,85 +1258,37 @@ def build_prompt(
             "because it is free to ask.",
         ]
 
-    if watchlist and max_watchlist:
-        # Every tracked ticker, priced and dated, so staleness is something
-        # the agent can see rather than something it has to remember. Held
-        # names are marked apart from watched-only ones because only the
-        # second kind can be dropped, and hiding that invites orders Python
-        # refuses.
-        held_tickers = {h.ticker for h in book.holdings}
-        # A table for the same reason the signals are one: the prose ran the
-        # live price and the price at the last analysis into one sentence, and
-        # "moved since" is a comparison between exactly those two.
+    if watchlist and max_watchlist and answer_by_tool:
+        # **One line on the tool channel (2026-09-17)**: up to thirty rows of
+        # nine columns sat here on every pass, and the `watchlist` fetch
+        # returns the same table on demand. The line keeps the names that
+        # were never analysed or have moved since, which is what the table
+        # was for.
+        lines += ["", *describe_watchlist_brief(watchlist, max_watchlist, prices)]
+    elif watchlist and max_watchlist:
+        # The table itself lives in describe_watchlist since 2026-09-17,
+        # because the `watchlist` fetch returns the same table on demand and
+        # two copies of one table drift. Same output here as before.
         lines += [
             "",
-            f"You track {len(watchlist)} of at most {max_watchlist} tickers. **Moved since** "
-            f"is the price as of {as_of} against the price at the most recent analysis of that "
-            "ticker — a large move on a stale analysis is the signal that a fresh look may be "
-            "worth paying for. Tickers left watched with stale or 'never' analysed status consume "
-            "watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.",
-            "",
-            "| Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |",
-            "|---|---|---|---|---|---|---|---|---|",
+            *describe_watchlist(watchlist, max_watchlist, book, prices, day_ranges, as_of),
         ]
-        for ticker in sorted(watchlist):
-            live = prices.get(ticker)
-            price_text = f"${live:,.2f}" if live is not None else "unavailable"
-            status = "held" if ticker in held_tickers else "watched"
-            day_range = (day_ranges or {}).get(ticker)
-            day_high = f"${day_range[1]:,.2f}" if day_range else "—"
-            day_low = f"${day_range[0]:,.2f}" if day_range else "—"
-            # **Newest by time, not by date.** `get_recent_signals` orders by
-            # `signal_date`, a calendar date, so two analyses of one ticker on
-            # one day come back in row order — and this row showed INTC at
-            # $106.24 while the signals table above showed a later one at
-            # $100.44, a 5.5% move. The agent read both and asked which was
-            # current. Same sort as analysis_reader._newest_first, and local
-            # for the same reason: every other caller reads that ordering.
-            recent = sorted(
-                db.get_recent_signals(ticker, limit=20),
-                # getattr throughout: several tests pass signal-shaped
-                # stand-ins rather than the model, the same way the Decision
-                # unpacking and the trigger phrase already do.
-                key=lambda x: (str(x.signal_date)[:10],
-                               str(getattr(x, "created_at", "") or ""),
-                               getattr(x, "id", 0) or 0),
-                reverse=True,
-            )[:1]
-            when = then = move = said = "never"
-            if recent and recent[0].price_at_signal:
-                last = recent[0]
-                when = _analysed_at(last)
-                then = f"${last.price_at_signal:,.2f}"
-                said = last.decision
-                move = "—"
-                if live is not None:
-                    pct = (live - last.price_at_signal) / last.price_at_signal * 100
-                    move = f"{pct:+.1f}%"
-            lines.append(
-                f"| {ticker} | {status} | {price_text} | {day_high} | {day_low} | "
-                f"{when} | {then} | {move} | {said} |"
-            )
-        if len(watchlist) >= max_watchlist:
-            lines.append(
-                "That is the limit, so nothing new can be tracked until you stop "
-                "watching something. Look for watched (unheld) tickers with stale or "
-                "'never' analysed status and untrack them to free slots for new research."
-            )
 
-    if menu:
+    if answer_by_tool:
+        # **The menu is a fetch on this channel (2026-09-17).** It cost up to
+        # fifteen lines on every pass whether or not the pass wanted a new
+        # name, and the model called it noise. `candidates` returns the same
+        # screen on demand, and `screen` refuses a new ticker that was not on
+        # what it returned this pass. One line keeps the tool visible: a tool
+        # nobody calls is a feature removed.
         lines += [
             "",
-            "Nothing has been analysed on these yet — they are screened for being liquid and "
-            "actively traded, not for being good. Researching one buys an analyst's opinion, "
-            "not a position today:",
+            "Screened candidates you could research are available on request: call "
+            "candidates to see them. A research of a new ticker must name one of "
+            "them, and nothing on them has been analysed.",
         ]
-        for candidate in menu:
-            move = f", {candidate.change_pct:+.1f}% today" if candidate.change_pct is not None else ""
-            lines.append(
-                f"- {candidate.ticker}: {candidate.name[:40]} at ${candidate.price:,.2f}"
-                f"{move}, {candidate.volume_m:,.1f}M shares traded, via {candidate.source}"
-            )
+    elif menu:
+        lines += ["", *describe_menu(menu)]
 
     lines += [
         "",
@@ -1209,7 +1367,11 @@ def build_prompt(
                 "  decided and the analyst\'s own reasoning, with a chance to act on it",
                 "  before you finish. You do not need to set a wakeup for it. The timing",
                 "  line above says how long one takes here. A new ticker must come from the",
-                "  candidate list above; one you already track can be re-researched as",
+                (
+                    "  list that candidates returns; one you already track can be re-researched as"
+                    if answer_by_tool
+                    else "  candidate list above; one you already track can be re-researched as"
+                ),
                 "  often as you judge it worth $0.05. A second look the same day is",
                 "  often the right call, not a wasteful one.",
                 "  Choosing what to study is the only way anything changes,",
@@ -1224,7 +1386,7 @@ def build_prompt(
                 "  an analysis takes the time stated above, and the price will have moved",
                 "  again by the time it lands.",
             ]
-            if (watchlist or menu)
+            if (watchlist or menu or answer_by_tool)
             else []
         ),
         *(
@@ -1289,6 +1451,17 @@ def build_prompt(
         "",
         "Use an empty list for orders if you want to hold everything.",
     ]
+    if answer_by_tool:
+        # **On the tool channel the schema is the ``decide`` declaration itself
+        # (2026-09-17).** The example above is the JSON channel's schema, and
+        # an example the model is told to copy would sit beside a function it
+        # is told to call: two shapes for one answer. One line says how to
+        # answer; ``decision_schema`` says what each side takes.
+        lines = lines[: lines.index("**Answer in this shape:**")] + [
+            "**Answer by calling `decide`.** Put every order you want carried out "
+            "in its `orders` list, in the order to execute them, and leave the "
+            "list empty to hold everything.",
+        ]
     return "\n".join(_unwrapped(lines))
 
 
@@ -1701,7 +1874,7 @@ def screen(
             already_tracked = ticker in watchlist
             why = None
             if menu is not None and ticker not in menu and not already_tracked:
-                why = "not on today's candidate list"
+                why = "not on the candidate list, which is the only source of a new ticker"
             elif ticker in researched:
                 why = "already commissioned this pass"
             elif not already_tracked and len(watchlist) >= max_watchlist:
@@ -1919,6 +2092,17 @@ def _price_map(tickers) -> dict[str, float | None]:
 # think, read two more, decide" and refuse an unbounded chain.
 _MAX_READS_PER_PASS = 6
 _MAX_READ_TURNS = 3
+# **The tool channel's own allowance (2026-09-17).** Its fetches spent from
+# the read allowance above at first, and the first live probe hit the cap
+# after three reads: the three table fetches (watchlist, candidates,
+# track_record) replace tables the prompt used to carry, so six left room
+# for three reads. The bound that matters here is the free tier's request
+# count, and a round is one request however many fetches it carries, so the
+# rounds are what stay small. Twelve fetches across five rounds is the three
+# tables, half a dozen reads and a fundamentals or two, which is what a
+# person deciding would read.
+_MAX_FETCHES_PER_PASS = 12
+_MAX_FETCH_ROUNDS = 5
 # **How many times the agent may act and then be asked again in one pass.**
 # Acting is not free the way reading is — each turn can move real money — so
 # this stays bounded rather than open-ended. Three only covered one ticker's
@@ -2011,26 +2195,58 @@ _FIXED_RULES = [
     "for that analysis. Read one before you act on it: the line tells you what "
     "the analyst concluded, and the reasoning tells you what they saw, how "
     "sure they were, and what would change their mind.",
-    "- To read one, use side \"read\" with a ticker, and a \"date\" like "
-    "\"2026-09-08\" if you want a particular analysis rather than the newest. "
-    "Comparing the one you bought on against today's is how you tell whether a "
-    "thesis still holds.",
-    f"- You may read up to {_MAX_READS_PER_PASS} analyses before deciding, and "
-    f"ask again after reading up to {_MAX_READ_TURNS} times — list several "
-    "reads together if you want them at once. Read what you need: this is the "
-    "one place spending is encouraged, because a decision made on a verdict "
-    "alone is the thing this is trying to avoid. Reading is not acting, "
-    "though: a pass that only read is an idle pass, and the budget runs out.",
+    # **Three rules differ by channel (2026-09-17).** On the JSON channel a
+    # read is a side and earns a further turn; on the tool channel it is one
+    # of the fetch functions, which run inside the same call. A dict here
+    # holds the two wordings, and _system_prompt picks one.
+    {
+        False:
+        "- To read one, use side \"read\" with a ticker, and a \"date\" like "
+        "\"2026-09-08\" if you want a particular analysis rather than the newest. "
+        "Comparing the one you bought on against today's is how you tell whether a "
+        "thesis still holds.",
+        True:
+        "- To read one, call read with a ticker, and a date like 2026-09-08 if you "
+        "want a particular analysis rather than the newest. Comparing the one you "
+        "bought on against today's is how you tell whether a thesis still holds.",
+    },
+    {
+        False:
+        f"- You may read up to {_MAX_READS_PER_PASS} analyses before deciding, and "
+        f"ask again after reading up to {_MAX_READ_TURNS} times — list several "
+        "reads together if you want them at once. Read what you need: this is the "
+        "one place spending is encouraged, because a decision made on a verdict "
+        "alone is the thing this is trying to avoid. Reading is not acting, "
+        "though: a pass that only read is an idle pass, and the budget runs out.",
+        True:
+        f"- You may make up to {_MAX_FETCHES_PER_PASS} fetch calls before deciding — "
+        "read, candidates, fundamentals, watchlist and track_record — across up to "
+        f"{_MAX_FETCH_ROUNDS} rounds; several calls in one round count as one round. "
+        "Fetch what you need: this is the one place spending is encouraged, "
+        "because a decision made on a verdict alone is the thing this is trying to "
+        "avoid. Fetching is not acting, though: a pass that only fetched is an idle "
+        "pass, and the allowance runs out.",
+    },
     # Caught live 2026-09-15: an answer bundled a read with a buy and an
     # adjust, and the buy and adjust vanished with no trace — not refused, not
     # failed, nowhere the model could see it. A read changes the pass's flow
     # rather than the book, so only the read runs; but the silence was the
     # bug, not the drop itself.
-    "- **A read is the only thing that runs from an answer that asks for "
-    "one.** If your answer also has a buy, a sell, an adjust, an untrack or a "
-    "note, none of it is carried out — you will be shown the read's result "
-    "and asked again, and you must resend anything else you still want then. "
-    "Answer with only the read when you mean to read first and decide after.",
+    {
+        False:
+        "- **A read is the only thing that runs from an answer that asks for "
+        "one.** If your answer also has a buy, a sell, an adjust, an untrack or a "
+        "note, none of it is carried out — you will be shown the read's result "
+        "and asked again, and you must resend anything else you still want then. "
+        "Answer with only the read when you mean to read first and decide after.",
+        True:
+        "- **A fetch and a decide in the same round: only the fetches run.** Your "
+        "decide is not carried out; you are shown what you fetched and asked "
+        "again, and you must call decide then with everything you still want. "
+        "Fetch first, then decide. The fetches are functions of their own, not "
+        "fields of decide: call them by themselves, and call decide once you have "
+        "what you need.",
+    },
     "- Doing nothing is a valid answer, and often the right one.",
     "- You decide when you are next asked, and nothing else does. Put "
     "\"next_wakeup\" beside your orders as an ISO datetime — "
@@ -2073,18 +2289,41 @@ _FIXED_RULES = [
     "automatically, so it is a message and not a request.",
     "- A note is never a substitute for a decision. Leave one if you have "
     "something to say, and still answer with what you want done today, "
-    "including doing nothing. Reply with JSON only, in the shape specified below:",
+    "including doing nothing.",
 ]
 
-SYSTEM_PROMPT = (
-    "You are a disciplined portfolio manager. You answer with JSON only — no "
-    "prose outside it. You never spend more cash than you have and never sell "
-    "shares you do not hold.\n\n"
-    "The rules below never change. The message that follows carries this "
-    "pass's own figures — the clock, your cash, your holdings, the analyst "
-    "signals — and the few rules that quote a number from them.\n\n"
-    + "\n".join(_FIXED_RULES)
-)
+# **Two answer channels, one set of rules (2026-09-17).** On Gemini the agent
+# answers by calling a function named ``decide`` (see llm_gemini and
+# decision_schema); everywhere else it writes JSON into its reply, and
+# parse_decision reads it. Only two sentences differ between the two system
+# messages: the one that says how to answer, and the tail of the note rule.
+# Everything else is the same text, so a change to a rule reaches both.
+_HOW_TO_ANSWER = {
+    False: "You answer with JSON only — no prose outside it.",
+    True: "You answer by calling the decide function — never with prose.",
+}
+_NOTE_RULE_TAIL = {
+    False: "Reply with JSON only, in the shape specified below:",
+    True: "Answer by calling decide, with every order inside its orders list.",
+}
+
+
+def _system_prompt(by_tool: bool) -> str:
+    resolved = [rule[by_tool] if isinstance(rule, dict) else rule for rule in _FIXED_RULES]
+    rules = resolved[:-1] + [f"{resolved[-1]} {_NOTE_RULE_TAIL[by_tool]}"]
+    return (
+        f"You are a disciplined portfolio manager. {_HOW_TO_ANSWER[by_tool]} You "
+        "never spend more cash than you have and never sell shares you do not "
+        "hold.\n\n"
+        "The rules below never change. The message that follows carries this "
+        "pass's own figures — the clock, your cash, your holdings, the analyst "
+        "signals — and the few rules that quote a number from them.\n\n"
+        + "\n".join(rules)
+    )
+
+
+SYSTEM_PROMPT = _system_prompt(False)
+SYSTEM_PROMPT_TOOL = _system_prompt(True)
 
 
 class _Answer(str):
@@ -2099,12 +2338,24 @@ class _Answer(str):
     returns a bare string reports zero rather than raising.
     """
 
-    def __new__(cls, text, prompt_tokens=0, completion_tokens=0, seconds=0.0, thinking=None):
+    def __new__(
+        cls, text, prompt_tokens=0, completion_tokens=0, seconds=0.0, thinking=None,
+        exchanges=None, channel="json",
+    ):
         answer = super().__new__(cls, text)
         answer.prompt_tokens = prompt_tokens
         answer.completion_tokens = completion_tokens
         answer.seconds = seconds
         answer.thinking = thinking
+        # The fetches the model made on the way to this answer, on the tool
+        # channel: name, args and result, in order. Empty everywhere else.
+        answer.exchanges = list(exchanges or [])
+        # Which channel answered: "json" (the model wrote JSON into prose),
+        # "tool" (a `decide` function call), or "text-fallback" (the function
+        # call failed and the text channel answered instead). Recorded on the
+        # turn, because a fallback turn otherwise looks exactly like a tool
+        # turn that made no fetch, and only the log knew (2026-09-17).
+        answer.channel = channel
         return answer
 
 
@@ -2169,8 +2420,12 @@ def _invoke(llm, prompt: str) -> tuple[str, str | None, int, int]:
     return content, thinking, prompt_tokens, completion_tokens
 
 
-def _ask(prompt: str) -> _Answer:
+def _ask(prompt: str, tools: "ToolContext | None" = None) -> _Answer:
     """One call to the model: the answer, what it cost, and how it got there.
+
+    ``tools`` is the pass's fetch context on the tool channel, and None on the
+    JSON channel, where the signature is the one every test fake has: one
+    positional string.
 
     The counts come from the provider's ``usage`` block, never a tokenizer
     estimate — see backend/services/llm_usage.py. This client is the one no
@@ -2186,11 +2441,178 @@ def _ask(prompt: str) -> _Answer:
     reasoning.
     """
     started = time.monotonic()
-    content, thinking, prompt_tokens, completion_tokens = _invoke(
-        analysis._quick_think_llm(), prompt
-    )
+    exchanges: list[dict] = []
+    channel = "json"
+    if answers_by_tool():
+        content, thinking, prompt_tokens, completion_tokens, exchanges, channel = (
+            _invoke_by_tool(prompt, tools)
+        )
+    else:
+        content, thinking, prompt_tokens, completion_tokens = _invoke(
+            analysis._quick_think_llm(), prompt
+        )
     seconds = time.monotonic() - started
-    return _Answer(content, prompt_tokens, completion_tokens, seconds, thinking)
+    return _Answer(
+        content, prompt_tokens, completion_tokens, seconds, thinking, exchanges, channel
+    )
+
+
+def answers_by_tool() -> bool:
+    """Whether this deployment's model answers by calling ``decide``.
+
+    True on the google provider, where the decision pass goes through Google's
+    SDK with a forced function call (see llm_gemini). Every other provider
+    keeps the JSON channel. ``AGENT_ANSWER_CHANNEL=json`` forces the JSON
+    channel on Gemini too: a switch a deployment can flip in its compose file
+    without a rebuild if the function-calling path misbehaves, and the way to
+    run the two channels against each other on one model.
+    """
+    if os.environ.get("AGENT_ANSWER_CHANNEL", "").strip().lower() == "json":
+        return False
+    return str(analysis.DEFAULT_CONFIG.get("llm_provider") or "").strip().lower() == "google"
+
+
+def _invoke_by_tool(
+    prompt: str, tools: "ToolContext | None"
+) -> tuple[str, str | None, int, int, list[dict], str]:
+    """One decision on Gemini, through Google's SDK: fetches, then ``decide``.
+    The last element names the channel that answered: ``tool``, or
+    ``text-fallback`` when the call failed and the text channel stood in.
+
+    Falls back to the text channel when the call itself fails, for the reason
+    ``_invoke`` falls back too: a pass must not be lost. The fallback sends the
+    JSON system message while the user message still ends by asking for a
+    ``decide`` call, and the tolerant parser reads whatever comes back. The
+    warning below is what says it happened, so a day of fallbacks is visible
+    in the log rather than only as odd answers on the Decisions page.
+    """
+    try:
+        reply = llm_gemini.decide(
+            SYSTEM_PROMPT_TOOL, prompt, decision_schema.DECIDE, model=analysis.get_model(),
+            fetches=decision_schema.FETCHES if tools is not None else (),
+            fetch=tools.fetch if tools is not None else None,
+            budget=tools.budget if tools is not None else None,
+        )
+        return (
+            reply.content, reply.thinking, reply.prompt_tokens, reply.completion_tokens,
+            reply.exchanges, "tool",
+        )
+    except llm_throttle.DailyLimitReached:
+        raise
+    except Exception:
+        log.warning("The decide call failed; falling back to the text channel", exc_info=True)
+    # The tool-channel prompt ends "call decide" and shows no JSON example, so
+    # a text answer to it has nothing to copy: the first live fallback
+    # (2026-09-17, a refused `tool` role) came back without a `reasoning` key.
+    # The shape travels with the fallback, so the answer is whole either way.
+    return (
+        *_invoke(analysis._quick_think_llm(), f"{prompt}\n\n{_FALLBACK_SHAPE}"),
+        [],
+        "text-fallback",
+    )
+
+
+# What a text answer must look like when the function call could not be
+# made. The keys `decide` takes, as one example, and nothing the rules above
+# do not already explain.
+_FALLBACK_SHAPE = (
+    "The decide function is not available on this turn. Answer with JSON only, "
+    "in this shape, and nothing outside it: "
+    '{"reasoning": "one or two sentences", "next_wakeup": "2026-09-11T09:00", '
+    '"next_wakeup_note": "what you want to remember", "orders": '
+    '[{"ticker": "AAPL", "side": "buy", "quantity": 2, "order_type": "market", "reason": "why"}]}'
+)
+
+
+def _fresh_budget() -> dict:
+    """One pass's allowance, owned by ``run_once`` and spent in place.
+
+    ``reads`` and ``turns`` bound the JSON channel's read loop in ``_decide``;
+    ``fetches`` and ``rounds`` bound the tool channel's fetch rounds inside
+    ``_ask``, with their own, larger numbers. One dict for the whole pass, so
+    a pass that acts and is asked again cannot start from a full allowance
+    each time. ``menu`` caches the candidate screen for the pass: it is a
+    vendor screen of several calls, fetched on the first ``candidates`` call
+    and never on a pass that does not ask.
+    """
+    return {
+        "reads": _MAX_READS_PER_PASS,
+        "turns": _MAX_READ_TURNS,
+        "fetches": _MAX_FETCHES_PER_PASS,
+        "rounds": _MAX_FETCH_ROUNDS,
+        "menu": None,
+    }
+
+
+class ToolContext:
+    """What the fetch functions can reach on one turn, and the pass's allowance.
+
+    Built by ``_decide`` for each turn from that turn's book, prices and
+    watchlist, so a fetch sees the same figures the prompt it answers was
+    built from. ``budget`` is the pass's dict (see ``_fresh_budget``).
+
+    **``fetch`` never raises.** A fetch that fails returns its failure as the
+    result, so the model learns what happened and decides with what it has:
+    the rule every ToolNode in the analysis graph follows. The message names
+    the failure and nothing else; a suggestion of what to try instead is what
+    a model turns into an invented fact.
+    """
+
+    def __init__(
+        self, budget: dict, *, book, prices, watchlist, max_watchlist, closed, day_ranges
+    ):
+        self.budget = budget
+        self.book = book
+        self.prices = prices
+        self.watchlist = list(watchlist)
+        self.max_watchlist = max_watchlist
+        self.closed = list(closed or [])
+        self.day_ranges = day_ranges or {}
+        self._handlers = {
+            "read": self._read,
+            "candidates": self._candidates,
+            "fundamentals": self._fundamentals,
+            "watchlist": self._watchlist,
+            "track_record": self._track_record,
+        }
+
+    def fetch(self, name: str, args: dict) -> str:
+        handler = self._handlers.get(name)
+        if handler is None:
+            return f"There is no fetch named {name}."
+        try:
+            return handler(args or {}) or f"{name} returned nothing."
+        except Exception:
+            log.exception("The %s fetch failed", name)
+            return f"{name} failed with an error in this app. Decide with what you have."
+
+    def _read(self, args: dict) -> str:
+        return analysis_reader.read(args.get("ticker"), args.get("date"))
+
+    def _candidates(self, args: dict) -> str:
+        if self.budget.get("menu") is None:
+            self.budget["menu"] = _candidate_menu() if research.is_charging() else []
+        lines = describe_menu(self.budget["menu"])
+        if not lines:
+            return (
+                "No candidate passed the screen right now. Research a ticker you "
+                "already track, or ask again on a later pass."
+            )
+        return "\n".join(lines)
+
+    def _fundamentals(self, args: dict) -> str:
+        return fundamentals.describe(args.get("ticker"))
+
+    def _watchlist(self, args: dict) -> str:
+        if not self.watchlist:
+            return "You track nothing."
+        as_of = market_clock.now_et().strftime("%Y-%m-%d %-I:%M %p ET")
+        return "\n".join(describe_watchlist(
+            self.watchlist, self.max_watchlist, self.book, self.prices, self.day_ranges, as_of
+        ))
+
+    def _track_record(self, args: dict) -> str:
+        return "\n".join(describe_history(self.closed)) or "No closed trades yet."
 
 
 def wakeup_due(now: datetime.datetime | None = None) -> datetime.datetime | None:
@@ -2708,6 +3130,9 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     """
     by_ticker = {s.ticker: s for s in signals}
     menu_tickers = {c.ticker for c in menu} if menu else None
+    # Read once for the pass, so every turn is built for the channel the
+    # answer comes back on.
+    by_tool = answers_by_tool()
     # Read once and passed to both attempts, so the retry describes the same
     # watchlist the first answer was screened against.
     watchlist = sorted(db.get_watchlist())
@@ -2776,8 +3201,33 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
+                             answer_by_tool=by_tool,
     )
-    answer = _ask(shown)
+    # **One allowance for the whole pass**, created here only when no caller
+    # owns one (a test). Above the first call, because on the tool channel
+    # the fetches spend it inside `_ask`. See _fresh_budget.
+    if budget is None:
+        budget = _fresh_budget()
+    tools = (
+        ToolContext(
+            budget, book=book, prices=prices, watchlist=watchlist,
+            max_watchlist=_max_watchlist(), closed=closed, day_ranges=day_ranges,
+        )
+        if by_tool
+        else None
+    )
+
+    def universe():
+        # The universe for a new ticker on the tool channel is what
+        # `candidates` returned this pass: an empty set until it is called, so
+        # a research of a name the agent never saw on a screen is refused, as
+        # it always was. Read fresh before each screen, because the retry may
+        # have fetched it.
+        if not by_tool:
+            return menu_tickers
+        return {c.ticker for c in (budget.get("menu") or [])}
+
+    answer = _ask(shown, tools) if tools is not None else _ask(shown)
     # Accumulated rather than taken from the last call: a retry is a second
     # real call to the model and its tokens are spent whether or not its
     # answer is the one used. getattr covers the fakes that return a plain
@@ -2800,10 +3250,13 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # dict the caller owns and this mutates, so an agent that acts and is asked
     # again cannot start reading from a full allowance each time — six reads a
     # pass would become eighteen across three turns.
-    if budget is None:
-        budget = {"reads": _MAX_READS_PER_PASS, "turns": _MAX_READ_TURNS}
     read_budget, turn_budget = budget["reads"], budget["turns"]
     wants, proposed = _split_reads(proposed)
+    if by_tool and wants:
+        # `read` is a fetch function on this channel and not one of the
+        # schema's sides, so this is a stray the parser's salvage let through.
+        log.info("A read side on the tool channel is dropped; read is a fetch there")
+        wants = []
     read_any = bool(wants)
     # Whatever rode along beside this read in the same answer. It is dropped
     # here — proposed is about to be replaced by the next answer's orders —
@@ -2839,7 +3292,8 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
                              readings=readings,
-                             dropped_with_read=dropped_with_read)
+                             dropped_with_read=dropped_with_read,
+                             answer_by_tool=by_tool)
         answer = _ask(shown)
         spend = spend + _Spend.of(answer)
         turns.append(_turn(shown, answer))
@@ -2854,7 +3308,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         # decision to give.
         log.info("Read budget spent; ignoring %d further read(s)", len(wants))
 
-    accepted, rejected = screen(proposed, book, prices, by_ticker, menu_tickers)
+    accepted, rejected = screen(proposed, book, prices, by_ticker, universe())
     # The retry keeps its own single turn, which reading no longer spends.
     if not rejected:
         return Decision(reasoning, accepted, rejected, shown, answer,
@@ -2874,8 +3328,9 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              pass_notes=pass_notes, last_pass_notes=last_pass_notes,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
-                             day_ranges=day_ranges)
-    retry_answer = _ask(shown)
+                             day_ranges=day_ranges,
+                             answer_by_tool=by_tool)
+    retry_answer = _ask(shown, tools) if tools is not None else _ask(shown)
     spend = spend + _Spend.of(retry_answer)
     turns.append(_turn(shown, retry_answer))
     retry_reasoning, retry_proposed = parse_decision(retry_answer)
@@ -2894,7 +3349,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         # first answer's accepted orders rather than discarding them.
         return Decision(reasoning, accepted, rejected, shown, retry_answer,
                         getattr(retry_answer, "thinking", None), *spend, turns=turns)
-    retry_accepted, retry_rejected = screen(retry_proposed, book, prices, by_ticker, menu_tickers)
+    retry_accepted, retry_rejected = screen(retry_proposed, book, prices, by_ticker, universe())
     return Decision(retry_reasoning or reasoning, retry_accepted, retry_rejected,
                     shown, retry_answer, getattr(retry_answer, "thinking", None), *spend,
                     turns=turns)
@@ -2925,6 +3380,14 @@ def _turn(prompt: str, answer) -> dict:
         "prompt": str(prompt or ""),
         "response": str(answer or ""),
         "thinking": getattr(answer, "thinking", None),
+        # The fetches this turn made on the tool channel, in order, with what
+        # each returned. Empty on the JSON channel and on every turn before
+        # 2026-09-17.
+        "exchanges": list(getattr(answer, "exchanges", None) or []),
+        # Which channel answered this turn — see _Answer. "json" for a fake
+        # that is a bare string, which is what every turn before 2026-09-17
+        # was in fact.
+        "channel": getattr(answer, "channel", None) or "json",
         "reasoning": reasoning,
         "orders": [
             {
@@ -3189,6 +3652,20 @@ def format_run_embed(run: AgentRun) -> "Embed":
                 f"{o['side'].upper()} {o['quantity']:g} {o['ticker']} — {why}"
                 for o, why in run.failed
             )[:_FIELD_MAX],
+            inline=False,
+        )
+    fallbacks = fallback_turns(run)
+    if fallbacks:
+        # A fallback is the function-calling channel failing, not the agent
+        # choosing; it belongs in the post, because the log is where nobody
+        # looks until something else goes wrong (2026-09-17).
+        embed.add_field(
+            name="⚠️ Answered through the text fallback",
+            value=(
+                f"{fallbacks} of {len(run.turns or [])} turn(s): the function call to "
+                "the model failed, and the answer was read from prose instead. The "
+                "container log has the reason."
+            ),
             inline=False,
         )
 
@@ -4173,8 +4650,8 @@ def run_once(woke_because: str | None = None) -> AgentRun:
     # Tickers this pass has paid to have analysed. The signals table marks
     # their rows, because that is where the agent actually looks.
     researched: set[str] = set()
-    # One read allowance for the whole pass — see _decide.
-    budget = {"reads": _MAX_READS_PER_PASS, "turns": _MAX_READ_TURNS}
+    # One read and fetch allowance for the whole pass — see _fresh_budget.
+    budget = _fresh_budget()
     last_signature = None
     # **Every next_wakeup_note this pass has written so far, oldest first.**
     # `run.wakeup_note` below is overwritten each turn and only the last one
@@ -4206,7 +4683,11 @@ def run_once(woke_because: str | None = None) -> AgentRun:
         # Only fetched when research is actually charged for. Without a price the
         # agent has no scarcity to reason about, and a menu it can take from for
         # free would just be a longer watchlist someone else chose.
-        menu = _candidate_menu() if research.is_charging() else None
+        # On the tool channel the screen runs once per pass, on the first
+        # `candidates` call, and not at all on a pass that never asks: it is a
+        # vendor screen of several calls, and running it on every turn was the
+        # old prompt's cost. See ToolContext.
+        menu = _candidate_menu() if research.is_charging() and not answers_by_tool() else None
         decision = _decide(
             book, signals, prices, closed=closed,
             regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
@@ -4315,6 +4796,22 @@ def run_once(woke_because: str | None = None) -> AgentRun:
     run.wakeup_note = _encode_wakeup_notes(notes_this_pass)
     _record_run(run)
     return run
+
+
+def _turns_worth_keeping(turns: list[dict] | None) -> bool:
+    """More than one turn, one that fetched something on the way, or one the
+    text fallback answered — the site can only show a fallback it can see."""
+    turns = turns or []
+    return (
+        len(turns) > 1
+        or any(t.get("exchanges") for t in turns)
+        or any(t.get("channel") == "text-fallback" for t in turns)
+    )
+
+
+def fallback_turns(run: "AgentRun") -> int:
+    """How many of a pass's turns the text fallback answered."""
+    return sum(1 for t in (run.turns or []) if t.get("channel") == "text-fallback")
 
 
 def _refusals_json(run: "AgentRun") -> str | None:
@@ -4478,7 +4975,11 @@ def _record_run(run: "AgentRun") -> None:
             thinking=run.thinking or None,
             # JSON, or NULL for a pass with nothing to add beyond the single
             # turn already in prompt/response.
-            turns=json.dumps(run.turns) if len(run.turns or []) > 1 else None,
+            # A single-turn pass stored no turns until 2026-09-17: the pass's
+            # own prompt and response already are that turn. A turn that
+            # fetched something is kept even alone, because its exchanges
+            # live nowhere else.
+            turns=json.dumps(run.turns) if _turns_worth_keeping(run.turns) else None,
             # NULL, not 0, when nothing reported them — a zero would read as a
             # free call. Same rule as Signal's own usage columns.
             prompt_tokens=run.prompt_tokens or None,

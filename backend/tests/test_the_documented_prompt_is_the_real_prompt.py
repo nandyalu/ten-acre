@@ -52,6 +52,19 @@ def test_the_quoted_system_message_is_the_real_one():
     )
 
 
+def test_the_quoted_tool_system_message_is_the_real_one():
+    """The tool channel's identity paragraph, the one a Gemini deployment
+    sends since 2026-09-17, is quoted in the same section. It differs from the
+    JSON channel's by one sentence, and that sentence is what a reader needs
+    to know the agent no longer writes JSON into prose."""
+    identity = agent.SYSTEM_PROMPT_TOOL.split("\n\n")[0]
+    assert _flat(identity) in FLAT, (
+        "The quoted tool-channel system message no longer matches the code.\n\n"
+        f"The code says:\n  {_flat(identity)}\n\n"
+        "Update the quotation under 'The rules, verbatim' in .claude/rules/agent.md."
+    )
+
+
 def test_the_quoted_opener_is_the_real_one():
     """The first line of every prompt, quoted in the same section.
 

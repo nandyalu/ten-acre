@@ -86,7 +86,7 @@ def test_a_ticker_not_on_the_menu_is_refused(charging):
     )
 
     assert accepted == []
-    assert "not on today's candidate list" in rejected[0].why
+    assert "not on the candidate list" in rejected[0].why
 
 
 def test_there_is_no_daily_count_limit_any_more(charging):

@@ -5,10 +5,11 @@ import {
   AgentEvent,
   AgentEventOrder,
   AgentOrder,
+  DecisionExchange,
   DecisionTurn,
 } from '../../core/models/api.models';
 import { Term } from '../../shared/glossary/term';
-import { readerDateTime, readerTime } from '../../shared/market-time';
+import { readerDateKey, readerDateTime, readerTime } from '../../shared/market-time';
 import { CopyButton } from '../../shared/copy-button';
 
 /**
@@ -38,15 +39,22 @@ export class DecisionCard {
     return readerDateTime(instant);
   }
 
-  /** When it asked to be woken next — time only, since it is the same day.
+  /** When it asked to be woken next. Time only when that is the same day as
+   * the pass; the day as well when it is not. A 7:55 PM pass that asked for
+   * "9:30 AM" read as though it meant the morning already gone (2026-09-17),
+   * and the agent may ask for up to four days ahead.
    *
    * The agent sets its own cadence, so this is a decision it made and worth
    * showing beside the orders. A pass that asked for nothing shows nothing:
    * the scheduler's fallback is not something the agent chose.
    */
-  wokenAt(instant: string): string {
-    const t = readerTime(instant);
-    return `${t.time} ${t.zone}`;
+  wokenAt(event: AgentEvent): string {
+    if (!event.next_wakeup) return '';
+    if (readerDateKey(event.next_wakeup) === readerDateKey(event.ran_at)) {
+      const t = readerTime(event.next_wakeup);
+      return `${t.time} ${t.zone}`;
+    }
+    return readerDateTime(event.next_wakeup);
   }
 
   /** The agent's messages to whoever maintains it.
@@ -100,6 +108,51 @@ export class DecisionCard {
 
   turnTradesIn(turn: DecisionTurn): AgentEventOrder[] {
     return (turn.orders ?? []).filter((o) => o.side !== 'note');
+  }
+
+  /** What one turn fetched before it answered. Defaulted for the same reason
+   * as `failedIn`: a turn recorded before 2026-09-17 has no such key. */
+  turnExchanges(turn: DecisionTurn): DecisionExchange[] {
+    return turn.exchanges ?? [];
+  }
+
+  /** Every fetch across the pass, for the single-turn layout, where the one
+   * turn's exchanges are the only ones there are. */
+  exchangesIn(event: AgentEvent): DecisionExchange[] {
+    return (event.turns ?? []).flatMap((turn) => this.turnExchanges(turn));
+  }
+
+  /** What a fetch was asked about: the ticker, and the date when one was
+   * given. Empty for the fetches that take nothing. */
+  fetchTarget(exchange: DecisionExchange): string {
+    const ticker = exchange.args?.['ticker'];
+    const date = exchange.args?.['date'];
+    return [ticker ? String(ticker) : '', date ? `(${String(date)})` : '']
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  /** One fetch as a few words, for the prompt panel's label. A `decide` here
+   * is one the agent made in the same round as a fetch, which the harness
+   * declines to carry out — the label says so. */
+  fetchLabel(exchange: DecisionExchange): string {
+    const what = [exchange.name, this.fetchTarget(exchange)].filter(Boolean).join(' ');
+    return exchange.name === 'decide' ? `${what} — not carried out` : what;
+  }
+
+  /** Whether any turn of the pass was answered by the text fallback: the
+   * function call to the model failed and prose was read instead. Worth a
+   * line on the card, because a fallback turn otherwise looks like a turn
+   * that simply fetched nothing. */
+  fellBack(event: AgentEvent): boolean {
+    return (event.turns ?? []).some((turn) => turn.channel === 'text-fallback');
+  }
+
+  /** Whether the harness ran the fetch. A fetch past the pass's allowance,
+   * and a `decide` made beside a fetch, are answered with a refusal instead of
+   * a result, and the row shows them the way a refused order is shown. */
+  fetchRan(exchange: DecisionExchange): boolean {
+    return !/^Not (run|carried out)\b/.test(exchange.result);
   }
 
   isOpen(which: 'prompt' | 'response' | 'thinking'): boolean {

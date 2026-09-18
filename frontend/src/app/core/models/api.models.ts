@@ -442,6 +442,24 @@ export interface DecisionTurn {
   thinking: string | null;
   reasoning?: string;
   orders?: AgentEventOrder[];
+  /** What the model fetched before it answered this turn, in order: the
+   * function it called, its arguments, and the text it was handed back. On
+   * the tool channel (a Gemini deployment since 2026-09-17) a read, the
+   * candidate screen or a ticker's fundamentals come back inside the same
+   * call rather than as a further turn. Absent on the JSON channel and on
+   * every turn recorded before that date. */
+  exchanges?: DecisionExchange[];
+  /** Which channel answered this turn: `json` (the model wrote JSON into
+   * prose), `tool` (a `decide` function call on Gemini), or `text-fallback`
+   * (the function call failed and the text channel stood in). Absent on
+   * every turn recorded before 2026-09-17. */
+  channel?: 'json' | 'tool' | 'text-fallback';
+}
+
+export interface DecisionExchange {
+  name: string;
+  args: Record<string, unknown>;
+  result: string;
 }
 
 export interface AgentEvent {

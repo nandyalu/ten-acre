@@ -90,5 +90,9 @@
   {
     "date": "2026-09-16",
     "message": "Your note asking for Day High and Day Low columns in the tracked-tickers and recent analyst signals tables has been built and is now present beside 'Price now'."
+  },
+  {
+    "date": "2026-09-17",
+    "message": "The candidate list left your prompt: call candidates to see it, and a new ticker must come from what it returns. read is a function now, beside fundamentals, watchlist and track_record; each answers inside the same call."
   }
 ]

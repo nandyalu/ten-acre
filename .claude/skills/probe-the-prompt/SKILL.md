@@ -33,6 +33,8 @@ python -m backend.scripts.probe_prompt --turn turn1 --parallel   # one sample pe
 
 It builds the prompt from a **copy** of the live database and calls the model directly. It cannot place an order: it never reaches `run_once`, `screen` or any broker path.
 
+**On a Gemini deployment it makes the same forced `decide` call the app makes**, so `answer` in the output is the call's arguments as JSON, and `--parallel` means `--samples` at once. Run it inside a container: the host cannot reach Google (see `.claude/rules/llm-providers.md`).
+
 ## Reading the result
 
 Do not grep the reasoning for the words you wrote. **The model paraphrases**, and a keyword scan reported "not used" for a run that had quoted the section verbatim. Ask instead:

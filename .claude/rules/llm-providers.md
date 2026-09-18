@@ -16,6 +16,8 @@ paths:
 
 `TradingAgents/tradingagents/llm_clients/` is a full multi-provider abstraction (ollama, google, openai, anthropic, azure, bedrock, etc.) — switching providers is a config change, not a code change.
 
+**Since 2026-09-17 the deployment is Gemini-only, by decision.** The container has run `gemini-3.5-flash-lite` through Google AI Studio's free tier, with the app's rate limiter, since early September 2026, with `gemma-4-31b-it` for search grounding, and the owner intends to stay there. The paragraphs further down that name `gemma4-e4b-qat-128k` as the model to run describe the local pool, which the live book no longer runs on; they stay because the pool still exists and a self-hoster may use it. **The decision pass talks to Google's SDK directly**: `backend/services/llm_gemini.py` builds one `genai.Client` from `GOOGLE_API_KEY`, attaches the throttle to it, and makes a forced `decide` function call. The analysis graph still goes through the vendored LangChain client. See "How the answer comes back" in `agent.md`.
+
 **Two naming layers, and confusing them wastes an afternoon.** The app reads `TRADINGAGENTS_LLM_PROVIDER`, `TRADINGAGENTS_LLM_BACKEND_URL`, `TRADINGAGENTS_DEEP_THINK_LLM` and `TRADINGAGENTS_QUICK_THINK_LLM`. The short names below are **compose-level aliases only** — `dockge/trading-experiment.compose.yaml` and `compose.example.yaml` map them, and nothing else does. Anywhere the app itself prints advice (the `/setup` page's `fix` lines, an error message), use the long names, because that text is read by someone who may not be using either compose file. A `LLM_BACKEND_URL` shipped on the setup page on 2026-09-10 for exactly this reason and did nothing at all.
 
 The aliases in the compose files:

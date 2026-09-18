@@ -13,6 +13,13 @@ run_once, screen, or any broker path.
     python -m backend.scripts.probe_prompt --turn turn1
     python -m backend.scripts.probe_prompt --turn turn2 --parallel
 
+**On Gemini this makes the same call the app makes**: one forced ``decide``
+through Google's SDK (see llm_gemini), so the probe tests the channel
+production uses and not a text version of it. ``--parallel`` then means
+``--samples`` at once, and the throttle spaces them inside the vendor's limit.
+Run it inside a container: the host cannot reach Google (see
+.claude/rules/llm-providers.md).
+
 See .claude/skills/probe-the-prompt/SKILL.md for how to read what comes back.
 """
 import argparse
@@ -23,7 +30,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from backend.database import db
-from backend.services import agent, agent_book, analysis, analysis_reader, positions, research
+from backend.services import (
+    agent, agent_book, analysis, analysis_reader, decision_schema, llm_gemini, positions, research,
+)
 
 _OUT = Path("data/probe")
 
@@ -52,6 +61,9 @@ def build_prompts() -> dict:
         if (r := agent.price_range_since_purchase(h.ticker, h.opened, h.price)) is not None
     }
     common = dict(
+        # The channel the app would really answer on, so a Gemini probe sees
+        # the one-line "call decide" ending and an Ollama probe the JSON shape.
+        answer_by_tool=agent.answers_by_tool(),
         price_ranges=price_ranges,
         closed=agent_book.closed_trades(decisions=decisions),
         regime_line=agent.current_regime_line(),
@@ -76,7 +88,15 @@ def build_prompts() -> dict:
 
     woke = _WOKE_BECAUSE["Event-driven"]
     out = {
-        "system": agent.SYSTEM_PROMPT,
+        # What a Gemini probe's fetch functions can reach: the same book,
+        # prices and watchlist the prompt was built from, so a `watchlist`
+        # or `candidates` call answers as it would in a pass. A fresh
+        # allowance is made per sample by main().
+        "tools_kwargs": dict(
+            book=book, prices=prices, watchlist=common["watchlist"],
+            max_watchlist=common["max_watchlist"], closed=common["closed"], day_ranges={},
+        ),
+        "system": agent.SYSTEM_PROMPT_TOOL if agent.answers_by_tool() else agent.SYSTEM_PROMPT,
         "turn1": agent.build_prompt(book, signals, prices, **common),
         "woken": agent.build_prompt(
             book, signals, prices,
@@ -192,13 +212,16 @@ def _backends() -> dict[str, str]:
     return found
 
 
-def ask(base_url: str, system: str, user: str) -> dict:
+def ask(base_url: str, system: str, user: str, tools=None) -> dict:
     """One call, with the message shape the app uses.
 
     ``agent._invoke`` prepends SYSTEM_PROMPT itself, so a probe that hands it
     system+user concatenated sends the system prompt twice. This sends the two
-    as the two messages they are.
+    as the two messages they are. ``tools`` is a fetch context for a Gemini
+    probe, so the fetch loop runs as it does in a pass.
     """
+    if agent.answers_by_tool():
+        return _ask_gemini(system, user, tools)
     from openai import OpenAI
 
     client = OpenAI(base_url=base_url, api_key="ollama", timeout=900)
@@ -219,6 +242,40 @@ def ask(base_url: str, system: str, user: str) -> dict:
     }
 
 
+def _ask_gemini(system: str, user: str, tools=None) -> dict:
+    """The call the app makes on Gemini, so the probe tests that channel.
+
+    ``answer`` is the ``decide`` call's arguments as JSON, exactly what a pass
+    records as its response. ``thinking`` is Google's summary of the model's
+    thinking, present only at a stated thinking level. ``exchanges`` is every
+    fetch the model made on the way, with what it was handed back: a read
+    goes to the record, a ``candidates`` call to the vendor screen, none of
+    it to the broker.
+    """
+    started = time.monotonic()
+    reply = llm_gemini.decide(
+        system, user, decision_schema.DECIDE, model=analysis.get_model(),
+        fetches=decision_schema.FETCHES if tools is not None else (),
+        fetch=tools.fetch if tools is not None else None,
+        budget=tools.budget if tools is not None else None,
+    )
+    return {
+        "seconds": round(time.monotonic() - started, 1),
+        "prompt_tokens": reply.prompt_tokens,
+        "completion_tokens": reply.completion_tokens,
+        "thinking": reply.thinking or "",
+        "answer": reply.content,
+        "exchanges": reply.exchanges,
+    }
+
+
+def _tools(prompts: dict):
+    """A fresh fetch context per sample on Gemini, None elsewhere."""
+    if not agent.answers_by_tool():
+        return None
+    return agent.ToolContext(agent._fresh_budget(), **prompts["tools_kwargs"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--turn", default="turn1", help="turn1, turn2, read, or one of the other variants build_prompts() names")
@@ -236,6 +293,10 @@ def main() -> int:
 
     if args.parallel:
         cards = _backends()
+        if agent.answers_by_tool():
+            # No cards on Gemini. --parallel means --samples at once, and the
+            # throttle spaces them inside the vendor's per-minute limit.
+            cards = {f"sample {n}": None for n in range(1, args.samples + 1)}
         if not cards:
             print("No pool containers found — falling back to the proxy.")
             cards = {"proxy": None}
@@ -246,9 +307,10 @@ def main() -> int:
         def one(item):
             card, ip = item
             url = f"http://{ip}:11434/v1" if ip else args.base_url
-            row = ask(url, prompts["system"], user) | {"card": card, "turn": args.turn}
+            row = ask(url, prompts["system"], user, _tools(prompts)) | {"card": card, "turn": args.turn}
             print(f"  card {card}: {row['seconds']:>5}s  completion {row['completion_tokens']:>5}"
-                  f"  thinking {len(row['thinking']):>5}", flush=True)
+                  f"  thinking {len(row['thinking']):>5}  fetched {len(row.get('exchanges', []))}",
+                  flush=True)
             return row
 
         started = time.monotonic()
@@ -258,9 +320,12 @@ def main() -> int:
     else:
         results = []
         for sample in range(1, args.samples + 1):
-            row = ask(args.base_url, prompts["system"], user) | {"card": "-", "turn": args.turn, "sample": sample}
+            row = ask(args.base_url, prompts["system"], user, _tools(prompts)) | {
+                "card": "-", "turn": args.turn, "sample": sample,
+            }
             print(f"  #{sample}: {row['seconds']}s  completion {row['completion_tokens']}"
-                  f"  thinking {len(row['thinking'])}", flush=True)
+                  f"  thinking {len(row['thinking'])}  fetched {len(row.get('exchanges', []))}",
+                  flush=True)
             results.append(row)
 
     _OUT.mkdir(parents=True, exist_ok=True)

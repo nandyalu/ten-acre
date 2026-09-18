@@ -25,8 +25,9 @@ type StatusFilter = '' | 'pending' | 'resolved';
  * schedule: the agent decides for itself when a name is worth a fresh $0.05
  * look, holdings included, rather than every tracked name being charged and
  * analysed automatically each morning. The candidate list at the bottom is
- * the same menu it is shown in its prompt — it is here to be looked at, not
- * acted on.
+ * the same menu it is given to choose from (in its prompt, or, on a Gemini
+ * deployment since 2026-09-17, when it asks for it) — it is here to be looked
+ * at, not acted on.
  */
 @Component({
   selector: 'app-research-view',

@@ -174,15 +174,17 @@
     }
   </section>
 
-  <!-- The candidate menu, exactly as the agent is shown it. -->
+  <!-- The candidate menu, exactly as the agent is given it. Since 2026-09-17
+       a Gemini deployment shows it to the agent only when the agent asks
+       (the `candidates` fetch), so "sees in its prompt" would be wrong there. -->
   @if (candidates().length) {
     <section class="card">
       <div class="card-head">
         <h2>What it may commission next</h2>
         <p class="hint">
-          The same menu the agent sees in its prompt: liquid names from the screener it does not
-          already track — over $5, over 1M shares traded, and not up or down more than 30% today,
-          which keeps the day's pumps out. It pays for every one it picks, and picking is its
+          The same menu the agent is given to choose from: liquid names from the screener it does
+          not already track — over $5, over 1M shares traded, and not up or down more than 30%
+          today, which keeps the day's pumps out. It pays for every one it picks, and picking is its
           decision alone.
         </p>
       </div>

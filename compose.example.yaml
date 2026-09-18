@@ -55,6 +55,10 @@ services:
       # high. Unset, gemini-3.5-flash-lite does not think, so the record has
       # no thinking to keep.
       - TRADINGAGENTS_GOOGLE_THINKING_LEVEL=${TRADINGAGENTS_GOOGLE_THINKING_LEVEL:-}
+      # On the google provider the agent answers by calling a function named
+      # decide, through Google's SDK. Set this to json to make it write JSON
+      # into its reply instead, the channel every other provider uses.
+      - AGENT_ANSWER_CHANNEL=${AGENT_ANSWER_CHANNEL:-}
       # The vendor's rate limits, if it has any. The app waits before a call
       # that would pass a per-minute limit, and refuses a call past the daily
       # one. Unset means no limit, which is correct for a local pool.

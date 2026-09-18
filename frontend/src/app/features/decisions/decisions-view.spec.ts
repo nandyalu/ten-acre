@@ -238,6 +238,45 @@ describe('DecisionsView', () => {
     expect(head).toContain(label);
   });
 
+  it('names the day of the next wakeup when it is not the day of the pass', async () => {
+    /** A 7:55 PM pass that asked for "9:30 AM" read as the morning already
+     * gone (2026-09-17). The agent may ask for up to four days ahead, so the
+     * day is part of the answer whenever it differs. */
+    service.eventsByMonth['2026-09'] = [
+      event({ ran_at: '2026-09-17T23:55:00Z', next_wakeup: '2026-09-18T13:30:00Z' }),
+    ];
+    const el = await render();
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: zone }).format(
+      new Date('2026-09-18T13:30:00Z'),
+    );
+
+    const head = el.querySelector('.card-head')?.textContent ?? '';
+    expect(head).toContain(`asked to be woken at ${weekday}`);
+  });
+
+  it('shows only the time of the next wakeup when it is the same day', async () => {
+    // Fifteen minutes apart, so the two land on one calendar day in any zone.
+    service.eventsByMonth['2026-09'] = [
+      event({ ran_at: '2026-09-17T13:35:00Z', next_wakeup: '2026-09-17T13:50:00Z' }),
+    ];
+    const el = await render();
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const wakeup = new Date('2026-09-17T13:50:00Z');
+    const time = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: zone,
+    }).format(wakeup);
+    const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: zone }).format(
+      wakeup,
+    );
+
+    const head = el.querySelector('.card-head')?.textContent ?? '';
+    expect(head).toContain(`asked to be woken at ${time}`);
+    expect(head).not.toContain(`asked to be woken at ${weekday}`);
+  });
+
   // --- the month timeline itself ---------------------------------------
 
   it('draws one dot per month and expands only the newest one', async () => {
@@ -476,6 +515,99 @@ describe('DecisionsView', () => {
       expect(el.textContent).toContain('Bought on the read.');
       expect(el.querySelectorAll('.orders')[0]?.textContent).toContain('read');
       expect(el.querySelectorAll('.orders')[0]?.textContent).toContain('INTC');
+    });
+
+    it('shows what a turn fetched before it answered, and the result under the prompt', async () => {
+      /** 2026-09-17: on the tool channel a read or the candidate screen comes
+       * back inside the same call, not as a further turn, so a one-turn pass
+       * can carry fetches. The summary is visible; the full text is under
+       * "Show the prompt", beside the prompt it was fetched for. */
+      const pass = event({
+        turns: [
+          {
+            prompt: 'the only prompt',
+            response: '{"reasoning": "Holding after reading.", "orders": []}',
+            thinking: null,
+            reasoning: 'Holding after reading.',
+            orders: [],
+            exchanges: [
+              {
+                name: 'read',
+                args: { ticker: 'NVDA', date: '2026-09-08' },
+                result: "NVDA's analysis of 2026-09-08 said Hold: defend below 102.70",
+              },
+              { name: 'candidates', args: {}, result: '- CRWV: CoreWeave at $95.00' },
+              {
+                name: 'read',
+                args: { ticker: 'SMR' },
+                result:
+                  'Not run: the fetch allowance for this pass is spent. Decide with what you have.',
+              },
+            ],
+          },
+        ],
+      });
+      service.eventsByMonth['2026-09'] = [pass];
+      const fixture = TestBed.createComponent(DecisionsView);
+      await fixture.whenStable();
+      const el = fixture.nativeElement as HTMLElement;
+
+      // One row per fetch, in the style of an order row, with a refused one
+      // marked the way a refused order is.
+      const rows = Array.from(el.querySelectorAll('.orders li'));
+      expect(rows[0]?.textContent).toContain('fetched read');
+      expect(rows[0]?.textContent).toContain('NVDA (2026-09-08)');
+      expect(rows[0]?.querySelector('.status-icon--ok')).toBeTruthy();
+      expect(rows[1]?.textContent).toContain('fetched candidates');
+      expect(rows[2]?.textContent).toContain('fetched read');
+      expect(rows[2]?.textContent).toContain('SMR');
+      expect(rows[2]?.querySelector('.side--refused')).toBeTruthy();
+      expect(rows[2]?.textContent).toContain('Not run: the fetch allowance for this pass is spent');
+      expect(el.textContent).not.toContain('defend below 102.70');
+
+      clickButtonContaining(el, 'Show the prompt');
+      await fixture.whenStable();
+
+      expect(el.textContent).toContain('Fetched read NVDA (2026-09-08)');
+      expect(el.textContent).toContain('defend below 102.70');
+      expect(el.textContent).toContain('CRWV: CoreWeave');
+    });
+
+    it('flags a pass the text fallback answered, and only that pass', async () => {
+      /** 2026-09-17: a fallback turn is otherwise identical to a tool turn
+       * that fetched nothing, and the reason was only in the container log. */
+      const fallen = event({
+        id: 1,
+        turns: [
+          {
+            prompt: 'the prompt',
+            response: '{"orders": []}',
+            thinking: null,
+            channel: 'text-fallback',
+          },
+        ],
+      });
+      const fine = event({
+        id: 2,
+        turns: [
+          { prompt: 'the prompt', response: '{"orders": []}', thinking: null, channel: 'tool' },
+        ],
+      });
+      service.eventsByMonth['2026-09'] = [fallen, fine];
+
+      const el = await render();
+      const cards = Array.from(el.querySelectorAll('.card'));
+
+      expect(cards[0]?.textContent).toContain('Answered through the text fallback');
+      expect(cards[1]?.textContent).not.toContain('Answered through the text fallback');
+    });
+
+    it('says nothing about fetching on a pass that fetched nothing', async () => {
+      service.eventsByMonth['2026-09'] = [twoTurns()];
+      const el = await render();
+
+      expect(el.textContent).not.toContain('fetched read');
+      expect(el.textContent).not.toContain('fetched candidates');
     });
 
     it('survives a snapshot written before turns existed', async () => {

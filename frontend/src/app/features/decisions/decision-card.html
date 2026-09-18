@@ -4,7 +4,7 @@
       <strong>{{ when(event().ran_at) }}</strong>
       <span class="muted"> — {{ did(event()) }}</span>
       @if (event().next_wakeup) {
-        <span class="muted"> · asked to be woken at {{ wokenAt(event().next_wakeup!) }}</span>
+        <span class="muted"> · asked to be woken at {{ wokenAt(event()) }}</span>
       }
     </div>
     @if (event().cash !== null) {
@@ -27,6 +27,17 @@
   </div>
 
   <div class="card-body">
+    @if (fellBack(event())) {
+      <!-- The function-calling channel failed on at least one turn and the
+           text channel answered instead. Said here because the record of
+           such a turn is otherwise identical to a turn that fetched nothing,
+           and the reason is only in the container log. -->
+      <p class="hint">
+        <strong>Answered through the text fallback.</strong> The function call to the model failed
+        on at least one turn of this pass, and the answer was read from prose instead. The container
+        log has the reason.
+      </p>
+    }
     <!-- A pass with more than one turn asked more than once — a refusal
          earned a correction, or the agent read an analysis before deciding.
          Each turn gets its own reasoning and its own list of what it asked
@@ -37,6 +48,33 @@
     @if ((event().turns?.length ?? 0) > 1 && turnReasoning(event().turns![0])) {
       @for (turn of event().turns ?? []; track $index) {
         <p class="turn-label">Turn {{ $index + 1 }} of {{ event().turns?.length }}</p>
+        @if (turnExchanges(turn).length) {
+          <!-- What it fetched before answering, on the tool channel: a read,
+               the candidate screen, a ticker's fundamentals. One row each, in
+               the order the agent asked, styled like the orders below since
+               a read used to be one. The full text of each result is under
+               "Show the prompt". -->
+          <ul class="orders">
+            @for (fetched of turnExchanges(turn); track $index) {
+              <li>
+                <span class="side" [class.side--refused]="!fetchRan(fetched)">
+                  <span
+                    class="status-icon"
+                    [class.status-icon--ok]="fetchRan(fetched)"
+                    [class.status-icon--fail]="!fetchRan(fetched)"
+                  ></span
+                  >fetched {{ fetched.name }}
+                </span>
+                @if (fetchTarget(fetched)) {
+                  <strong>{{ fetchTarget(fetched) }}</strong>
+                }
+                @if (!fetchRan(fetched)) {
+                  <span class="muted">{{ fetched.result }}</span>
+                }
+              </li>
+            }
+          </ul>
+        }
         @if (turnReasoning(turn)) {
           <p class="reasoning">{{ turnReasoning(turn) }}</p>
         }
@@ -125,6 +163,28 @@
         }
       }
     } @else {
+      @if (exchangesIn(event()).length) {
+        <ul class="orders">
+          @for (fetched of exchangesIn(event()); track $index) {
+            <li>
+              <span class="side" [class.side--refused]="!fetchRan(fetched)">
+                <span
+                  class="status-icon"
+                  [class.status-icon--ok]="fetchRan(fetched)"
+                  [class.status-icon--fail]="!fetchRan(fetched)"
+                ></span
+                >fetched {{ fetched.name }}
+              </span>
+              @if (fetchTarget(fetched)) {
+                <strong>{{ fetchTarget(fetched) }}</strong>
+              }
+              @if (!fetchRan(fetched)) {
+                <span class="muted">{{ fetched.result }}</span>
+              }
+            </li>
+          }
+        </ul>
+      }
       @if (event().reasoning) {
         <p class="reasoning">{{ event().reasoning }}</p>
       }
@@ -250,6 +310,15 @@
               <app-copy-button [text]="turn.prompt" label="this turn's prompt" />
               <pre class="verbatim">{{ turn.prompt }}</pre>
             </div>
+            <!-- Each fetch's result, verbatim: it reached the model as text
+                 inside the same call, so it is part of what the model saw. -->
+            @for (fetched of turnExchanges(turn); track $index) {
+              <p class="turn-label">Fetched {{ fetchLabel(fetched) }}</p>
+              <div class="verbatim-wrap">
+                <app-copy-button [text]="fetched.result" label="what the fetch returned" />
+                <pre class="verbatim">{{ fetched.result }}</pre>
+              </div>
+            }
             <p class="turn-label">Turn {{ $index + 1 }} — answered</p>
             <div class="verbatim-wrap">
               <app-copy-button [text]="turn.response" label="this turn's answer" />
@@ -261,6 +330,13 @@
             <app-copy-button [text]="event().prompt" label="the prompt" />
             <pre class="verbatim">{{ event().prompt }}</pre>
           </div>
+          @for (fetched of exchangesIn(event()); track $index) {
+            <p class="turn-label">Fetched {{ fetchLabel(fetched) }}</p>
+            <div class="verbatim-wrap">
+              <app-copy-button [text]="fetched.result" label="what the fetch returned" />
+              <pre class="verbatim">{{ fetched.result }}</pre>
+            </div>
+          }
         }
       }
       @if (isOpen('response')) {
