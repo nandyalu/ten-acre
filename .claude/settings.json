@@ -11,6 +11,15 @@
   "hooks": {
     "PostToolUse": [
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
@@ -29,15 +38,6 @@
             "timeout": 8000
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
-            "timeout": 5000
-          }
-        ]
       }
     ],
     "PreToolUse": [
@@ -47,7 +47,7 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/no-foreground-polling.py\"",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
@@ -57,13 +57,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" prompt",
-            "timeout": 15000
-          },
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/context-nudge.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/context-nudge.py\"",
-            "timeout": 5000
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" prompt",
+            "timeout": 15000
           }
         ]
       }
@@ -84,13 +88,28 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" stop",
             "timeout": 8000
-          },
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
-            "timeout": 5000
+            "timeout": 5
           }
         ]
       }
