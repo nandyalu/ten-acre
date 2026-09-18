@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "ten-acre"
 version = "0.1.0"
@@ -23,11 +27,24 @@ dev = [
     "pytest>=8.0",
 ]
 
-[tool.uv]
-package = false
+# The command an installed copy gets. main() loads .env, brings the database
+# schema up to date, then serves. The container runs the same function through
+# `python -m backend.main`.
+[project.scripts]
+ten-acre = "backend.main:main"
 
 [tool.uv.sources]
 tradingagents = { path = "TradingAgents", editable = false }
+
+# The wheel is what `uv tool install` installs, and it is the whole app: the
+# backend package with the built dashboard (backend/web) and the built docs
+# (backend/site) inside it. Both are gitignored build outputs, and hatch skips
+# ignored files unless they are named as artifacts, so build both before
+# `uv build --wheel`. The release workflow does; see docs/deploying.md.
+[tool.hatch.build.targets.wheel]
+packages = ["backend"]
+exclude = ["backend/tests"]
+artifacts = ["backend/web/**", "backend/site/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
