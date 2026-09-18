@@ -6,7 +6,7 @@
 
 | | Why | Can you skip it? |
 |---|---|---|
-| **Docker** | The app ships as one image | No |
+| **Docker** | The recommended way to run it, as one image | Yes. See "Without Docker" below |
 | **Webull sandbox credentials** | The agent's account, and real-time quotes | **No.** The agent refuses to run without them |
 | **The account number to trade** | Names which simulated account this container owns | **No.** Without it the app places no order at all |
 | **A model** | Either a local GPU pool or a hosted API key | No, but either works |
@@ -21,7 +21,7 @@
 
 Nothing else in the design cares which you pick.
 
-## The shortest path
+## Docker, the recommended way
 
 ```sh
 git clone --recurse-submodules https://github.com/nandyalu/ten-acre
@@ -39,6 +39,120 @@ The container applies its own database migrations at startup. There is nothing t
 
 **Then open the dashboard.** A deployment that is not ready sends you to `/setup`, which lists what is still missing and the exact lines to paste for each one. It reports whether a thing is configured and never what it is configured to, so nothing on that page can leak a key. Switching the agent on from the settings page is the last step, and the day you do it becomes day one of the experiment.
 
+## Without Docker
+
+Two more ways run the same code. Both need [uv](https://docs.astral.sh/uv/), the Python tool this project installs with. It fetches Python 3.14 itself if the machine lacks it.
+
+| | Who it is for | Upgrades |
+|---|---|---|
+| **A direct install** | A machine without Docker. One zip, one command | The same command again |
+| **Build and run from a checkout** | You want to change the code, or see every step | Your own work: pull, rebuild, sync, restart |
+
+Both read their settings from a `.env` file. Two lines differ from the compose file, and `.env.example` marks both. Set `WEBULL_SANDBOX=1` yourself, because compose used to set it for you. Point `OLLAMA_BASE_URL` at `localhost`, because `host.docker.internal` only exists inside Docker.
+
+### A direct install
+
+Every release on [GitHub](https://github.com/nandyalu/ten-acre/releases) carries one zip with four files:
+
+- `ten_acre-X.Y.Z-py3-none-any.whl`, the app as a wheel (a zip that uv installs directly), with the dashboard and these docs built in.
+- `tradingagents-…-py3-none-any.whl`, the TradingAgents fork the analysis runs on. It ships here because it is not on PyPI.
+- `constraints.txt`, which pins every dependency to the versions the Docker image uses.
+- `.env.example`, to copy and fill in.
+
+```sh
+unzip ten-acre-v0.1.0.zip && cd ten-acre-v0.1.0
+uv tool install ten-acre --find-links . --constraints constraints.txt
+```
+
+That puts a `ten-acre` command in `~/.local/bin`. If your shell does not find it, run `uv tool update-shell` and open a new shell.
+
+**Everything the app writes goes to one data directory**, `~/.local/share/ten-acre` unless `TEN_ACRE_DATA_DIR` says otherwise: the database, the logs, the journey files, the public snapshot, and its `.env`. The code lives under `~/.local/share/uv/tools/ten-acre`. An upgrade replaces that folder whole, so nothing of yours is ever in it.
+
+```sh
+mkdir -p ~/.local/share/ten-acre
+cp .env.example ~/.local/share/ten-acre/.env
+# fill it in, then run it once in the foreground:
+ten-acre
+```
+
+The first start creates the database and applies every migration. Open `http://localhost:8080`, or the port `API_PORT` names, and the setup page says what is still missing. Stop it with Ctrl+C, then set it up as a service below.
+
+**To upgrade**, download the next release's zip and run the install command with `--reinstall`, then restart the service:
+
+```sh
+uv tool install --reinstall ten-acre --find-links . --constraints constraints.txt
+sudo systemctl restart ten-acre
+```
+
+The migration runs at every start, so the database catches up on its own. **To roll back**, run the same two commands from the older release's zip. The database schema does not roll back with the code. An alembic downgrade is a manual step, the same as with Docker.
+
+### Build and run from a checkout
+
+You build the dashboard and the docs yourself, and you upgrade by hand. You need uv, Node 22 and git.
+
+```sh
+git clone --recurse-submodules https://github.com/nandyalu/ten-acre
+cd ten-acre
+uv sync --locked
+(cd frontend && npm ci && npm run build)   # the dashboard, into backend/web
+uvx zensical==0.0.59 build                 # these docs, into backend/site
+cp .env.example .env
+# fill in .env, then:
+uv run python -m backend.main
+```
+
+A checkout keeps its data in `data/` beside the code, and its `.env` in the repo root. Set `TEN_ACRE_DATA_DIR` to put the data elsewhere.
+
+**To upgrade**, repeat the build and restart:
+
+```sh
+git pull --recurse-submodules
+uv sync --locked
+(cd frontend && npm ci && npm run build)
+uvx zensical==0.0.59 build
+sudo systemctl restart ten-acre
+```
+
+### Running it as a service
+
+A systemd unit (the file that tells Linux to start a program at boot and to restart it when it stops) does for a bare machine what `restart: unless-stopped` does in compose. Give the app its own user. Do the install and the first foreground run as that user, so the command, the data directory and the `.env` all land in that user's home:
+
+```sh
+sudo useradd --create-home --shell /bin/bash ten-acre
+sudo -iu ten-acre
+# as ten-acre: install uv, follow the install steps above, then exit
+```
+
+Save this as `/etc/systemd/system/ten-acre.service`:
+
+```ini
+[Unit]
+Description=Ten Acre, one AI agent trading one simulated book
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ten-acre
+ExecStart=/home/ten-acre/.local/bin/ten-acre
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+For a checkout, change two lines. `WorkingDirectory=` names the clone, and `ExecStart=` becomes `/home/ten-acre/.local/bin/uv run --locked python -m backend.main`.
+
+Then:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now ten-acre
+journalctl -u ten-acre -f
+```
+
+**If you move the data directory, name it in the unit, not in `.env`.** Add `Environment=TEN_ACRE_DATA_DIR=/srv/ten-acre` under `[Service]`. The app finds its `.env` through that variable, so a `.env` cannot set it.
+
 ## Every environment variable
 
 ### Required
@@ -50,7 +164,7 @@ The container applies its own database migrations at startup. There is nothing t
 | `WEBULL_APP_SECRET` | Likewise |
 | `WEBULL_ACCOUNT_ID` | **Which simulated account this container owns**, as the account number (`DE…`) or the internal account id. No default, deliberately — see below |
 | `WEBULL_ACCOUNT_CLASS` | `INDIVIDUAL_CASH`. A cash account refuses a short outright |
-| `WEBULL_OPENAPI_TOKEN_DIR` | Where the exchanged token is cached. Put it on the data volume so a redeploy reuses it |
+| `WEBULL_OPENAPI_TOKEN_DIR` | Where the exchanged token is cached. Put it on the data volume so a redeploy reuses it. Without Docker, a `webull` folder inside the data directory |
 
 **`WEBULL_ACCOUNT_ID` has no default and that is the point.** Three checks already narrow the sandbox's accounts to one — the sandbox flag, the `DE` number prefix, and the account class — and they narrow to the *same* one for every deployment applying the same rule. Two containers would then trade a single book, and afterwards nothing could say which of them placed an order. A default would restore exactly that. Leave it empty and the app places no order at all, which is the honest failure.
 
@@ -90,6 +204,7 @@ The budget and the research price are only defaults for an unset setting — the
 | `LLM_TRACE_DIR` | Writes every LLM call to disk, about 0.4 MB an analysis. A dataset of past runs cannot be collected afterwards, which is why it is on before anyone has decided to train anything |
 | `PUBLIC_MODE` | See "Publishing it" below |
 | `TRADINGAGENTS_MEMORY_LOG_PATH` | **Put this on the data volume.** It defaults inside the container, where a redeploy deletes it — and it holds every past decision plus the reflection written once the outcome was known |
+| `TEN_ACRE_DATA_DIR` | Where the app writes: the database, the logs, the journey files and the public snapshot. Leave it unset. The container uses `/app/data`, a checkout uses `data/`, and an installed copy uses `~/.local/share/ten-acre`, or `$XDG_DATA_HOME/ten-acre` when that is set. See "Without Docker" |
 
 ## Running without a GPU pool
 
@@ -166,6 +281,8 @@ Mount the volume read-write for the public copy. SQLite writes its `-wal` and `-
 ## When something goes wrong
 
 **"pull access denied for trading-experiment"** — the image tag has no registry prefix, so Docker resolves it to Docker Hub. Set `pull_policy: never`.
+
+**`ten-acre: command not found` after a direct install** — uv put the command in `~/.local/bin`, which is not on every PATH. Run `uv tool update-shell` and open a new shell.
 
 **Every analysis fails with "No available vendor"** — the model asked for an indicator that does not exist, three times, and tripped the vendor circuit breaker. Fixed in this repo: bad arguments no longer count as vendor ill-health. If you see it on an older checkout, that is the cause.
 

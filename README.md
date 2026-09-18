@@ -87,7 +87,7 @@ It answers with a list of actions, and Python refuses what cannot be executed as
 4. Open the dashboard. If anything is missing it sends you to **`/setup`**, which names each requirement and shows the lines to paste for it.
 5. Switch the agent on in Settings. **That day becomes day one** — the start date is stamped then and never moves. It starts with an empty watchlist and buys its first research at the next decision pass.
 
-**[Running it yourself](docs/deploying.md) has the full version**, including how to run without a GPU pool and how to publish the site read-only.
+**[Running it yourself](docs/deploying.md) has the full version**, including two ways to run it without Docker (a direct install from a release zip with `uv tool install`, or build and run from a checkout), how to run without a GPU pool, and how to publish the site read-only.
 
 ## Honesty notes
 

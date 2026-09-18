@@ -12,7 +12,7 @@
 | `analysis-output.md` | Tool errors, per-run cost telemetry, invented price levels | `backend/services/analysis.py`, `TradingAgents/tradingagents/agents/**` |
 | `llm-providers.md` | Provider and model switching, Gemini thinking, rate limits and billing | `backend/services/llm_*.py`, `backend/services/analysis.py` |
 | `gpu-pool.md` | The seven-card Ollama pool, concurrency, custom context builds | `ollama/**`, `docs/gpu-*.md`, `backend/services/analysis.py` |
-| `deployment.md` | The two compose files, the static public site, the R2 publisher | `Dockerfile*`, `scripts/**`, `compose.example.yaml`, `backend/services/snapshot_export.py` |
+| `deployment.md` | The two compose files, the static public site, the R2 publisher, the three ways to run it and the one data directory | `Dockerfile*`, `scripts/**`, `compose.example.yaml`, `backend/services/snapshot_export.py`, `backend/paths.py`, `pyproject.toml`, `.github/workflows/**` |
 | `tradingagents-submodule.md` | The fork, its remotes, the cherry-picks, how to move the pin | `TradingAgents/**`, `.gitmodules`, `pyproject.toml` |
 | `market-data.md` | The bar cache, tickers that stop trading, Reddit | `backend/services/bars.py`, `listings.py`, `quotes.py`, `watchdog.py` |
 | `webull.md` | The Webull OpenAPI, combo orders, order history | `backend/services/sandbox_broker.py`, `quotes.py`, `intraday.py` |

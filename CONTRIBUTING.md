@@ -54,11 +54,13 @@ uv sync --extra dev
 uv run pytest backend/tests -q          # backend
 cd frontend && npm install
 npx ng test --watch=false               # frontend
-npx ng build                            # template type-checking
-uvx zensical build                      # the documentation site
+npx ng build                            # template type-checking; writes backend/web
+uvx zensical build                      # the documentation site; writes backend/site
 ```
 
 `--recurse-submodules` matters: `TradingAgents/` is a real submodule and the app does not start without it.
+
+Both build outputs land inside `backend/`, where the app serves them and where a release wheel carries them. Git ignores both folders.
 
 To run the whole thing, see [docs/deploying.md](https://github.com/nandyalu/ten-acre/blob/main/docs/deploying.md). You need Webull sandbox credentials and a model endpoint; both are free, and the app's own `/setup` page tells you what is missing.
 

@@ -2,6 +2,10 @@
 paths:
   - "Dockerfile*"
   - "scripts/**"
+  - ".github/workflows/**"
+  - "backend/paths.py"
+  - "backend/main.py"
+  - "pyproject.toml"
   - "compose.example.yaml"
   - "dockge/**"
   - ".env.example"
@@ -47,3 +51,13 @@ Two copies of the compose config exist and are **not synced automatically**:
 The dashboard runs on **8125**, not the 8080 the template defaults to — the deployed copy sets its own port, the same drift the `environment:` block has. `docker ps` is the authority. The container is named `trading-experiment`.
 
 To inspect the live container: `docker logs trading-experiment`, `docker exec trading-experiment env`. Don't sudo-edit `/opt/stacks/...` directly — hand the user the exact diff/snippet to paste into the Dockge UI instead (their stated preference).
+
+## Three ways to run it, since 2026-09-17
+
+**Docker is the recommended path, and nothing about it changed for the user.** Two more paths exist for a machine without Docker, documented in `docs/deploying.md` under "Without Docker": a direct install from a release zip with `uv tool install`, and build-and-run from a checkout. What holds the three together:
+
+- **`backend/paths.data_dir()` is the one place that decides where the app writes.** `TEN_ACRE_DATA_DIR` wins. Else `<repo>/data` when a `pyproject.toml` sits beside `backend/`, which means a checkout. Else `~/.local/share/ten-acre`, which means an installed copy. The Dockerfile sets the variable to `/app/data`, because `/app` holds no `pyproject.toml`. **Never compute a data path from `__file__` again.** Inside an installed package that lands in `site-packages`, and `uv tool install --reinstall` deletes it with the old code. The four paths that did this until 2026-09-17 were the database, the logs, the journey files and the public snapshot. An installed copy reads its `.env` from the data directory, so that `.env` cannot set `TEN_ACRE_DATA_DIR`; the systemd unit does.
+- **The built dashboard and the built docs live inside the package**, at `backend/web` and `backend/site`. `angular.json`'s `outputPath` and `zensical.toml`'s `site_dir` write there directly. The Dockerfile copies from those places. Hatch packages them into the wheel as `artifacts`, because git ignores them. The `public` Angular configuration names its own `outputPath`, `dist/frontend-public`, so the publisher's build never lands in `backend/web`.
+- **`backend.main:main()` is the one start sequence**: load `.env` (repo root, then the data directory), create the data directory, configure logging, run the alembic upgrade in a subprocess, start uvicorn. The Docker entrypoint is `python -m backend.main` and the installed command is `ten-acre`; both run this function. The migration is a subprocess so alembic's `fileConfig` never replaces this process's log handlers.
+- **`uv sync` in the Dockerfile passes `--no-install-project`.** `pyproject.toml` is a package now, built with hatchling. Without that flag the venv would hold an editable install pointing at the `/build` stage path, which the final image does not have.
+- **A release is `.github/workflows/release.yml`, on a `v*` tag.** The tag must equal `version` in `pyproject.toml`, so bump the version by hand before tagging. The job builds both static outputs, runs `uv build --wheel` for the app and for `TradingAgents/` (the fork is not on PyPI), exports `uv.lock` as a constraints file so the install resolves the same versions as the image, installs the result and starts it once as a smoke test, and attaches one zip to the GitHub release. The zip holds the two wheels, `constraints.txt` and `.env.example`.
