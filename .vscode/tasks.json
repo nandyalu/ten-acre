@@ -4,8 +4,8 @@
         {
             "label": "Build trading-bot Docker image",
             "type": "shell",
-            // Same tag the dockge compose file deploys (image: trading-experiment:local)
-            "command": "docker build -t trading-experiment:local .",
+            // Same tag the docker compose file deploys (image: ten-acre:local)
+            "command": "docker build -t ten-acre:local .",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -21,9 +21,9 @@
             "problemMatcher": []
         },
         {
-            "label": "Stop trading-experiment container",
+            "label": "Stop ten-acre container",
             "type": "shell",
-            "command": "docker stop trading-experiment",
+            "command": "docker stop ten-acre",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -35,16 +35,16 @@
             "problemMatcher": []
         },
         {
-            "label": "Start trading-experiment container",
+            "label": "Start ten-acre container",
             "type": "shell",
             // Resumes the existing container on its current image. It does NOT
             // pick up a freshly built trading-experiment:local — the container
             // was created from a specific image digest (see
             // com.docker.compose.image in `docker inspect`), and `docker start`
-            // does not re-resolve that tag. After "Build trading-bot Docker
-            // image", use "Recreate trading-experiment container" below
+            // does not re-resolve that tag. After "Build ten-acre Docker
+            // image", use "Recreate ten-acre container" below
             // instead, which does re-resolve it.
-            "command": "docker start trading-experiment",
+            "command": "docker start ten-acre",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -56,19 +56,19 @@
             "problemMatcher": []
         },
         {
-            "label": "Recreate trading-experiment container (deploys a rebuilt image)",
+            "label": "Recreate ten-acre container (deploys a rebuilt image)",
             "type": "shell",
             // What "Start" cannot do: recreates the container from whatever
-            // trading-experiment:local currently resolves to, so a rebuilt
+            // ten-acre:local currently resolves to, so a rebuilt
             // image actually takes effect. cwd is the stack's own directory —
             // not ${workspaceFolder} — because compose resolves the sibling
             // .env file, and any relative paths in compose.yaml, against the
-            // directory it is run from. Reads /opt/stacks/trading-experiment/
+            // directory it is run from. Reads /opt/stacks/ten-acre/
             // compose.yaml and .env, both root-owned but world-readable
             // (644); no sudo needed, and this never writes to either file.
             "command": "docker compose up -d",
             "options": {
-                "cwd": "/opt/stacks/trading-experiment"
+                "cwd": "/opt/stacks/ten-acre"
             },
             "presentation": {
                 "reveal": "always",
