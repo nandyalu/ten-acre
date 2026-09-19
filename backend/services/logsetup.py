@@ -23,7 +23,9 @@ import os
 
 from backend import paths
 
-LOG_FILE_NAME = "trading-experiment.log"
+# Renamed from trading-experiment.log on 2026-09-17, with the app. Files under
+# the old name stay in the data directory until their rotation slot is reused.
+LOG_FILE_NAME = "ten-acre.log"
 
 # Ten files of 5 MB. At the volume this app produces — a few hundred lines a
 # day, plus a burst per analysis — that is comfortably more than a month, which
@@ -32,7 +34,7 @@ MAX_BYTES = 5 * 1024 * 1024
 BACKUP_COUNT = 10
 
 # Timestamp, level, logger, message. The logger name is what makes a line
-# searchable: every module here is named trading-experiment.<something>.
+# searchable: every module here is named ten-acre.<something>.
 FORMAT = "%(asctime)s %(levelname)-8s %(name)s %(message)s"
 
 
@@ -61,7 +63,7 @@ def configure(level: int = logging.INFO) -> str | None:
     except OSError:
         # Deliberately not raising. Losing the log is bad; refusing to start
         # because of it is worse.
-        logging.getLogger("trading-experiment.logsetup").exception(
+        logging.getLogger("ten-acre.logsetup").exception(
             "Could not open %s — logging to stdout only", log_file
         )
         return None

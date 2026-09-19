@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from langchain_core.callbacks import BaseCallbackHandler
 
-log = logging.getLogger("trading-experiment.llm_usage")
+log = logging.getLogger("ten-acre.llm_usage")
 
 
 @dataclass

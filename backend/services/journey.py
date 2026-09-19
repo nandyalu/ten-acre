@@ -29,7 +29,7 @@ from backend import paths
 from backend.database import db
 from backend.services import agent_book, research
 
-log = logging.getLogger("trading-experiment.journey")
+log = logging.getLogger("ten-acre.journey")
 
 # How far the book must fall from its best before the fall is worth naming.
 # Below this, ordinary daily movement would litter the story with "drawdown"

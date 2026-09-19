@@ -85,7 +85,7 @@ Small, single-purpose pull requests. If a change needs a `JOURNEY.md` entry, it 
 - **Replay** — re-run a past decision pass against a changed prompt, so a prompt change can be told apart from a market change. Behaviour here is mostly prompt, which makes this the missing measurement.
 - **A backtester** — grade the strategy over history rather than only forward.
 - **A watchlist ageing rule** — nothing currently drops a name the agent has stopped holding and stopped asking about.
-- Bug reports with the log line attached. `docker logs`, or `data/logs/trading-experiment.log` on the volume.
+- Bug reports with the log line attached. `docker logs`, or `logs/ten-acre.log` in the data directory.
 - Anyone who runs their own copy: what broke, and which document lied to you.
 
 ## Licence, and what happens to your code

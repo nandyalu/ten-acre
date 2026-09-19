@@ -59,9 +59,9 @@
 
 ## Deployment in brief
 
-- **One deployment, `trading-experiment`, runs since 2026-09-02.** The dashboard is on port **8125**. `docker ps` is the authority. `docker logs trading-experiment` shows the live container.
-- **The experiment starts on 2026-09-02, not the 1st.** `frontend/src/app/shared/experiment.ts` holds that date as one constant.
-- **The deployed compose file is `/opt/stacks/trading-experiment/compose.yaml` with its `.env`.** It is root-owned and managed in the Dockge UI. Do not edit it with sudo. Give the user the exact snippet to paste into the Dockge compose editor. Every secret is in `.env` and read with `${VAR}`.
+- **One deployment, the container `ten-acre` on image `ten-acre:local`, renamed from `trading-experiment` on 2026-09-17.** The dashboard is on port **8126**. `docker ps` is the authority. `docker logs ten-acre` shows the live container. Its data is a bind mount, `/var/appdata/ten-acre/data` on the host.
+- **The database stamps the start date**, when the agent is first switched on, and this deployment's says 2026-09-10. `frontend/src/app/shared/experiment.ts` holds 2026-09-02 only as the fallback for a site with no API.
+- **The deployed compose file lives in Portainer's stack store, and Portainer manages it.** Do not edit it on disk. Give the user the exact snippet to paste into the Portainer stack editor. Every secret is in the stack's `.env` and read with `${VAR}`.
 - **The public site `ten-acre.nandyalu.com` is static files** on Cloudflare Pages, with the JSON on R2. No server, database or credential is on the public path. `deployment.md` has the details.
 
 ## Markdown conventions

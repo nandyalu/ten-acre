@@ -38,7 +38,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 
 from backend.services import llm_content
 
-log = logging.getLogger("trading-experiment.llm_traces")
+log = logging.getLogger("ten-acre.llm_traces")
 
 # Set to a writable path to record. Unset means record nothing.
 TRACE_DIR = os.environ.get("LLM_TRACE_DIR") or ""

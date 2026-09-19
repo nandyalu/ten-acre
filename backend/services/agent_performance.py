@@ -27,7 +27,7 @@ from backend.services import agent_book, research
 from backend.services.positions import get_shown_price
 from backend.services.signals import BUYISH_DECISIONS, SELLISH_DECISIONS
 
-log = logging.getLogger("trading-experiment.agent_performance")
+log = logging.getLogger("ten-acre.agent_performance")
 
 # How many ways the mechanical follower splits its budget. Equal weight across
 # a handful of names is the plainest rule that is still a strategy — one

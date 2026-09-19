@@ -137,15 +137,15 @@ Both stages take the same value. The model is also a database setting, so the se
 
 ## Logs
 
-The app writes to `data/logs/trading-experiment.log` on the same volume as the database, rotating at 5 MB across ten files — over a month at the volume this produces.
+The app writes to `logs/ten-acre.log` in its data directory, beside the database, rotating at 5 MB across ten files — over a month at the volume this produces. Files written before 2026-09-17 are named `trading-experiment.log`, the app's old name.
 
-It writes to standard output too, so `docker logs trading-experiment` works. **The file exists because that output does not survive the container.** Rebuild the image and every line is gone.
+It writes to standard output too, so `docker logs ten-acre` works. **The file exists because that output does not survive the container.** Rebuild the image and every line is gone.
 
 That loss is not theoretical. Two positions were once found holding no exits, and the run that placed them had already been erased — so why the exits never rested had to be reconstructed from prices and ledger rows instead of read from the line the code had already written.
 
 ```bash
-docker exec trading-experiment tail -f /app/data/logs/trading-experiment.log
-docker exec trading-experiment grep INTC /app/data/logs/trading-experiment.log
+docker exec ten-acre tail -f /app/data/logs/ten-acre.log
+docker exec ten-acre grep INTC /app/data/logs/ten-acre.log
 ```
 
-Every logger is named `trading-experiment.<module>`, so grepping `trading-experiment.agent` gives the decision passes and nothing else.
+Every logger is named `ten-acre.<module>`, so grepping `ten-acre.agent` gives the decision passes and nothing else.

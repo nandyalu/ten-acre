@@ -26,7 +26,7 @@ Nothing else in the design cares which you pick.
 ```sh
 git clone --recurse-submodules https://github.com/nandyalu/ten-acre
 cd ten-acre
-docker build -t trading-experiment:local .
+docker build -t ten-acre:local .
 cp compose.example.yaml compose.yaml
 cp .env.example .env
 # fill in .env, then:
@@ -280,7 +280,7 @@ Mount the volume read-write for the public copy. SQLite writes its `-wal` and `-
 
 ## When something goes wrong
 
-**"pull access denied for trading-experiment"** — the image tag has no registry prefix, so Docker resolves it to Docker Hub. Set `pull_policy: never`.
+**"pull access denied for ten-acre"** — the image tag has no registry prefix, so Docker resolves it to Docker Hub. Set `pull_policy: never`.
 
 **`ten-acre: command not found` after a direct install** — uv put the command in `~/.local/bin`, which is not on every PATH. Run `uv tool update-shell` and open a new shell.
 

@@ -53,7 +53,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 
 from backend.services import llm_throttle
 
-log = logging.getLogger("trading-experiment.llm_gemini")
+log = logging.getLogger("ten-acre.llm_gemini")
 
 _client = None
 _client_lock = threading.Lock()

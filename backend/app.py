@@ -31,7 +31,7 @@ from backend.services import publish, trade_stream
 from backend.services.agent import load_change_notes
 from backend.tasks.scheduler import register_jobs, scheduler
 
-log = logging.getLogger("trading-experiment.app")
+log = logging.getLogger("ten-acre.app")
 
 # The built dashboard and the built docs live inside the package, at
 # backend/web and backend/site. A checkout, the container and an installed

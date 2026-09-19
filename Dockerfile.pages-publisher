@@ -19,7 +19,7 @@ FROM node:22-slim AS frontendbuilder
 #
 #   docker build -f Dockerfile.pages-publisher \
 #     --build-arg SNAPSHOT_BASE_URL=https://data.example.com \
-#     -t trading-experiment-pages-publisher:local .
+#     -t ten-acre-pages-publisher:local .
 #
 # The two must agree. A bundle pointed at the wrong place shows an empty site
 # with no error, so scripts/publish_pages.sh refuses to start when they

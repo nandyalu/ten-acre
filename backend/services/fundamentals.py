@@ -21,7 +21,7 @@ import logging
 
 from backend.services import quotes
 
-log = logging.getLogger("trading-experiment.fundamentals")
+log = logging.getLogger("ten-acre.fundamentals")
 
 # The documented metric keys, with the name the model reads. Order is the
 # order of the table.

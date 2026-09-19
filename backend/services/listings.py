@@ -23,7 +23,7 @@ import logging
 
 from backend.database import db
 
-log = logging.getLogger("trading-experiment.listings")
+log = logging.getLogger("ten-acre.listings")
 
 # Weekdays without a new bar before a ticker is considered to have stopped
 # trading. Generous on purpose: a long holiday weekend plus a data-provider

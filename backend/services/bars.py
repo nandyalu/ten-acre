@@ -34,7 +34,7 @@ from backend.services import intraday, listings
 from backend.services.positions import OhlcBar, drop_incomplete_bars
 from backend.services.watchdog import _MARKET_OPEN, US_MARKET_TZ
 
-log = logging.getLogger("trading-experiment.bars")
+log = logging.getLogger("ten-acre.bars")
 
 # How late the first stored minute of a day may be and still count as covering
 # the session. A bar stamped a few seconds after the bell is the same bar; one

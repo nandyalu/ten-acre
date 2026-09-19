@@ -37,7 +37,7 @@ from backend.services import bars, intraday, listings, ticker_book
 from backend.services.ticker_book import AgentPosition
 from backend.services.signals import price_crossed_target
 
-log = logging.getLogger("trading-experiment.watchdog")
+log = logging.getLogger("ten-acre.watchdog")
 
 US_MARKET_TZ = ZoneInfo("America/New_York")
 _MARKET_OPEN = datetime.time(9, 30)

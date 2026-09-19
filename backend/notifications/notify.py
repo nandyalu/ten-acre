@@ -25,7 +25,7 @@ import urllib.request
 
 from backend.notifications.embed import Embed
 
-log = logging.getLogger("trading-experiment.notify")
+log = logging.getLogger("ten-acre.notify")
 
 # Discord rejects a post whose content exceeds this.
 CONTENT_MAX = 2000

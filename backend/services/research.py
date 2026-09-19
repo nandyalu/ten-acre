@@ -23,7 +23,7 @@ import os
 
 from backend.database import db
 
-log = logging.getLogger("trading-experiment.research")
+log = logging.getLogger("ten-acre.research")
 
 _PRICE_SETTING_KEY = "research_price_usd"
 

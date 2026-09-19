@@ -35,7 +35,7 @@ from backend.database import db
 from backend.services import signals as signals_service
 from backend.database.models import Signal
 
-log = logging.getLogger("trading-experiment.analysis_reader")
+log = logging.getLogger("ten-acre.analysis_reader")
 
 # Enough for the Rating and the Executive Summary, which is where the
 # actionable part of a rationale sits. The whole stored report runs to about

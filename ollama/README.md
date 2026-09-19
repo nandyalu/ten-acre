@@ -278,7 +278,7 @@ The pool logs for these runs hold 83 requests:
 
 ### How this was run, and three traps
 
-- **`propagate_ticker` charges the research budget.** A test inside `trading-experiment` puts a charge in the live agent's ledger. These runs used a copy of `trading.db`, made with SQLite's backup call.
+- **`propagate_ticker` charges the research budget.** A test inside the live container (`ten-acre`) puts a charge in the live agent's ledger. These runs used a copy of `trading.db`, made with SQLite's backup call.
 - **The app finds its database from the location of its own code.** A symlink to `backend/` opens the repository's `data/trading.db`, because the path goes up through the real folder. The code must be a real copy beside the `data` folder.
 - **The repository's `.venv` held an old, non-editable copy of `tradingagents`.** It did not have the parallel analysts or the trawl fetcher. Put `TradingAgents/` first on `PYTHONPATH` for a run on the host, or reinstall the package.
 

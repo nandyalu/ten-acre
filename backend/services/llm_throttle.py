@@ -58,7 +58,7 @@ import time
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
-log = logging.getLogger("trading-experiment.llm_throttle")
+log = logging.getLogger("ten-acre.llm_throttle")
 
 # Attempts per call before the failure is handed back. Each wait is whatever
 # the vendor asked for, so this is a count of refusals tolerated, not a ladder.

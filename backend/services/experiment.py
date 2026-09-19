@@ -28,7 +28,7 @@ import os
 
 from backend.database import db
 
-log = logging.getLogger("trading-experiment.experiment")
+log = logging.getLogger("ten-acre.experiment")
 
 # Written once, the first time the agent is switched on, and never overwritten.
 _SETTING_KEY = "experiment_started_on"

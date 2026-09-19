@@ -38,7 +38,7 @@
             "label": "Start ten-acre container",
             "type": "shell",
             // Resumes the existing container on its current image. It does NOT
-            // pick up a freshly built trading-experiment:local — the container
+            // pick up a freshly built ten-acre:local — the container
             // was created from a specific image digest (see
             // com.docker.compose.image in `docker inspect`), and `docker start`
             // does not re-resolve that tag. After "Build ten-acre Docker

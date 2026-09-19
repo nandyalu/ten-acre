@@ -30,7 +30,7 @@ Logs rotate and a rebuilt container loses stdout. The database is the record.
 **The live one is inside the container.** `data/trading.db` in a working copy is a development database seeded by test runs — it holds tickers like `AAA` and failure text about tests reaching the broker. Do not draw conclusions from it.
 
 ```sh
-docker exec trading-experiment python - <<'EOF'
+docker exec ten-acre python - <<'EOF'
 import sqlite3
 db = sqlite3.connect("/app/data/trading.db")
 def q(label, sql):

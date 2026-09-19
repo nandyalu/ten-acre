@@ -24,7 +24,7 @@ from backend.database import db
 from backend.database.models import IntradayBar
 from backend.services import quotes
 
-log = logging.getLogger("trading-experiment.intraday")
+log = logging.getLogger("ten-acre.intraday")
 
 def experiment_start() -> datetime.datetime:
     """This deployment's own first trading day. Nothing happened before it, so

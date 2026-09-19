@@ -46,7 +46,7 @@ from backend.services.positions import get_current_price
 from backend.services.sizing import get_atr, suggest_position
 from backend.notifications.embed import Color, Embed
 
-log = logging.getLogger("trading-experiment.agent")
+log = logging.getLogger("ten-acre.agent")
 
 _ENABLED_SETTING_KEY = "agent_enabled"
 

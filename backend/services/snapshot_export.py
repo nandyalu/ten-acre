@@ -37,7 +37,7 @@ from backend.api.routes import tickers as tickers_routes
 from backend.api.routes import watchlist as watchlist_routes
 from backend.database import db
 
-log = logging.getLogger("trading-experiment.snapshot_export")
+log = logging.getLogger("ten-acre.snapshot_export")
 
 # Beside journey/, in the data directory that survives a rebuild — this is a
 # generated artifact, not application state, but it still has to survive a

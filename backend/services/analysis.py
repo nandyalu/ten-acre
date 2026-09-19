@@ -40,7 +40,7 @@ from backend.services.signals import (
 )
 from backend.services.sizing import get_atr, suggest_position
 
-log = logging.getLogger("trading-experiment.analysis")
+log = logging.getLogger("ten-acre.analysis")
 
 # Bounds how many analyses (graph.propagate() calls) run at once, regardless
 # of how many callers ask for one concurrently — matches the Ollama pool's

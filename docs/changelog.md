@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-18
+
+- **Setup** — The deployment is named `ten-acre`, after the project: container `ten-acre`, image `ten-acre:local`, log file `ten-acre.log`, and every logger `ten-acre.<module>`. It was `trading-experiment` until 2026-09-17. `compose.example.yaml`, the docs, the VS Code tasks and the rule files use the new name. The rule files also record the move from Dockge to Portainer, the bind-mounted data directory, the dashboard's port, and the start date the database holds. Log files written under the old name stay in the data directory.
+
 ## 2026-09-17
 
 - **Setup** — The app installs without Docker. A new workflow, `.github/workflows/release.yml`, builds a zip on every `v*` tag: the app as a wheel with the dashboard and the docs built in, the TradingAgents fork as a second wheel because it is not on PyPI, a constraints file exported from `uv.lock` so the install resolves the same versions as the image, and `.env.example`. One command installs it, `uv tool install ten-acre --find-links . --constraints constraints.txt`, and the same command with `--reinstall` upgrades it. Docker stays the recommended path, and [Running it yourself](deploying.md) now has all three ways, with a systemd unit for the two without Docker.

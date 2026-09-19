@@ -5,16 +5,16 @@
 # holds no secret and stays safe to commit.
 #
 # Build the image first — it is never pulled:
-#   docker build -t trading-experiment:local .
+#   docker build -t ten-acre:local .
 
 services:
-  trading-experiment:
-    image: trading-experiment:local
+  ten-acre:
+    image: ten-acre:local
     # Never attempt a registry pull. The tag has no registry prefix, so Docker
     # resolves it to Docker Hub and fails with "pull access denied". The image
     # is built locally from this repo and exists only on this host.
     pull_policy: never
-    container_name: trading-experiment
+    container_name: ten-acre
     restart: unless-stopped
     # Lets the container reach a model server running on the host itself.
     extra_hosts:
@@ -137,10 +137,10 @@ services:
   # sidecars even to read, and a read-only mount fails to open the database at
   # all. The guarantee is PUBLIC_MODE, not the mount flag.
   # ---------------------------------------------------------------------------
-  # trading-experiment-public:
-  #   image: trading-experiment:local
+  # ten-acre-public:
+  #   image: ten-acre:local
   #   pull_policy: never
-  #   container_name: trading-experiment-public
+  #   container_name: ten-acre-public
   #   restart: unless-stopped
   #   ports:
   #     # Bound to loopback so a tunnel reaches it and the local network does not.

@@ -25,31 +25,31 @@ If a condition changes over time and you must react to each change, such as each
 
 ## Recipes for this project
 
-The dashboard runs on port 8125. `docker ps` is the authority if that changed.
+The dashboard runs on port 8126. `docker ps` is the authority if that changed.
 
 **Backend tests**
 
 ```sh
-cd /home/kr/projects/trading-helper && timeout 1200 uv run pytest -q backend/tests 2>&1 | tail -15
+cd /home/kr/projects/ten-acre && timeout 1200 uv run pytest -q backend/tests 2>&1 | tail -15
 ```
 
 **Frontend tests and build**
 
 ```sh
-cd /home/kr/projects/trading-helper/frontend && timeout 1200 npx ng test --watch=false 2>&1 | tail -30
-cd /home/kr/projects/trading-helper/frontend && timeout 1200 npx ng build 2>&1 | tail -15
+cd /home/kr/projects/ten-acre/frontend && timeout 1200 npx ng test --watch=false 2>&1 | tail -30
+cd /home/kr/projects/ten-acre/frontend && timeout 1200 npx ng build 2>&1 | tail -15
 ```
 
 **Docker image build**
 
 ```sh
-cd /home/kr/projects/trading-helper && timeout 3600 docker build -t trading-experiment:local . 2>&1 | tail -20
+cd /home/kr/projects/ten-acre && timeout 3600 docker build -t ten-acre:local . 2>&1 | tail -20
 ```
 
 **The container answers again after a restart**
 
 ```sh
-timeout 300 sh -c 'until curl -sf localhost:8125/api/settings >/dev/null; do sleep 5; done' && echo "dashboard is up"
+timeout 300 sh -c 'until curl -sf localhost:8126/api/settings >/dev/null; do sleep 5; done' && echo "dashboard is up"
 ```
 
 **A new analysis or a new decision pass is recorded.** An analysis takes about 18 minutes on the GPU pool. No log line marks the finish, so the script waits for a new row id. Set `WHAT` to `signals` for an analysis, or to `agent/events` for a decision pass.
@@ -57,7 +57,7 @@ timeout 300 sh -c 'until curl -sf localhost:8125/api/settings >/dev/null; do sle
 ```sh
 WHAT=signals timeout 7200 python3 - <<'EOF'
 import json, os, time, urllib.request
-url = f"http://localhost:8125/api/{os.environ['WHAT']}?limit=20"
+url = f"http://localhost:8126/api/{os.environ['WHAT']}?limit=20"
 def rows():
     return json.load(urllib.request.urlopen(url, timeout=30))
 seen = {row["id"] for row in rows()}

@@ -22,7 +22,7 @@ from backend.database import db
 from backend.services import market_calendar, research
 from backend.services.positions import compute_position, get_shown_price
 
-log = logging.getLogger("trading-experiment.agent_book")
+log = logging.getLogger("ten-acre.agent_book")
 
 _BUDGET_SETTING_KEY = "agent_budget"
 # The experiment's stake. $10,000 is what the agent was given on 2026-09-01,

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from backend.database import db
 from backend.services import agent, analysis, quotes, sandbox_broker
 
-log = logging.getLogger("trading-experiment.setup_check")
+log = logging.getLogger("ten-acre.setup_check")
 
 
 @dataclass(frozen=True)

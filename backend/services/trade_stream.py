@@ -27,7 +27,7 @@ import threading
 
 from backend.services import quotes, sandbox_broker
 
-log = logging.getLogger("trading-experiment.trade_stream")
+log = logging.getLogger("ten-acre.trade_stream")
 
 # The events API has its own host and its own resolver, so the sandbox override
 # applied to the REST client (backend/services/quotes.py) does not reach it.
