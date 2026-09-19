@@ -1069,7 +1069,9 @@ def build_prompt(
             f"Recent analyst signals. **Price now** is the price as of {as_of}; "
             "**Day High** and **Day Low** are today's session range so far; "
             "**At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** "
-            "are the analyst's proposed levels, not orders that exist. Rows are newest "
+            "are computed by the app from the verified close and ATR, so the Stop clears "
+            "one day's normal range; they are not orders that exist, and a price inside "
+            "an analyst's text is the analyst's own. Rows are newest "
             "first, and **Analysed** carries the time because a ticker can be analysed "
             "more than once in a day.",
             "",
@@ -2133,10 +2135,19 @@ _FIXED_RULES = [
     "sell something first and put that sell earlier in the list.",
     "- You may only sell shares you hold. No shorting, no options. Whole shares "
     "only.",
-    "- What the analysts' decisions mean: Buy means they expect it to rise. "
-    "Sell means they expect it to fall, so exit it if you hold it. Hold means "
-    "no action is recommended — if you do not own it, a Hold is not a reason "
-    "to buy it.",
+    # **Rewritten 2026-09-19.** The old wording — "Hold means no action is
+    # recommended; if you do not own it, a Hold is not a reason to buy it" —
+    # was written for gemma4:e2b after it bought 98% of the budget on a Hold.
+    # The pipeline defines Hold as "maintain current position", a stance for
+    # someone who already owns the stock, and said Hold or Underweight in 18
+    # of 20 analyses over ten days; the rule left the agent nothing to act on.
+    "- What the analysts' decisions mean: Buy and Overweight mean they expect "
+    "it to rise, Buy with the stronger conviction. Sell and Underweight mean "
+    "they expect it to fall, so exit it if you hold it. Hold means the analyst "
+    "would keep a position they already had; it is not a verdict on opening "
+    "one either way. A Hold that carries an entry, a stop, a target and a "
+    "chance is a plan the trader stage wrote and the manager did not endorse: "
+    "read it, and judge it on those numbers rather than on the word.",
     "- Some signals carry how good the analyst thought the bet was. The chance "
     "of working is their own estimate. Risk/reward compares what is gained if "
     "the target is reached against what is lost if the stop is hit. Expected "
@@ -2167,6 +2178,19 @@ _FIXED_RULES = [
     "a loss before the stop gets to it, and trimming a position that has "
     "grown too large are all yours to decide on any pass. A resting stop is a "
     "floor under a position, not a reason to leave it alone.",
+    # **Nothing said how to size until 2026-09-19.** The one trade of this
+    # deployment's first ten days copied the analyst's "3% to 4% of total
+    # portfolio capital", written for a fund running many positions: 4 shares,
+    # $392 of $10,000, so the best case was about $30. A method, not a cap —
+    # Python still refuses only what cannot be executed as stated, and never
+    # resizes. See the 2026-09-19 entry in JOURNEY.md.
+    "- **Size a position from its stop, not from a percentage.** Decide how "
+    "much of the book you are willing to lose if the stop fires — one to two "
+    "percent is a common frame for a swing trade — and buy the number of "
+    "shares whose distance to the stop adds up to that. An analyst's sizing "
+    "advice such as \"3% to 4% of portfolio capital\" is written for a fund "
+    "that runs many positions at once; it is not advice for this book. The "
+    "size is yours to decide, and your cash is the only limit.",
     "- A buy or a sell defaults to a market order. Add \"order_type\": \"limit\" "
     "and a \"limit_price\" to name your own price instead — a buy fills at "
     "that price or better, a sell at that price or better. Add "

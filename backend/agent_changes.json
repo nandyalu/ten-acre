@@ -94,5 +94,21 @@
   {
     "date": "2026-09-17",
     "message": "The candidate list left your prompt: call candidates to see it, and a new ticker must come from what it returns. read is a function now, beside fundamentals, watchlist and track_record; each answers inside the same call."
+  },
+  {
+    "date": "2026-09-19",
+    "message": "Since 2026-09-17 a buy or sell can be a limit order, GTC if it should wait. A plan to buy on a pullback is a resting limit buy, not a note: your INTC plan of 09-16 to 09-18 was never placed, and the pullback came and went."
+  },
+  {
+    "date": "2026-09-19",
+    "message": "Until today the rules said a Hold was not a reason to buy, and your past passes stayed in cash on Hold signals for that reason. A Hold is the analyst's stance for someone already holding; one that carries a plan is yours to judge."
+  },
+  {
+    "date": "2026-09-19",
+    "message": "Until today nothing told you how to size a position, and your one INTC trade copied the analyst's '3% to 4% of portfolio', written for a fund. Size from the distance to the stop and the loss you accept."
+  },
+  {
+    "date": "2026-09-19",
+    "message": "The Entry, Stop and Target in the signals table are computed by the app from the close and ATR; a price inside the analyst's text is the analyst's own. Your INTC stop at $97.00 came from the text and sat inside one day's range."
   }
 ]

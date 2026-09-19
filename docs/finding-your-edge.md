@@ -27,7 +27,7 @@ The Scorecard grades the analyses. The **Events** page shows what the agent did 
 Those are different questions, and the second is the experiment.
 
 - **Did it use what it was shown?** The prompt names the candidates, the watchlist cost, the resting exits, its own closed trades. A section it never refers to is a section that is not working.
-- **Did it buy on a Hold?** It has, repeatedly, which is why the prompt now spells out that a Hold on something it does not own is not a reason to buy.
+- **Did it buy on a Hold, and on what?** The small local model did, repeatedly, on the word alone, and the prompt forbade it for a while. Since 2026-09-19 the prompt says what the word means instead: the analyst would keep a position they already had, and a Hold that carries an entry, a stop, a target and a chance is a plan to judge on those numbers after reading it. The question is now whether it read the plan or bought the word.
 - **Did it concentrate?** It has put 100% of the book into one name. There is no position-size cap, deliberately: adding one would change what the agent may decide, and that belongs in the journal as its own entry rather than as a quiet fix.
 
 ## Let the regime scale your reading, not your trading

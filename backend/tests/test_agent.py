@@ -384,11 +384,23 @@ def test_the_prompt_says_the_total_is_what_is_capped():
 
 
 def test_the_prompt_defines_what_hold_means():
-    """It bought 98% of the budget into a stock whose only signal was Hold."""
+    """It bought 98% of the budget into a stock whose only signal was Hold, on
+    gemma4:e2b, and the rule said "not a reason to buy". Rewritten 2026-09-19:
+    the pipeline's Hold means "keep what you already hold", and one that
+    carries a plan is judged on the plan's numbers, not on the word."""
     # The fixed rules moved into the system message on 2026-09-10, so
     # "what the agent is told" is both halves of what _ask sends.
     prompt = agent.SYSTEM_PROMPT + agent.build_prompt(_book(), [], {})
-    assert "a Hold is not a reason to buy it" in prompt
+    assert "Hold means the analyst would keep a position they already had" in prompt
+    assert "judge it on those numbers rather than on the word" in prompt
+    assert "not a reason to buy" not in prompt
+
+
+def test_the_prompt_says_how_to_size_a_position():
+    """Nothing did until 2026-09-19, and the one trade copied the analyst's
+    "3% to 4% of portfolio capital", written for a fund: $392 of $10,000."""
+    assert "Size a position from its stop, not from a percentage" in agent.SYSTEM_PROMPT
+    assert "is not advice for this book" in agent.SYSTEM_PROMPT
 
 
 def test_the_prompt_says_a_position_can_be_closed_at_any_time():

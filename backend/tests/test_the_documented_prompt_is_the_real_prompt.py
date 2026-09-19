@@ -91,7 +91,9 @@ def test_the_quoted_opener_is_the_real_one():
 FAILURE_DERIVED = {
     "the total-not-each wording": "Not each — in total.",
     "the sell-to-fund ordering": "so a sell frees its cash for a buy",
-    "the meaning of a Hold": "Hold means no action is",
+    # Rewritten 2026-09-19 for a model that reads rationales; the anchor
+    # moved with it. The lesson it carries is the same: say what the word means.
+    "the meaning of a Hold": "Hold means the analyst would keep",
 }
 
 

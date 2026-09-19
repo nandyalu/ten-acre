@@ -220,8 +220,38 @@ def read(ticker: str, on=None) -> str:
     if not body:
         reply = f"{header}. It recorded no reasoning."
     else:
-        reply = f"{header}:\n{body}"
+        reply = f"{header}:\n{_levels_line(signal)}{body}"
     return f"{reply}\n\n---\n\n{snapshot}" if snapshot else reply
+
+
+def _levels_line(signal) -> str:
+    """One line saying which prices are the app's and which are the analyst's.
+
+    The signals table shows an entry, a stop and a target that ``resolve_levels``
+    computed from the verified close and ATR. The rationale below is the
+    analyst's own prose, and it names prices of its own — "a strict stop-loss
+    just below the 50-day SMA at $97.00". On 2026-09-15 the agent took the
+    text's stop over the table's $89.71, 1.1% under its fill and inside one
+    day's range, and was stopped out in 100 minutes. Neither number is hidden;
+    this says which is which, and leaves the choice where it belongs.
+    """
+    parts = [
+        f"{label} ${value:,.2f}"
+        for label, value in (
+            ("entry", getattr(signal, "entry_price", None)),
+            ("stop", getattr(signal, "stop_loss", None)),
+            ("target", getattr(signal, "price_target", None)),
+        )
+        if value
+    ]
+    if not parts:
+        return ""
+    return (
+        f"Levels: the table's {', '.join(parts)} were computed by the app from the "
+        "verified close and ATR, so the stop clears one day's normal range. A price "
+        "in the text below is the analyst's own; where the two differ, know which "
+        "one you are choosing.\n"
+    )
 
 
 def describe(readings: list[str]) -> list[str]:

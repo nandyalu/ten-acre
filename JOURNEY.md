@@ -24,6 +24,7 @@ Two rules, both learned the hard way elsewhere in this project:
 - **Write it when it happens, not afterwards.** A reason you reconstruct two weeks later is a story about what you would like to have been thinking.
 - **Record what was wrong, not only what worked.** The entries that say "this turned out to be noise" are worth more than the ones that say "this worked". They are what stops someone proposing the same idea again in three weeks.
 
+
 ---
 
 ## What belongs here, and what does not
@@ -49,6 +50,14 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 `CLAUDE.md` and `.claude/rules/agent.md` describe what the rules are. This describes how they got that way. Add an entry here **before** changing a rule, not after.
 
 Newest first.
+
+**2026-09-19 — a Hold is no longer described as "not a reason to buy".** The rule was written for `gemma4:e2b` after it bought 98% of the budget on a Hold, and the model has been `gemini-3.5-flash-lite` since about 2026-09-03. The analysis pipeline defines Hold as "maintain current position", a stance for someone who already owns the stock, and it said Hold or Underweight in 18 of 20 analyses over this deployment's first ten days, so the rule left the agent nothing to act on while INTC's 09-14 "Hold" carried a 2:1 plan and rose 14% in three days. The rule now says what the word means and that a Hold carrying an entry, stop, target and chance is a plan to judge on its numbers, after reading it.
+
+**2026-09-19 — the rules say how to size a position: from the distance to the stop and the loss you accept, not from the analyst's percentage.** Nothing said anything about size before, and the one trade copied the analyst's "3% to 4% of total portfolio capital", written for a fund running many positions: 4 shares, $392 of $10,000. A frame, not a cap; Python still refuses only what cannot be executed as stated, and never resizes.
+
+**2026-09-19 — a read and the signals table both say that the entry, stop and target are computed by the app from the verified close and ATR, and that a price inside the analyst's text is the analyst's own.** The table called them "the analyst's proposed levels". On 2026-09-15 the agent took the text's $97.00 stop over the table's $89.71, 1.1% under its fill and inside one day's range, and was stopped out in 100 minutes.
+
+**2026-09-19 — a change note tells the agent that limit and GTC orders exist.** They arrived on 2026-09-17 with no note, and for five passes the agent planned to buy INTC on a pullback to $100 to $101 without ever resting an order there, while INTC went from $102 to $110.
 
 **2026-09-18 — the final pass before the close fires five minutes before that session's close, from the market calendar, so a half-day gets one at 12:55 PM ET.** It was a fixed 3:55 PM checked by a one-minute tick, which on a 1:00 PM close never came and on any day could land up to a minute late. It is a quiv one-off now, re-armed after each session; the tick is the alarm's backstop only, every five minutes.
 

@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-19
+
+- **Docs** — The "did it buy on a Hold" question in finding-your-edge follows the rule rewrite of the same day (see [the journey](journey.md)): the prompt no longer forbids buying on a Hold, so the question is whether the agent read the plan behind one or bought the word.
+
 ## 2026-09-18
 
 - **Infrastructure** — The backstop tick that re-reads the agent's stored wakeup runs every five minutes, not every minute. It guards only the startup restore of the alarm: quiv 1.0.0's 24-hour soak test covers the rest, and its roadmap keeps durable persistence out, so the restore stays. The final pass moved out of it into its own one-off, five minutes before the close, which is [a journey entry](journey.md). The container log loses about 3,400 lines a day.

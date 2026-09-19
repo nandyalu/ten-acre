@@ -34,6 +34,30 @@ def stored(monkeypatch):
     return rows
 
 
+def test_a_read_says_which_levels_are_the_apps(monkeypatch):
+    """The table's entry, stop and target are computed from the verified close
+    and ATR; the rationale names the analyst's own prices. On 2026-09-15 the
+    agent took the text's $97.00 stop over the table's $89.71 and was stopped
+    out inside one day's range. A read now says which is which, before the
+    text, and says nothing when the signal carries no levels."""
+    planned = _signal(
+        40, "INTC", "2026-09-15", "Overweight", "2026-09-15 16:25:00",
+        rationale="Establish a strict stop-loss at $97.00.",
+    )
+    planned.entry_price, planned.stop_loss, planned.price_target = 98.46, 89.71, 115.96
+    bare = _signal(41, "NVDA", "2026-09-15", "Hold", "2026-09-15 16:25:00")
+    monkeypatch.setattr(
+        analysis_reader.db, "get_recent_signals",
+        lambda ticker=None, limit=10: [r for r in (planned, bare) if r.ticker == ticker],
+    )
+    monkeypatch.setattr(analysis_reader.db, "get_signal_reports", lambda signal_id: {})
+
+    with_plan = analysis_reader.read("INTC")
+    assert "Levels: the table's entry $98.46, stop $89.71, target $115.96" in with_plan
+    assert with_plan.index("Levels:") < with_plan.index("$97.00")
+    assert "Levels:" not in analysis_reader.read("NVDA")
+
+
 def test_the_newest_of_a_day_wins_a_tie(stored):
     """`db.get_recent_signals` orders by `signal_date` alone, which is a
     calendar date, so two analyses of one ticker on one day come back in
