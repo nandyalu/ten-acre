@@ -97,7 +97,7 @@ Three files answer three questions:
 |---|---|
 | `CLAUDE.md` and `.claude/rules/` | What are the rules now, and what reasoning must a future edit not undo? |
 | [JOURNEY.md](JOURNEY.md) | When did the experiment's question change? |
-| [docs/changelog.md](docs/changelog.md) | What changed about the app: deployment, setup, guards, infrastructure, the site, the docs, dependencies? |
+| [docs/changelog.md](docs/changelog.md) | What changed about the app: deployment, setup, guards, infrastructure, the site, the docs, dependencies? The Claude Code tooling in `.claude/` is not the app, and its changes are not recorded. |
 
 **One question decides between the journal and the changelog: does this change make two periods of the experiment non-comparable?** If yes, write it in `JOURNEY.md`. Any one of these tests is enough:
 
@@ -113,7 +113,7 @@ Three files answer three questions:
 
 Every step Claude takes re-reads the whole session. Before 2026-09-13, sessions here ran for days at 400k to 600k tokens, and that was most of the usage.
 
-- **One task per session.** Before you switch to an unrelated task, use the `handoff` skill, then run `/clear`.
+- **One task per session.** Before you switch to an unrelated task, run `/kit:handoff`, then `/clear`, then say "continue from handoff <topic>". The skill comes from the `kit` plugin in [claude-session-kit](https://github.com/nandyalu/claude-session-kit), installed once per machine.
 - **Long work runs in the background.** Use the `wait-in-background` skill. A `PreToolUse` hook refuses a foreground wait loop.
-- **A `UserPromptSubmit` hook reports the session size** above 150k tokens, so Claude can suggest `/clear` when the topic changes. `CONTEXT_NUDGE_TOKENS` changes the threshold.
+- **The `kit` plugin's `UserPromptSubmit` hook reports the session size** above 500k tokens, so Claude can suggest the handoff when the topic changes, and the kit's VS Code usage bar turns to the warning color at the same line. `CONTEXT_NUDGE_TOKENS`, in the `env` block of `~/.claude/settings.json`, changes the hook's threshold.
 - **Keep output short.** Use `graft skeleton`, `tail -20`, or a line range, not a whole file or a whole log.

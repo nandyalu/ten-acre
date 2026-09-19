@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Status line for a terminal session: graft's lines first, then one line of token, prompt cache and cost figures.
-// The VS Code panel does not run a statusLine command. The extension in .claude/vscode-usage-bar/ shows the same figures there.
+// The VS Code panel does not run a statusLine command. The Claude usage bar extension from github.com/nandyalu/claude-session-kit shows the same figures there.
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');

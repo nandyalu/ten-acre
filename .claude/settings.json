@@ -11,15 +11,6 @@
   "hooks": {
     "PostToolUse": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
@@ -57,15 +48,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/context-nudge.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" prompt",
             "timeout": 15000
           }
@@ -88,28 +70,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/graft-hooks.cjs\" stop",
             "timeout": 8000
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/session-usage.py\"",
-            "timeout": 5
           }
         ]
       }

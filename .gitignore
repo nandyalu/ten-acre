@@ -42,8 +42,6 @@ frontend/.angular/
 .claude/settings.local.json
 # The handoff skill's notes between two sessions, one file for each topic. Personal and short-lived.
 .claude/handoffs/
-# Token and cache totals for each Claude Code session, written by .claude/helpers/session-usage.py.
-.claude/usage/
 
 # OS/editor
 .DS_Store
