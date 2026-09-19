@@ -259,3 +259,23 @@ def test_trending_tickers_reads_yahoo_shape(monkeypatch):
 def test_trending_tickers_empty_on_an_unexpected_shape(monkeypatch):
     monkeypatch.setattr(candidates, "_fetch_text", lambda *a, **kw: '{"surprise": true}')
     assert candidates._trending_tickers() == set()
+
+
+def test_text_sources_are_fetched_as_a_browser(monkeypatch):
+    """Yahoo answers Python's default User-Agent with 429 every time (2026-09-18:
+    95 of 95 fetches in a day, each a minute late on the retry) and the same
+    request with a browser's name with 200. QuiverQuant needed the header from
+    the start, and the trending fetch went without it for three days."""
+    seen: dict[str, dict | None] = {}
+
+    def fake_fetch(url, headers=None):
+        seen[url] = headers
+        return '{"finance":{"result":[{"quotes":[]}]}}'
+
+    monkeypatch.setattr(candidates, "_fetch_text", fake_fetch)
+    candidates._trending_tickers()
+    candidates._congress_tickers()
+
+    assert set(seen) == {candidates._TRENDING_URL, candidates._CONGRESS_URL}
+    for url, headers in seen.items():
+        assert headers and headers.get("User-Agent", "").startswith("Mozilla"), url

@@ -126,17 +126,27 @@ _CONGRESS_URL = "https://www.quiverquant.com/congresstrading/"
 # same way, so no separate handling is needed here).
 _CONGRESS_ARRAY_RE = re.compile(r"let recentTradesData = (\[.*?\]);", re.S)
 _TRENDING_URL = "https://query1.finance.yahoo.com/v1/finance/trending/US"
+# Both text sources are fetched as a browser. Yahoo answers a request that
+# carries Python's default User-Agent with 429, every time: on 2026-09-18 it
+# refused 95 of 95 fetches in a day, each after the 60-second retry below,
+# while the same request with a browser's name got 200 from the same host in
+# the same minute. So that 429 is not a rate limit, and a slower pace would
+# not have helped. QuiverQuant needed the header from the start.
+_BROWSER_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
 def _fetch_text(url: str, headers: dict | None = None) -> str | None:
     """One GET, one retry on a 429, capped read. None on any other failure.
 
     The retry-once-on-429 shape matches TradingAgents' reddit.py, in case
-    either of these free feeds turns out to rate-limit the same way Reddit's
-    search feed does from the deployed host. Neither has shown a 429 in
-    testing from this box; if one starts, the fix is a source-specific fallback
-    (a trawl fetch of the same page, or a slower pace), not a shared one —
-    QuiverQuant's page and Yahoo's JSON endpoint have nothing else in common.
+    either of these free feeds rate-limits the way Reddit's search feed does
+    from the deployed host. **A 429 is not always that.** Yahoo's trending
+    feed answered 429 to every request without a browser User-Agent from
+    2026-09-17 on, and the retry only added a minute to each failure — see
+    ``_BROWSER_HEADERS``. Should a real rate limit start, the fix is a
+    source-specific fallback (a trawl fetch of the same page, or a slower
+    pace), not a shared one — QuiverQuant's page and Yahoo's JSON endpoint
+    have nothing else in common.
     """
     req = urllib.request.Request(url, headers=headers or {})
     for attempt in (1, 2):
@@ -157,7 +167,7 @@ def _fetch_text(url: str, headers: dict | None = None) -> str | None:
 
 def _congress_tickers() -> set[str]:
     """Tickers from QuiverQuant's recent congressional-trades table."""
-    body = _fetch_text(_CONGRESS_URL, headers={"User-Agent": "Mozilla/5.0"})
+    body = _fetch_text(_CONGRESS_URL, headers=_BROWSER_HEADERS)
     if body is None:
         return set()
     match = _CONGRESS_ARRAY_RE.search(body)
@@ -180,8 +190,9 @@ def _congress_tickers() -> set[str]:
 
 def _trending_tickers() -> set[str]:
     """Yahoo Finance's public trending-tickers feed. Plain symbols, nothing
-    to parse out of text — the cleanest of the sources tried so far."""
-    body = _fetch_text(_TRENDING_URL)
+    to parse out of text — the cleanest of the sources tried so far. Fetched
+    as a browser, or Yahoo refuses it; see ``_BROWSER_HEADERS``."""
+    body = _fetch_text(_TRENDING_URL, headers=_BROWSER_HEADERS)
     if body is None:
         return set()
     try:

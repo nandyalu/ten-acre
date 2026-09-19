@@ -121,6 +121,28 @@ def test_the_mechanical_rule_cannot_spend_more_than_the_budget(world):
     assert rule.invested <= 1000.0
 
 
+def test_the_spy_baseline_is_priced_from_its_own_bars(monkeypatch):
+    """SPY is never tracked, so the price cache the other read paths use never
+    holds it; its last bar, which already carries today's session, is the
+    current price. From 2026-09-10 to 2026-09-18 this read the cache instead
+    and the site drew no market line at all."""
+    from types import SimpleNamespace
+
+    from backend.services import bars
+
+    monkeypatch.setattr(
+        bars, "get_bars",
+        lambda ticker, start, **kw: [SimpleNamespace(close=100.0), SimpleNamespace(close=110.0)],
+    )
+    monkeypatch.setattr(agent_performance, "get_shown_price", lambda t: None)
+
+    spy = agent_performance._spy_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    assert spy is not None
+    assert spy.equity == pytest.approx(1100.0)
+    assert spy.note == "10.000 shares at $100.00"
+
+
 def test_signals_before_the_agent_started_are_excluded(world):
     """Comparing a strategy that ran a week against one that ran a year says
     nothing, so both baselines start on the agent's first trading day."""

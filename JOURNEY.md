@@ -24,7 +24,6 @@ Two rules, both learned the hard way elsewhere in this project:
 - **Write it when it happens, not afterwards.** A reason you reconstruct two weeks later is a story about what you would like to have been thinking.
 - **Record what was wrong, not only what worked.** The entries that say "this turned out to be noise" are worth more than the ones that say "this worked". They are what stops someone proposing the same idea again in three weeks.
 
-
 ---
 
 ## What belongs here, and what does not
@@ -50,6 +49,8 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 `CLAUDE.md` and `.claude/rules/agent.md` describe what the rules are. This describes how they got that way. Add an entry here **before** changing a rule, not after.
 
 Newest first.
+
+**2026-09-18 — the candidate menu had no Yahoo trending names from the afternoon of 2026-09-17 until this fix.** Yahoo began answering a request with Python's default User-Agent with 429, every time; the same request as a browser gets 200, so the fetch now sends one. Run 32 (2026-09-17, 9:04 AM ET) is the last menu with a trending name, and runs 36 and 37, the next two that called `candidates`, have none. The Webull screens and the congress source were unaffected.
 
 **2026-09-17 — every turn now records which channel answered it: `json`, `tool` or `text-fallback`.** A turn the text fallback answered was otherwise identical in the record to a tool turn that fetched nothing, and the reason lived only in the container log; the first live pass on the tool channel was exactly that, and it took the log to see it. The field is null on every turn before this date. A single-turn pass that fell back now keeps its turn, the Decisions page says "Answered through the text fallback" on the pass, and the Discord post for the pass carries the same line, so a run of fallbacks is visible where someone is looking.
 

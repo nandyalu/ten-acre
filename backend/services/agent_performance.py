@@ -111,11 +111,18 @@ def _spy_strategy(budget: float, since: datetime.date) -> Strategy | None:
     from backend.services import bars
 
     history = bars.get_bars("SPY", since, include_today=True)
-    price_now = get_shown_price("SPY")
-    if not history or price_now is None:
+    if not history:
         log.warning("No SPY history from %s — skipping the buy-and-hold baseline", since)
         return None
+    # **Priced from its own last bar, not the price cache (2026-09-18).** The
+    # cache holds what the watchdog fetches, which is every tracked ticker, and
+    # SPY is never tracked — so ``get_shown_price("SPY")`` was None from
+    # 2026-09-10, when this read moved off the vendor, and the site drew no
+    # market line at all for eight days. ``include_today`` above already
+    # carries the session in progress, so the last bar is as fresh as the cache
+    # would have been, from a request this function was already making.
     entry = history[0].close
+    price_now = history[-1].close
     shares = budget / entry
     return Strategy(
         name="SPY buy-and-hold",
