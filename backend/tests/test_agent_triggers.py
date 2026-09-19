@@ -335,6 +335,9 @@ def wakeup_stub(monkeypatch):
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
     monkeypatch.setattr(scheduler.watchdog, "is_us_market_hours", lambda: True)
     scheduler._last_final_pass = None
+    # The final pass re-arms itself through quiv, which is not running here.
+    monkeypatch.setattr(scheduler, "_arm_final_pass", lambda: None)
+    monkeypatch.setattr(scheduler, "_final_pass_task_id", None)
     return passes
 
 
@@ -377,22 +380,20 @@ def test_the_chosen_time_is_not_blocked_by_the_cooldown(wakeup_stub, monkeypatch
 
 def test_a_final_pass_runs_before_the_close(wakeup_stub, monkeypatch):
     """So no position goes into the night unreviewed."""
-    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 56))
-    monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: None)
+    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 55))
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
 
-    asyncio.run(scheduler._agent_wakeup_job())
+    asyncio.run(scheduler._final_pass_job())
 
     assert wakeup_stub == ["Final"]
 
 
 def test_the_final_pass_runs_once_a_session(wakeup_stub, monkeypatch):
-    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 56))
-    monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: None)
+    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 55))
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
 
-    asyncio.run(scheduler._agent_wakeup_job())
-    asyncio.run(scheduler._agent_wakeup_job())
+    asyncio.run(scheduler._final_pass_job())
+    asyncio.run(scheduler._final_pass_job())
 
     assert wakeup_stub == ["Final"]
 
@@ -400,9 +401,38 @@ def test_the_final_pass_runs_once_a_session(wakeup_stub, monkeypatch):
 def test_the_final_pass_is_skipped_after_a_recent_pass(wakeup_stub, monkeypatch):
     """The agent asked to be woken at 3:45 on 2026-09-04 and was woken again at
     3:56. Two passes eleven minutes apart said the same thing."""
+    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 55))
+    monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: True)
+
+    asyncio.run(scheduler._final_pass_job())
+
+    assert wakeup_stub == []
+
+
+def test_the_final_pass_re_arms_itself_whether_or_not_it_ran(wakeup_stub, monkeypatch):
+    """A one-off deletes itself when it fires. If the job only re-armed after a
+    pass it ran, one skipped session would be the last final pass ever."""
+    armed = []
+    monkeypatch.setattr(scheduler, "_arm_final_pass", lambda: armed.append(True))
+    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 55))
+    monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: True)
+
+    asyncio.run(scheduler._final_pass_job())
+    assert wakeup_stub == []
+    assert len(armed) == 1
+
+    monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
+    asyncio.run(scheduler._final_pass_job())
+    assert wakeup_stub == ["Final"]
+    assert len(armed) == 2
+
+
+def test_the_backstop_tick_no_longer_runs_the_final_pass(wakeup_stub, monkeypatch):
+    """Since 2026-09-18 the final pass is its own one-off, on the second and on
+    half-days too; the five-minute tick only re-reads the stored wakeup."""
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 56))
     monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: None)
-    monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: True)
+    monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
 
     asyncio.run(scheduler._agent_wakeup_job())
 
@@ -424,12 +454,13 @@ def test_the_agent_is_woken_outside_market_hours_when_it_asked(wakeup_stub, monk
 
 def test_no_final_pass_while_the_market_is_shut(wakeup_stub, monkeypatch):
     """The end-of-day pass belongs to a session. Outside one there is no close
-    to run before."""
+    to run before — the one-off firing late, after a stall, must not start a
+    "final" pass that reviews nothing."""
     monkeypatch.setattr(scheduler.watchdog, "is_us_market_hours", lambda: False)
-    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 56))
-    monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: None)
+    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(16, 20))
+    monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
 
-    asyncio.run(scheduler._agent_wakeup_job())
+    asyncio.run(scheduler._final_pass_job())
 
     assert wakeup_stub == []
 

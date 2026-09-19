@@ -365,9 +365,9 @@ A handful of jobs still run on a clock; everything else is the agent's own choic
 | Time | What happens |
 |---|---|
 | 12:45 | **Regime snapshot** — VIX, SPY vs its 200-day average, and the 10Y–3M yield spread, shown as 🟢/🟡/🔴 |
-| 13:00 | **Earnings check** — runs a fresh analysis for any tracked ticker that reports within 2 days |
-| 13:30–20:00 (9:30–16:00 ET) | **Watchdog**, every 15 minutes — flags a move of 5% or more, volume at 2x the average or more, a stop breach, or a target touch. Big moves and volume spikes also trigger an immediate analysis, at most one per ticker per day |
-| 15:55 ET | **Final pass** — the agent is asked once more before the close, whatever it asked for, so no position goes into the night unreviewed |
+| 13:00 | **Earnings check** — if a tracked ticker reports within 2 days, the agent is woken and told. Nothing is analysed unless it asks |
+| 13:30–20:00 (9:30–16:00 ET) | **Watchdog**, every 15 minutes — flags a move of 5% or more, volume at 2x the average or more, a stop breach, or a target touch. A big move or a volume spike wakes the agent, which decides whether it is worth paying to study |
+| 5 min before the close (15:55 ET; 12:55 on a half-day) | **Final pass** — the agent is asked once more before the close, whatever it asked for, so no position goes into the night unreviewed |
 | 21:30 | **Daily grading** — grades and posts matured signals, then rewrites the journal. Stays after the close because grading reads the day's closing price |
 | Fri 23:00 | **Weekly digest** — the week's outcomes, the win-rate trend, alerts, and the book |
 

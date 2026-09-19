@@ -33,9 +33,11 @@ from backend.services.market_calendar import (  # noqa: F401
 MIN_WAKEUP = datetime.timedelta(minutes=5)
 MAX_WAKEUP = datetime.timedelta(days=4)
 
-# The last pass of the day, five minutes before the close. It runs whatever the
-# agent asked for, so no position goes into the night unreviewed.
-FINAL_PASS = datetime.time(15, 55)
+# The last pass of the day, this long before the close. It runs whatever the
+# agent asked for, so no position goes into the night unreviewed. A lead, not a
+# clock time, since 2026-09-18: it was ``time(15, 55)``, which on a 1:00 PM
+# half-day fell after the close, so those days never had one.
+FINAL_PASS_LEAD = datetime.timedelta(minutes=5)
 
 
 def now_et(now: datetime.datetime | None = None) -> datetime.datetime:
@@ -69,6 +71,18 @@ def next_open(now: datetime.datetime | None = None) -> datetime.datetime:
     while not is_trading_day(candidate.date()):
         candidate += datetime.timedelta(days=1)
     return candidate
+
+
+def next_final_pass(now: datetime.datetime | None = None) -> datetime.datetime:
+    """The next instant ``FINAL_PASS_LEAD`` before a session's close, strictly
+    after ``now``. Today's, if today is a session and it is still ahead;
+    otherwise the next session's, half-days and holidays included."""
+    here = now_et(now)
+    if is_trading_day(here.date()):
+        candidate = close_today(here) - FINAL_PASS_LEAD
+        if candidate > here:
+            return candidate
+    return close_today(next_open(here)) - FINAL_PASS_LEAD
 
 
 def describe(now: datetime.datetime | None = None) -> str:

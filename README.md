@@ -41,16 +41,16 @@ When something needs correcting, the route is deliberate: write down what change
 | Time (UTC) | What runs |
 |---|---|
 | 12:45 | The market regime line — VIX, SPY against its 200-day average, the yield curve |
-| 13:00 | Earnings check, which analyses anything reporting soon |
+| 13:00 | Earnings check: if a tracked ticker reports within two days, the agent is woken and told. Nothing is analysed unless it asks |
 | **whenever it asked** | **The agent sets every one of its own passes.** It names the next time, and that time becomes a real alarm. Minimum 5 minutes, maximum 4 days, any hour |
-| **15:55 ET** | A last pass before the close, if it has not just had one. Read off the Eastern close rather than the clock above, so it does not drift by an hour twice a year |
+| **5 min before the close** | A last pass before the close, if it has not just had one: 3:55 PM ET, or 12:55 PM on a half-day. Read off the Eastern close rather than the clock above, so it does not drift by an hour twice a year |
 | every 15 min | The watchdog: big moves, volume spikes, breached stops, reached targets |
 | 21:30 | Grading, then the journal is rewritten |
 | Fri 23:00 | The weekly digest: the week's outcomes, the win-rate trend, and the book |
 
 **Nothing is analysed on a schedule, holdings included.** There was a morning sweep that analysed the whole watchlist every day; it ended on 2026-09-08. The agent now commissions each analysis itself, pays $0.05 for it, and gets it back within the hour. What the table above still holds is the small set of things a clock is genuinely better at than a decision: a macro reading, an earnings calendar check, a price watchdog, and the grading of past calls.
 
-The one row that overrides the agent is 20:55 — a final pass before the close, whatever time the agent asked for, so no position goes into the night unreviewed.
+The one row that overrides the agent is the final pass, five minutes before the close — whatever time the agent asked for, so no position goes into the night unreviewed.
 
 ## What the agent may do
 

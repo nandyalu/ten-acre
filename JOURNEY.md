@@ -50,6 +50,8 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-18 — the final pass before the close fires five minutes before that session's close, from the market calendar, so a half-day gets one at 12:55 PM ET.** It was a fixed 3:55 PM checked by a one-minute tick, which on a 1:00 PM close never came and on any day could land up to a minute late. It is a quiv one-off now, re-armed after each session; the tick is the alarm's backstop only, every five minutes.
+
 **2026-09-18 — the candidate menu had no Yahoo trending names from the afternoon of 2026-09-17 until this fix.** Yahoo began answering a request with Python's default User-Agent with 429, every time; the same request as a browser gets 200, so the fetch now sends one. Run 32 (2026-09-17, 9:04 AM ET) is the last menu with a trending name, and runs 36 and 37, the next two that called `candidates`, have none. The Webull screens and the congress source were unaffected.
 
 **2026-09-17 — every turn now records which channel answered it: `json`, `tool` or `text-fallback`.** A turn the text fallback answered was otherwise identical in the record to a tool turn that fetched nothing, and the reason lived only in the container log; the first live pass on the tool channel was exactly that, and it took the log to see it. The field is null on every turn before this date. A single-turn pass that fell back now keeps its turn, the Decisions page says "Answered through the text fallback" on the pass, and the Discord post for the pass carries the same line, so a run of fallbacks is visible where someone is looking.

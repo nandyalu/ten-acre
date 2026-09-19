@@ -280,6 +280,11 @@ _early_wake_label: str | None = None
 _pass_lock = asyncio.Lock()
 
 WAKEUP_TASK_NAME = "agent_wakeup_alarm"
+FINAL_PASS_TASK_NAME = "agent_final_pass"
+
+# The pending one-off for the next session's final pass. In memory for the same
+# reason as _wakeup_task_id; _arm_final_pass rebuilds it at startup.
+_final_pass_task_id: str | None = None
 
 
 def _replace_wakeup_alarm(when: datetime.datetime | None) -> None:
@@ -337,8 +342,8 @@ def restore_wakeup_alarm() -> None:
 
     ``agent.wakeup_due`` supplies the fallback when the stored wakeup is missing
     or unreadable, so an agent with no usable time still gets asked at the next
-    open. The one-minute tick is the second guard: if this ever fails silently,
-    it notices within a minute.
+    open. The five-minute tick is the second guard: if this ever fails silently,
+    it notices within five minutes.
     """
     runs = agent.db.get_agent_runs(limit=1)
     wanted = runs[0].next_wakeup if runs else None
@@ -520,100 +525,49 @@ async def _run_agent_pass_locked(label: str) -> None:
 
 
 async def _agent_wakeup_job() -> None:
-    """The backstop, and the last pass before the close.
+    """The backstop for the alarm, every five minutes. Not the mechanism.
 
-    **The alarm is the mechanism now.** The agent's chosen time goes to quiv as
-    a one-off task, which fires to the second. This tick exists because that
-    alarm lives in a temporary file a restart deletes, and it is rebuilt at
-    startup by ``restore_wakeup_alarm``. If that restore ever fails silently the
-    agent would never wake again, so this notices within a minute and runs the
-    pass itself.
+    **The alarm is the mechanism.** The agent's chosen time goes to quiv as a
+    one-off task, ``_replace_wakeup_alarm``, and it fires to the second. But
+    quiv keeps its tasks in a temporary SQLite file that a shutdown deletes,
+    by design — durable persistence was reviewed again for quiv 1.0.0 on
+    2026-09-17 and stays out — so nothing it holds survives a restart. The
+    wakeup therefore lives in the database, on the run that asked for it, and
+    ``restore_wakeup_alarm`` rebuilds the alarm from that row at startup.
 
-    In normal operation it finds nothing: the alarm has already run the pass and
-    written the next wakeup, so ``wakeup_due`` returns None.
+    This tick re-reads the same row. If the restore ever set nothing, or set a
+    wrong time, nothing else would wake the agent again, and it would look like
+    one choosing to sit still. In normal operation it finds nothing: the alarm
+    has already run the pass and written the next wakeup, so ``wakeup_due``
+    returns None.
 
-    **Polled rather than scheduled, and the reason is durability.**
-
-    An earlier version of this comment said quiv cannot schedule a one-off
-    task. That is wrong: ``add_task(..., run_once=True, delay=n)`` fires once,
-    at a time of your choosing, to the second.
-
-    The real objection is that quiv keeps its tasks in a temporary SQLite file
-    that is deleted on shutdown, so nothing it holds survives a restart. A
-    one-off alarm set on Friday for Monday's open disappears the moment the
-    container is rebuilt — which happens most days here. Nothing else would
-    wake the agent, and that is the silent stop ``agent.wakeup_due`` exists to
-    prevent.
-
-    The wakeup lives in the database instead, on the run that asked for it,
-    and this tick re-reads it. A restart loses nothing.
-
-    The cost is being up to a minute late. A pass takes about a minute of GPU
-    to think, and the agent asks for gaps of fifteen minutes and up, so the
-    error is smaller than the thing it is scheduling.
-
-    **A one-off would be exact, and it needs less machinery than an earlier
-    version of this comment claimed.** quiv deletes a ``run_once`` task after it
-    fires, so there is nothing to cancel, and tasks are independent, so there is
-    nothing to replace. Two additions would do it: restore a pending alarm at
-    startup, and add one after each pass.
-
-    The one real complication is that a pass can run before its own alarm — an
-    event-driven run, or a watchdog trigger. Friday has an example: the pass at
-    17:00 superseded an alarm set for 17:12, which would still have fired. The
-    fix is for the task to check whether it is still the newest run's wakeup,
-    and that check is this function.
-
-    So the choice is sixty seconds against one new way to never wake up: the
-    startup restore. Nothing here needs sub-minute timing. If it ever does,
-    keep this tick as the backstop and add the one-offs on top, so a missed
-    restore costs a minute rather than the experiment.
-
-    The final pass is decided against the real Eastern close rather than a
-    fixed UTC time, so it does not drift by an hour twice a year the way the
-    other jobs here do.
+    **Five minutes since 2026-09-18; it was one.** quiv's 24-hour soak test
+    before 1.0.0 covers the case where it holds a task and never fires it,
+    which leaves our own restore as the only thing this guards. A missed
+    restore now costs at most five minutes, on a failure that has not happened,
+    and the log lost three lines a minute. Until the same date this job also
+    ran the last pass before the close, from a fixed 3:55 PM; that is its own
+    one-off now, ``_arm_final_pass``, so it fires on the second and a half-day
+    gets one too.
 
     **No cooldown on this path.** The cooldown exists to stop the watchdog
     re-planning a book that has barely moved. The agent choosing its own time
     is the opposite case: it named that moment, and overriding it would make
     the tool a suggestion.
+
+    **No market-hours gate either.** The agent sets its own times, and a pass
+    outside the session can still read, research and plan. The one fact the
+    old gate's docstring carried is worth keeping: Webull rejects a market
+    order outside the session outright
+    (``CAN_NOT_TRADING_FOR_FIXGW_NOT_READY_NIGHT``), so an order sent then
+    comes back as a broker failure, which the next prompt shows the agent.
     """
-    global _last_final_pass
     if not agent.is_enabled():
         return
-    now = market_clock.now_et()
-
-    # **The market-hours gate is gone.** The agent sets its own times now, and
-    # the fixed 13:35 pass that used to be the only entry point is removed.
-    #
-    # That job's docstring carried a fact worth keeping: Webull rejects a
-    # market order outside the session outright
-    # (``CAN_NOT_TRADING_FOR_FIXGW_NOT_READY_NIGHT``). An agent woken at
-    # 3am can still read, research and plan; an order it sends then comes back
-    # as a broker failure, which the next prompt shows it.
-    #
-    # The morning analyses have to be
-    # commissioned before the day starts, and that is a timing decision the
-    # agent can make for itself. It is told the market is shut, the broker
-    # refuses an order while it is, and that refusal reaches the next prompt.
-    due = agent.wakeup_due(now)
+    due = agent.wakeup_due(market_clock.now_et())
     if due is not None:
         log.info("Agent asked to be woken at %s", due.strftime("%a %-I:%M %p"))
         await _run_agent_pass("Wakeup")
-        return
-
-    # A last look before the close, but only if the agent has not just had
-    # one. It used to run whatever the agent asked, which on 2026-09-04 meant
-    # two passes eleven minutes apart.
-    if (
-        watchdog.is_us_market_hours()
-        and now.time() >= market_clock.FINAL_PASS
-        and _last_final_pass != now.date()
-        and not _ran_recently(now)
-    ):
-        _last_final_pass = now.date()
-        log.info("Final pass of the session")
-        await _run_agent_pass("Final")
 
 
 def _ran_recently(now: datetime.datetime, within=datetime.timedelta(minutes=30)) -> bool:
@@ -636,6 +590,65 @@ def _ran_recently(now: datetime.datetime, within=datetime.timedelta(minutes=30))
 
 def agent_wakeup() -> None:
     run_on_main(_agent_wakeup_job)
+
+
+def _arm_final_pass() -> None:
+    """Set the one-off for the next session's final pass, replacing any pending
+    one — the same shape as ``_replace_wakeup_alarm``, for the same reasons.
+
+    The time comes from ``market_clock.next_final_pass``: five minutes before
+    that session's close, so a 1:00 PM half-day gets a 12:55 pass where the
+    fixed 3:55 PM inside the old tick gave it none. Called at startup, because
+    a restart deletes quiv's copy, and again by ``_final_pass_job`` once it has
+    fired, whether or not it ran a pass.
+    """
+    global _final_pass_task_id
+    if _final_pass_task_id is not None:
+        try:
+            scheduler.remove_task(_final_pass_task_id)
+        except Exception:
+            # Already fired and deleted itself, which is the ordinary case.
+            log.debug("No pending final-pass task to remove")
+        _final_pass_task_id = None
+    when = market_clock.next_final_pass()
+    _final_pass_task_id = scheduler.add_task(
+        task_name=FINAL_PASS_TASK_NAME, func=agent_final_pass, run_at=when, run_once=True
+    )
+    log.info("Final pass set for %s", when.strftime("%a %-I:%M %p"))
+
+
+def agent_final_pass() -> None:
+    """quiv's entry point for the final pass. Runs on a worker thread."""
+    run_on_main(_final_pass_job)
+
+
+async def _final_pass_job() -> None:
+    """A last look before the close, then re-arm for the next session.
+
+    Skipped, but still re-armed, when the agent has just had a pass: it used to
+    run whatever the agent asked, which on 2026-09-04 meant two passes eleven
+    minutes apart. Skipped too when the session is already over, which can only
+    mean the one-off fired late after a stall — a "final" pass after the close
+    reviews nothing. The date guard is belt to ``_ran_recently``'s braces: one
+    final pass a session, however the one-off came to fire twice.
+    """
+    global _final_pass_task_id, _last_final_pass
+    _final_pass_task_id = None  # it has fired; quiv has deleted its row
+    try:
+        if not agent.is_enabled():
+            return
+        now = market_clock.now_et()
+        if not watchdog.is_us_market_hours():
+            log.info("Final pass skipped — the session is over")
+            return
+        if _last_final_pass == now.date() or _ran_recently(now):
+            log.info("Final pass skipped — the agent has just had a pass")
+            return
+        _last_final_pass = now.date()
+        log.info("Final pass of the session")
+        await _run_agent_pass("Final")
+    finally:
+        _arm_final_pass()
 
 
 async def _daily_signals_job() -> None:
@@ -821,11 +834,12 @@ def register_jobs() -> None:
     in-memory/temp-file affair (see quiv's own docs), nothing persists
     across restarts.
 
-    **That last sentence is why `restore_wakeup_alarm` is here.** The agent's
-    next wakeup is a one-off quiv task, so a restart deletes it. Rebuilding it
-    from the database is what keeps the agent running across a redeploy, and
+    **That last sentence is why `restore_wakeup_alarm` and `_arm_final_pass`
+    are here.** The agent's next wakeup and the session's final pass are
+    one-off quiv tasks, so a restart deletes both. Rebuilding the first from
+    the database is what keeps the agent running across a redeploy, and
     skipping it would leave an agent that never wakes and reports nothing
-    wrong."""
+    wrong; the second is recomputed from the market calendar."""
     global _main_loop
     # register_jobs is called from app.py's lifespan, which is a coroutine, so
     # the running loop is the one every async job will use. A worker thread
@@ -843,7 +857,9 @@ def register_jobs() -> None:
     scheduler.add_task(task_name="morning_regime", func=morning_regime, interval=86400, run_at=_next_utc_time(12, 45))
     scheduler.add_task(task_name="weekly_digest", func=weekly_digest, interval=86400, run_at=_next_utc_time(23, 0))
     # The backstop for the alarm, not the alarm itself. See _agent_wakeup_job.
-    scheduler.add_task(task_name="agent_wakeup", func=agent_wakeup, interval=60)
+    scheduler.add_task(task_name="agent_wakeup", func=agent_wakeup, interval=300)
+    # The last pass before the close, at its own time. See _arm_final_pass.
+    _arm_final_pass()
     # Last, so the agent's alarm is rebuilt only once everything it may need is
     # registered — a restored wakeup can be due immediately.
     restore_wakeup_alarm()

@@ -25,6 +25,11 @@ def production(monkeypatch):
 @pytest.fixture
 def sandbox(monkeypatch):
     monkeypatch.setenv("WEBULL_SANDBOX", "1")
+    # backend/main.py loads the developer's .env, and one naming the margin
+    # account (WEBULL_ACCOUNT_CLASS) made the cash-account tests below look
+    # for the wrong class. A test states the class it needs, or gets the
+    # default.
+    monkeypatch.delenv("WEBULL_ACCOUNT_CLASS", raising=False)
 
 
 @pytest.mark.parametrize(
