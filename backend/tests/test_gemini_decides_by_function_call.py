@@ -473,6 +473,20 @@ def test_a_fetch_that_fails_returns_its_failure_as_text(monkeypatch):
     assert _context().fetch("no_such", {}) == "There is no fetch named no_such."
 
 
+def test_fundamentals_are_fetched_once_per_pass_and_ticker(monkeypatch):
+    """Two Yahoo reads a ticker; a pass that asks twice pays once."""
+    calls = []
+    monkeypatch.setattr(agent.fundamentals, "describe", lambda ticker: calls.append(ticker) or f"figures for {ticker}")
+    context = _context()
+
+    assert context.fetch("fundamentals", {"ticker": "aapl"}) == "figures for AAPL"
+    assert context.fetch("fundamentals", {"ticker": "AAPL"}) == "figures for AAPL"
+    assert context.fetch("fundamentals", {"ticker": "INTC"}) == "figures for INTC"
+
+    assert calls == ["AAPL", "INTC"]
+    assert context.budget["fundamentals"] == {"AAPL": "figures for AAPL", "INTC": "figures for INTC"}
+
+
 def test_candidates_are_screened_once_per_pass_and_define_the_universe(monkeypatch):
     calls = []
     menu = [SimpleNamespace(ticker="CRWV", name="CoreWeave", price=95.0, volume=12_000_000.0,

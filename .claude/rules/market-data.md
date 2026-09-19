@@ -13,7 +13,7 @@ paths:
 
 **Webull first, yfinance as fallback (2026-09-08).** `bars._fetch_history` tries `_fetch_from_webull` (the same history-bar endpoint `backend/services/intraday.py` uses for 1-minute bars, called here with `Timespan.D`) and falls through to `_fetch_from_yfinance` only when that returns `None` — Webull not configured, the call failing, or coming back empty. Confirmed live: the endpoint pages back daily bars with no real depth ceiling, over 2,000 bars deep in testing. yfinance is not removed — it is what already produces this app's "possibly delisted" false positives and 429s, and a Webull outage must not take the whole daily cache down with it.
 
-Two legitimate direct yfinance uses remain, neither of them history: `positions.get_current_price` (a live quote, Webull's fallback) and `watchdog.get_next_earnings_date` (the calendar).
+Three legitimate direct yfinance uses remain, none of them history: `positions.get_current_price` (a live quote, Webull's fallback), `watchdog.get_next_earnings_date` (the calendar), and `fundamentals.describe` (`Ticker.info` and the quarterly income statement, for the agent's `fundamentals` fetch, since 2026-09-19). The last one is on yfinance because the Webull sandbox host has no route for its `/openapi/fundamentals/` family: every call answered "404 Route Not Found". Do not add a client against Webull's production host for it; that would be the first live-host code in the repo, and nobody has approved a production call.
 
 Non-obvious rules the cache depends on:
 

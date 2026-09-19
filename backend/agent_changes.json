@@ -110,5 +110,9 @@
   {
     "date": "2026-09-19",
     "message": "The Entry, Stop and Target in the signals table are computed by the app from the close and ATR; a price inside the analyst's text is the analyst's own. Your INTC stop at $97.00 came from the text and sat inside one day's range."
+  },
+  {
+    "date": "2026-09-19",
+    "message": "fundamentals answers now: a ticker's ratios and last four quarters from Yahoo Finance, the analyst counts from the vendor. Until today two of its three blocks failed on every call. The industry rank is gone; sector and industry are named."
   }
 ]

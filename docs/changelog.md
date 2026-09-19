@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-19
 
+- **Market data** — The `fundamentals` fetch reads Yahoo Finance for a ticker's ratios and its last four quarters, through the same `yf_retry` as the bar cache. Webull's sandbox host has no route for the `/openapi/fundamentals/` family, so the financial indicators and the industry comparison had answered 404 on every call since 2026-09-17. The analyst rating stays on Webull. What the agent sees now is [a journey entry](journey.md).
 - **Docs** — The "did it buy on a Hold" question in finding-your-edge follows the rule rewrite of the same day (see [the journey](journey.md)): the prompt no longer forbids buying on a Hold, so the question is whether the agent read the plan behind one or bought the word.
 
 ## 2026-09-18

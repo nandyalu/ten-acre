@@ -272,10 +272,10 @@ FETCHES: list[dict] = [
     {
         "name": "fundamentals",
         "description": (
-            "Key ratios for a ticker from its last reports (return on equity, net "
-            "margin, debt to assets, earnings per share), where it ranks against "
-            "its industry, and the analyst consensus. From the market data vendor, "
-            "not from an analysis."
+            "A ticker's sector and industry, its key ratios (market cap, PE, PEG, "
+            "price to book, margins, return on equity, debt to equity, free cash "
+            "flow), its last four quarters of revenue, income and EPS, and the "
+            "analyst consensus counts. From the data vendors, not from an analysis."
         ),
         "parameters_json_schema": _ONE_TICKER,
     },

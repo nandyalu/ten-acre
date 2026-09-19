@@ -1,43 +1,47 @@
-"""The ``fundamentals`` fetch renders the vendor's documented payloads, and
-says so when one is missing. Pure: the payloads are the shapes Webull's
-docs describe, and no call leaves the test.
+"""The ``fundamentals`` fetch renders what Yahoo Finance and Webull send, and
+says so when a block is missing. Pure: the payloads are the shapes the two
+vendors return, and no call leaves the test.
 """
 from types import SimpleNamespace
 
+import pandas as pd
+
 from backend.services import fundamentals
 
-INDICATORS = {
-    "currency": "USD",
-    "values": {
-        "roe": [
-            {"fiscal_year": 2026, "fiscal_period": 1, "value": "0.31"},
-            {"fiscal_year": 2026, "fiscal_period": 2, "value": "0.33"},
-            {"fiscal_year": 2025, "fiscal_period": 4, "value": "0.29"},
-        ],
-        "net_margin": [
-            {"fiscal_year": 2026, "fiscal_period": 2, "value": "0.25"},
-            {"fiscal_year": 2026, "fiscal_period": 1, "value": "0.24"},
-        ],
-        "cap_surplus_ps": [{"fiscal_year": 2026, "fiscal_period": 2, "value": "1.0"}],
-    },
+# ``Ticker.info`` for INTC on 2026-09-19, cut to the keys that matter here.
+INFO = {
+    "longName": "Intel Corporation",
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    "financialCurrency": "USD",
+    "marketCap": 574070980608,
+    "trailingPE": None,
+    "forwardPE": 52.66527,
+    "pegRatio": 1.36,
+    "priceToBook": 6.256121,
+    "trailingEps": -2.09,
+    "profitMargins": -0.19794,
+    "returnOnEquity": -0.10715,
+    "returnOnAssets": 0.0141199995,
+    "debtToEquity": 48.997,
+    "currentRatio": 1.604,
+    "freeCashflow": 4866375168,
+    "beta": 2.231,
+    "fiftyTwoWeekHigh": 120.5,
 }
 
-INDUSTRY = {
-    "fiscal_year": 2026,
-    "fiscal_period": 2,
-    "industry_name": "Semiconductors",
-    "type": "PE_TTM",
-    "data": [
-        {"symbol": "NVDA", "name": "NVIDIA", "rank": 1, "value": "48.2"},
-        {"symbol": "AMD", "name": "Advanced Micro Devices", "rank": 2, "value": "41.0"},
-        {"symbol": "AVGO", "name": "Broadcom", "rank": 3, "value": "35.5"},
-        {"symbol": "QCOM", "name": "Qualcomm", "rank": 4, "value": "22.1"},
-        {"symbol": "TXN", "name": "Texas Instruments", "rank": 5, "value": "21.7"},
-        {"symbol": "MU", "name": "Micron", "rank": 6, "value": "18.3"},
-        {"symbol": "ADI", "name": "Analog Devices", "rank": 7, "value": "17.9"},
-        {"symbol": "INTC", "name": "Intel", "rank": 8, "value": "15.2"},
-    ],
-}
+# ``Ticker.quarterly_income_stmt``: rows down, period ends across, newest
+# first, five quarters deep, with a row the table does not show.
+QUARTERS = pd.DataFrame(
+    {
+        pd.Timestamp("2026-06-30"): [16128000000.0, 6509000000.0, -11033000000.0, -2.16, 0.21],
+        pd.Timestamp("2026-03-31"): [13577000000.0, 5347000000.0, -3728000000.0, -0.73, 0.21],
+        pd.Timestamp("2025-12-31"): [13674000000.0, 4943000000.0, -591000000.0, -0.12, 0.21],
+        pd.Timestamp("2025-09-30"): [13653000000.0, 5218000000.0, 4063000000.0, 0.9, 0.21],
+        pd.Timestamp("2025-06-30"): [12859000000.0, 3542000000.0, -2918000000.0, -0.67, 0.21],
+    },
+    index=["Total Revenue", "Gross Profit", "Net Income", "Diluted EPS", "Tax Rate For Calcs"],
+)
 
 RATING = {
     "symbol": "INTC", "category": "US_STOCK", "number": "38", "strong_buy": "6",
@@ -46,42 +50,75 @@ RATING = {
 }
 
 
-def test_indicators_are_a_table_newest_report_first():
-    text = fundamentals.indicators_table("INTC", INDICATORS)
+def test_the_profile_names_the_company_and_lists_its_ratios():
+    text = fundamentals.profile_table("INTC", INFO)
 
-    assert text.startswith("INTC's financial indicators, newest report first, in USD")
-    assert "| Metric | 2026 Q2 | 2026 Q1 | 2025 Q4 |" in text
-    assert "| Return on equity | 0.33 | 0.31 | 0.29 |" in text
-    # A metric missing a report shows a dash there rather than shifting.
-    assert "| Net margin | 0.25 | 0.24 | — |" in text
-    # Only the documented metrics the model reads; the rest of the payload is
-    # not printed.
-    assert "cap_surplus_ps" not in text
+    assert text.startswith(
+        "INTC is Intel Corporation, in Technology, Semiconductors. Its ratios as "
+        "Yahoo Finance reports them, money in USD; a margin, a return or a growth "
+        "rate is a fraction of one:"
+    )
+    assert "| Market cap | 574,070,980,608 |" in text
+    assert "| PE, forward | 52.67 |" in text
+    # Four significant digits, so a small fraction is not rounded away.
+    assert "| Return on assets | 0.01412 |" in text
+    assert "| Profit margin | -0.1979 |" in text
+    assert "| Free cash flow | 4,866,375,168 |" in text
+    # A ratio the vendor left empty has no row, and a key the table does not
+    # show is not printed.
+    assert "PE, trailing" not in text
+    assert "fiftyTwoWeekHigh" not in text and "120.5" not in text
 
 
-def test_an_empty_indicator_payload_says_so():
-    assert fundamentals.indicators_table("INTC", {}) == "No financial indicators on record for INTC."
-    assert fundamentals.indicators_table("INTC", {"values": {"roe": []}}) == (
-        "No financial indicators on record for INTC."
+def test_a_stub_profile_says_so():
+    # yfinance answers an unknown symbol with a stub dict, not an error.
+    assert fundamentals.profile_table("ZZZZ", {"trailingPegRatio": None}) == (
+        "No company profile on record for ZZZZ."
+    )
+    assert fundamentals.profile_table("ZZZZ", None) == "No company profile on record for ZZZZ."
+    assert fundamentals.profile_table("ZZZZ", {"longName": "Zed Corp", "sector": "Energy"}) == (
+        "ZZZZ is Zed Corp, in Energy. No ratios on record for it at Yahoo Finance."
     )
 
 
-def test_the_industry_table_shows_the_leaders_and_the_ticker_itself():
-    text = fundamentals.industry_table("INTC", INDUSTRY)
+def test_the_quarters_are_a_table_newest_first():
+    text = fundamentals.quarters_table("INTC", QUARTERS)
 
-    assert text.startswith("INTC ranks 8 of 8 in Semiconductors by PE_TTM:")
-    assert "| 1 | NVDA | NVIDIA | 48.2 |" in text
-    assert "| 6 | MU | Micron | 18.3 |" in text
-    assert "| 7 | ADI |" not in text, "six peers are shown, then the ticker's own row"
-    assert "| 8 | INTC (this one) | Intel | 15.2 |" in text
+    assert text.startswith(
+        "INTC's last 4 quarters from Yahoo Finance, newest first, each headed by "
+        "the quarter's end date, as the vendor reports them:"
+    )
+    assert "| Metric | 2026-06-30 | 2026-03-31 | 2025-12-31 | 2025-09-30 |" in text
+    assert "| Revenue | 16,128,000,000 | 13,577,000,000 | 13,674,000,000 | 13,653,000,000 |" in text
+    assert "| Net income | -11,033,000,000 | -3,728,000,000 | -591,000,000 | 4,063,000,000 |" in text
+    assert "| EPS, diluted | -2.16 | -0.73 | -0.12 | 0.9 |" in text
+    # Four quarters, not five; the rows the table does not show stay out; a
+    # row the vendor did not send is left out rather than shown empty.
+    assert "2025-06-30" not in text
+    assert "Tax Rate" not in text
+    assert "Operating income" not in text
 
 
-def test_a_ticker_missing_from_its_industry_table_is_said_not_invented():
-    text = fundamentals.industry_table("ZZZZ", INDUSTRY)
+def test_a_missing_quarter_value_is_a_dash_and_columns_stay_aligned():
+    frame = QUARTERS.copy()
+    frame.at["Gross Profit", pd.Timestamp("2026-03-31")] = float("nan")
 
-    assert text.startswith("ZZZZ is not in the vendor's Semiconductors table (8 names, by PE_TTM):")
-    assert "(this one)" not in text
-    assert fundamentals.industry_table("INTC", {}) == "No industry comparison on record for INTC."
+    text = fundamentals.quarters_table("INTC", frame)
+
+    assert "| Gross profit | 6,509,000,000 | — | 4,943,000,000 | 5,218,000,000 |" in text
+
+
+def test_an_empty_statement_says_so():
+    assert fundamentals.quarters_table("INTC", pd.DataFrame()) == (
+        "No quarterly income statement on record for INTC."
+    )
+    assert fundamentals.quarters_table("INTC", None) == (
+        "No quarterly income statement on record for INTC."
+    )
+    only_unshown = pd.DataFrame({pd.Timestamp("2026-06-30"): [0.21]}, index=["Tax Rate For Calcs"])
+    assert fundamentals.quarters_table("INTC", only_unshown) == (
+        "No quarterly income statement on record for INTC."
+    )
 
 
 def test_the_rating_is_counts_with_a_date():
@@ -100,47 +137,76 @@ class _Response:
         return self._body
 
 
-def test_describe_makes_the_three_calls_and_survives_one_failing(monkeypatch):
-    """A block that fails is one line; the other two still come back."""
-    def paced(call, what):
-        if what == "industry comparison":
-            raise RuntimeError("429")
-        return call()
-    monkeypatch.setattr(fundamentals.quotes, "market_data_request", paced)
+class _Stock:
+    """``yf.Ticker`` as the test needs it: two properties, one of which
+    can fail."""
 
-    class _Fundamentals:
-        def __init__(self, client):
-            pass
+    statement_fails = False
 
-        def get_financials_indicators(self, symbol, category="US_STOCK", type=None, count=None):
-            assert (symbol, type, count) == ("INTC", "QUARTERLY", 4)
-            return _Response(INDICATORS)
+    def __init__(self, symbol):
+        assert symbol == "INTC"
 
-        def get_industry_comparison(self, symbol, category="US_STOCK", sort_by=None):
-            raise AssertionError("never reached: the paced call fails first")
+    @property
+    def info(self):
+        return INFO
 
+    @property
+    def quarterly_income_stmt(self):
+        if self.statement_fails:
+            raise RuntimeError("HTTP 500")
+        return QUARTERS
+
+
+def _webull(monkeypatch, rating=RATING):
     class _Instrument:
         def __init__(self, client):
             pass
 
         def get_analyst_rating(self, symbol, category="US_STOCK"):
-            return _Response([RATING])
+            return _Response([rating])
 
     import sys
-    monkeypatch.setitem(sys.modules, "webull.data.quotes.fundamentals", SimpleNamespace(Fundamentals=_Fundamentals))
     monkeypatch.setitem(sys.modules, "webull.data.quotes.instrument", SimpleNamespace(Instrument=_Instrument))
+    monkeypatch.setattr(fundamentals.quotes, "market_data_request", lambda call, what: call())
+
+
+def test_describe_reads_yahoo_twice_and_webull_once(monkeypatch):
+    monkeypatch.setattr(fundamentals.yf, "Ticker", _Stock)
+    _webull(monkeypatch)
 
     text = fundamentals.describe("intc", client=object())
 
-    assert "| Return on equity | 0.33 | 0.31 | 0.29 |" in text
-    assert "The industry comparison could not be fetched from the vendor." in text
+    assert "INTC is Intel Corporation, in Technology, Semiconductors." in text
+    assert "| EPS, diluted | -2.16 | -0.73 | -0.12 | 0.9 |" in text
     assert "Analysts on INTC: 38 in total" in text
 
 
-def test_no_vendor_and_no_ticker_are_said_plainly(monkeypatch):
+def test_a_yahoo_read_that_fails_is_one_line_and_the_rest_still_comes_back(monkeypatch):
+    monkeypatch.setattr(_Stock, "statement_fails", True)
+    monkeypatch.setattr(fundamentals.yf, "Ticker", _Stock)
+    _webull(monkeypatch)
+
+    text = fundamentals.describe("INTC", client=object())
+
+    assert "| PE, forward | 52.67 |" in text
+    assert "The quarterly income statement could not be fetched from Yahoo Finance." in text
+    assert "Analysts on INTC: 38 in total" in text
+
+
+def test_no_vendor_still_answers_from_yahoo(monkeypatch):
+    """The rating is the only block on Webull, so a deployment without the
+    vendor still gets the ratios and the quarters."""
+    monkeypatch.setattr(fundamentals.yf, "Ticker", _Stock)
     monkeypatch.setattr(fundamentals.quotes, "get_api_client", lambda: None)
 
-    assert fundamentals.describe("INTC") == (
-        "Fundamentals for INTC are not available: the market data vendor is not configured."
+    text = fundamentals.describe("INTC")
+
+    assert "| PE, forward | 52.67 |" in text
+    assert "| Revenue | 16,128,000,000 |" in text
+    assert text.endswith(
+        "The analyst rating for INTC is not available: the market data vendor is not configured."
     )
+
+
+def test_no_ticker_is_said_plainly():
     assert fundamentals.describe("") == "You asked for fundamentals but named no ticker."

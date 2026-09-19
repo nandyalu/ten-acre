@@ -2567,7 +2567,9 @@ def _fresh_budget() -> dict:
     a pass that acts and is asked again cannot start from a full allowance
     each time. ``menu`` caches the candidate screen for the pass: it is a
     vendor screen of several calls, fetched on the first ``candidates`` call
-    and never on a pass that does not ask.
+    and never on a pass that does not ask. ``fundamentals`` caches each
+    ticker's figures the same way, so a second call for one ticker does not
+    reach Yahoo again.
     """
     return {
         "reads": _MAX_READS_PER_PASS,
@@ -2575,6 +2577,7 @@ def _fresh_budget() -> dict:
         "fetches": _MAX_FETCHES_PER_PASS,
         "rounds": _MAX_FETCH_ROUNDS,
         "menu": None,
+        "fundamentals": {},
     }
 
 
@@ -2635,7 +2638,11 @@ class ToolContext:
         return "\n".join(lines)
 
     def _fundamentals(self, args: dict) -> str:
-        return fundamentals.describe(args.get("ticker"))
+        ticker = str(args.get("ticker") or "").upper().strip()
+        cache = self.budget.setdefault("fundamentals", {})
+        if ticker not in cache:
+            cache[ticker] = fundamentals.describe(ticker)
+        return cache[ticker]
 
     def _watchlist(self, args: dict) -> str:
         if not self.watchlist:
