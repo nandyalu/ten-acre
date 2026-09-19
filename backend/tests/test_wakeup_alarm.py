@@ -306,7 +306,9 @@ def test_a_new_entry_pulls_the_pending_alarm_forward(quiv, settings, monkeypatch
 
     assert quiv["fired"] == ["task-1"]
     assert quiv["added"] == []
-    assert settings["agent_changes_seen_count"] == "2"
+    # The count is written when the pass completes, never when the wake is
+    # scheduled: a restart in between must wake again.
+    assert "agent_changes_seen_count" not in settings
 
 
 def test_nothing_new_does_not_wake_again(quiv, settings, monkeypatch):
@@ -329,7 +331,7 @@ def test_a_grown_file_wakes_again(quiv, settings, monkeypatch):
     scheduler.wake_agent_for_new_changes()
 
     assert quiv["fired"] == ["task-1"]
-    assert settings["agent_changes_seen_count"] == "3"
+    assert settings["agent_changes_seen_count"] == "2", "unchanged until a pass completes"
 
 
 def test_no_pending_alarm_falls_back_to_a_fresh_one_off_task(quiv, settings, monkeypatch):
@@ -355,3 +357,50 @@ def test_same_dates_two_deploys_apart_still_wakes(quiv, settings, monkeypatch):
     scheduler.wake_agent_for_new_changes()
 
     assert quiv["fired"] == ["task-1"]
+
+
+def _pass(**fields):
+    return lambda woke_because=None: types.SimpleNamespace(
+        next_wakeup=_et(14, 0), unguarded=[], acted=False, rejected=[], failed=[], notes=[],
+        **fields,
+    )
+
+
+def test_a_completed_pass_records_the_count(quiv, settings, monkeypatch):
+    """Whatever woke it, a pass shows every note on file, so any completed
+    pass is the moment the notes count as announced."""
+    _stub_changes(monkeypatch, 3)
+    monkeypatch.setattr(scheduler.agent, "run_once", _pass())
+
+    asyncio.run(scheduler._run_agent_pass_locked("Alarm"))
+
+    assert settings["agent_changes_seen_count"] == "3"
+
+
+def test_a_failed_pass_records_nothing(quiv, settings, monkeypatch):
+    _stub_changes(monkeypatch, 3)
+
+    def boom(woke_because=None):
+        raise RuntimeError("the model did not answer")
+
+    monkeypatch.setattr(scheduler.agent, "run_once", boom)
+
+    asyncio.run(scheduler._run_agent_pass_locked("Change"))
+
+    assert "agent_changes_seen_count" not in settings
+
+
+def test_a_restart_before_the_pass_wakes_again(quiv, settings, monkeypatch):
+    """The 2026-09-19 redeploy: the container was replaced 35 seconds after
+    it started, between the wake and its pass. The old code had written the
+    count at the wake, so the second start found nothing new and the note
+    waited for the agent's planned time, days away."""
+    _stub_changes(monkeypatch, 3)
+    scheduler._replace_wakeup_alarm(_et(10, 30))
+    scheduler.wake_agent_for_new_changes()
+    # The stop cancelled the pass. The next start restores the alarm and asks again.
+    scheduler._replace_wakeup_alarm(_et(10, 30))
+
+    scheduler.wake_agent_for_new_changes()
+
+    assert quiv["fired"] == ["task-1", "task-2"]

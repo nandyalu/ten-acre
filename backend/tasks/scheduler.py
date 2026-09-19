@@ -384,13 +384,21 @@ def wake_agent_for_new_changes() -> None:
     change would be the worse failure, and there is no way to have neither
     without a marker that survives every reset a marker in the database
     cannot.
+
+    **The count is written when a pass completes, not here (2026-09-19).**
+    It was written here, before the wake, and a redeploy that day replaced
+    the container twice, 35 seconds apart: the first start wrote the count
+    and scheduled the pass, the stop cancelled the pass, and the second start
+    found nothing new. The note reached the agent only at its next planned
+    time. ``_record_changes_announced`` now writes the count from
+    ``_run_agent_pass_locked``, so a wake that never ran its pass is a wake
+    the next start repeats.
     """
     global _early_wake_label
     changes = agent.load_change_notes()
     seen = int(db.get_setting(_CHANGES_SEEN_COUNT_KEY) or 0)
     if len(changes) <= seen:
         return
-    db.set_setting(_CHANGES_SEEN_COUNT_KEY, str(len(changes)))
     log.info(
         "%d new agent change note(s) since this container last started — waking the agent now",
         len(changes) - seen,
@@ -406,6 +414,22 @@ def wake_agent_for_new_changes() -> None:
             task_name="agent_wakeup_new_change", func=agent_wakeup_alarm,
             delay=0, run_once=True,
         )
+
+
+def _record_changes_announced() -> None:
+    """Write down how many change notes are on file now that a pass has shown
+    them, so the next start does not wake the agent for the same ones.
+
+    Called from ``_run_agent_pass_locked`` after every completed pass, not
+    only one labelled "Change": whatever woke it, the pass carried every note
+    on file. A failed pass records nothing, because the agent saw nothing.
+    A failure to write is logged and swallowed, since the pass has already
+    happened and the worst outcome is one repeated wake.
+    """
+    try:
+        db.set_setting(_CHANGES_SEEN_COUNT_KEY, str(len(agent.load_change_notes())))
+    except Exception:
+        log.exception("Could not record the change notes as announced")
 
 
 def wake_agent_now(label: str | None = None) -> bool:
@@ -509,6 +533,7 @@ async def _run_agent_pass_locked(label: str) -> None:
         _replace_wakeup_alarm(market_clock.next_open())
         return
     _replace_wakeup_alarm(run.next_wakeup or market_clock.next_open())
+    _record_changes_announced()
     if run.unguarded:
         # **Pulled forward after the alarm above is set, never during the
         # pass (2026-09-16).** Calling this from inside run_once itself is

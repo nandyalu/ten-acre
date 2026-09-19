@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-19
 
+- **Infrastructure** — The wake for a new change note records its count when the pass completes, not when the wake is scheduled. Today's redeploy replaced the container twice, 35 seconds apart: the first start recorded the count and scheduled the pass, the stop cancelled it, and the second start found nothing new, so the pass never ran. A wake whose pass is lost to a restart now repeats on the next start.
 - **Market data** — The `fundamentals` fetch reads Yahoo Finance for a ticker's ratios and its last four quarters, through the same `yf_retry` as the bar cache. Webull's sandbox host has no route for the `/openapi/fundamentals/` family, so the financial indicators and the industry comparison had answered 404 on every call since 2026-09-17. The analyst rating stays on Webull. What the agent sees now is [a journey entry](journey.md).
 - **Docs** — The "did it buy on a Hold" question in finding-your-edge follows the rule rewrite of the same day (see [the journey](journey.md)): the prompt no longer forbids buying on a Hold, so the question is whether the agent read the plan behind one or bought the word.
 
