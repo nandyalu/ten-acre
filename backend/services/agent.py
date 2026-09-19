@@ -2103,8 +2103,17 @@ _MAX_READ_TURNS = 3
 # rounds are what stay small. Twelve fetches across five rounds is the three
 # tables, half a dozen reads and a fundamentals or two, which is what a
 # person deciding would read.
-_MAX_FETCHES_PER_PASS = 12
-_MAX_FETCH_ROUNDS = 5
+#
+# **Thirty across six since 2026-09-19.** A fetch reads this app's own
+# database, or Webull for candidates and fundamentals; none of them reaches
+# Google. A round does — one request that resends the whole conversation — so
+# the rounds stay small and the fetches need not. Twelve read as a budget: a
+# live pass planned "I have a limited number of fetch calls, so I need to be
+# efficient", the rationing CLAUDE.md says not to build in, and neither number
+# had ever been reached. The rule now calls it a ceiling, and llm_gemini tells
+# the model when a round is its last.
+_MAX_FETCHES_PER_PASS = 30
+_MAX_FETCH_ROUNDS = 6
 # **How many times the agent may act and then be asked again in one pass.**
 # Acting is not free the way reading is — each turn can move real money — so
 # this stays bounded rather than open-ended. Three only covered one ticker's
@@ -2243,13 +2252,14 @@ _FIXED_RULES = [
         "alone is the thing this is trying to avoid. Reading is not acting, "
         "though: a pass that only read is an idle pass, and the budget runs out.",
         True:
-        f"- You may make up to {_MAX_FETCHES_PER_PASS} fetch calls before deciding — "
-        "read, candidates, fundamentals, watchlist and track_record — across up to "
-        f"{_MAX_FETCH_ROUNDS} rounds; several calls in one round count as one round. "
-        "Fetch what you need: this is the one place spending is encouraged, "
-        "because a decision made on a verdict alone is the thing this is trying to "
-        "avoid. Fetching is not acting, though: a pass that only fetched is an idle "
-        "pass, and the allowance runs out.",
+        "- Fetch what you need before deciding — read, candidates, fundamentals, "
+        "watchlist and track_record — several in one round when you know what you "
+        f"want. The ceiling is {_MAX_FETCHES_PER_PASS} fetches across "
+        f"{_MAX_FETCH_ROUNDS} rounds, more than a pass needs; it exists to stop a "
+        "loop, not to be saved, and you are told when a round is your last. This "
+        "is the one place spending is encouraged, because a decision made on a "
+        "verdict alone is the thing this is trying to avoid. Fetching is not "
+        "acting, though: a pass that only fetched is an idle pass.",
     },
     # Caught live 2026-09-15: an answer bundled a read with a buy and an
     # adjust, and the buy and adjust vanished with no trace — not refused, not

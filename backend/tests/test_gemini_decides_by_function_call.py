@@ -241,6 +241,41 @@ def test_a_fetch_past_the_allowance_is_told_so_rather_than_run():
     assert reply.exchanges[1] == {"name": "read", "args": {"ticker": "AAPL"}, "result": llm_gemini.ALLOWANCE_SPENT}
 
 
+def test_the_model_is_told_when_rounds_run_out():
+    """A round is one Google request that resends the whole conversation, so
+    rounds stay few (6 since 2026-09-19), and a model given a number plans
+    around it. So it is told when one round is left and when none are, in the
+    last function response of the round, where it reads results, under a key
+    of its own so the result stays verbatim. The record gets a row too."""
+    fetch, _, budget = _fetching(budget={"fetches": 30, "rounds": 2})
+    generate = _Generate(
+        _response([_part(call=_call("watchlist"))]),
+        _response([_part(call=_call("read", ticker="NVDA"))]),
+        _decided(),
+    )
+
+    reply = _decide(generate, fetches=decision_schema.FETCHES, fetch=fetch, budget=budget)
+
+    first = generate.calls[1][1][2].parts[0].function_response.response
+    assert first == {"result": "watchlist result", "rounds": llm_gemini.ONE_ROUND_LEFT}
+    second = generate.calls[2][1][4].parts[0].function_response.response
+    assert second == {"result": "read result", "rounds": llm_gemini.NO_ROUNDS_LEFT}
+    assert _allowed(generate.calls[2][2]) == ["decide"]
+    assert [e["name"] for e in reply.exchanges] == ["watchlist", "rounds", "read", "rounds"]
+    assert reply.exchanges[1]["result"] == llm_gemini.ONE_ROUND_LEFT
+    assert budget == {"fetches": 28, "rounds": 0}
+
+
+def test_a_round_with_plenty_left_carries_no_warning():
+    fetch, _, budget = _fetching(budget={"fetches": 30, "rounds": 6})
+    generate = _Generate(_response([_part(call=_call("watchlist"))]), _decided())
+
+    reply = _decide(generate, fetches=decision_schema.FETCHES, fetch=fetch, budget=budget)
+
+    assert generate.calls[1][1][2].parts[0].function_response.response == {"result": "watchlist result"}
+    assert [e["name"] for e in reply.exchanges] == ["watchlist"]
+
+
 def test_a_decide_in_the_same_round_as_a_fetch_is_not_carried_out():
     """The rule the read side has always had, said in the function's own
     response so the model reads it where it looks for results."""
@@ -275,16 +310,20 @@ def test_the_rounds_are_bounded_by_the_turn_allowance():
     assert budget == {"fetches": 8, "rounds": 0}
 
 
-def test_the_pass_allowance_is_twelve_fetches_across_five_rounds_and_reads_keep_theirs():
+def test_the_pass_allowance_is_thirty_fetches_across_six_rounds_and_reads_keep_theirs():
     """The first live probe hit the old six-fetch cap after three reads, since
-    the three table fetches spend from the same pot. The JSON channel's read
-    loop keeps its own numbers."""
+    the three table fetches spend from the same pot; 12 across 5 then read as
+    a budget to save (2026-09-19: "I need to be efficient"). A fetch never
+    reaches Google and a round does, so the fetches are generous and the
+    rounds few, and the rule calls it a ceiling. The JSON channel's read loop
+    keeps its own numbers."""
     budget = agent._fresh_budget()
 
-    assert (budget["fetches"], budget["rounds"]) == (12, 5)
+    assert (budget["fetches"], budget["rounds"]) == (30, 6)
     assert (budget["reads"], budget["turns"]) == (6, 3)
-    assert "up to 12 fetch calls before deciding" in agent.SYSTEM_PROMPT_TOOL
-    assert "across up to 5 rounds" in agent.SYSTEM_PROMPT_TOOL
+    assert "The ceiling is 30 fetches across 6 rounds" in agent.SYSTEM_PROMPT_TOOL
+    assert "it exists to stop a loop, not to be saved" in agent.SYSTEM_PROMPT_TOOL
+    assert "allowance runs out" not in agent.SYSTEM_PROMPT_TOOL
     assert "read up to 6 analyses before deciding" in agent.SYSTEM_PROMPT
 
 
@@ -629,7 +668,7 @@ def test_the_two_system_messages_share_every_rule_that_is_not_about_reading():
     # Exactly the three rules about reading differ.
     assert sum(isinstance(rule, dict) for rule in agent._FIXED_RULES) == 3
     assert "call read with a ticker" in agent.SYSTEM_PROMPT_TOOL
-    assert "fetch calls before deciding" in agent.SYSTEM_PROMPT_TOOL
+    assert "Fetch what you need before deciding" in agent.SYSTEM_PROMPT_TOOL
 
 
 # --- a whole decision on the tool channel ---------------------------------------

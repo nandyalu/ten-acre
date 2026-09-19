@@ -64,6 +64,30 @@ DECIDE_WITH_FETCH = (
     "Not carried out: it came in the same round as a fetch, and only the fetches "
     "ran. Call decide again now, with everything you still want."
 )
+# What the last function response of a round carries beside its result when
+# the pass is running out of rounds (2026-09-19). A round is one Google request
+# that resends the whole conversation, so rounds stay few, and a model that is
+# given a number plans around it — a live pass wrote "I need to be efficient".
+# Told here, in the response it reads results from, under its own key so the
+# result itself stays verbatim; a part the API did not ask for is not added.
+ONE_ROUND_LEFT = (
+    "One fetch round left in this pass after this one; the answer after it must "
+    "be decide. If you will want more than that, decide now with what you have "
+    "and ask to be woken in 5 minutes to carry on."
+)
+NO_ROUNDS_LEFT = (
+    "That was the last fetch round of this pass: the next answer must be decide. "
+    "Anything else you want to look at can wait for a wakeup 5 minutes from now."
+)
+
+
+def _rounds_note(budget: dict) -> str | None:
+    """The warning a round's last function response carries, if any."""
+    if budget.get("rounds", 0) <= 0 or budget.get("fetches", 0) <= 0:
+        return NO_ROUNDS_LEFT
+    if budget.get("rounds", 0) == 1:
+        return ONE_ROUND_LEFT
+    return None
 
 
 class Reply(NamedTuple):
@@ -172,25 +196,34 @@ def decide(
             taking = wanted[: budget["fetches"]]
             budget["fetches"] -= len(taking)
             budget["rounds"] -= 1
-            results = []
+            responses: list[tuple[str, dict]] = []
             for call in wanted:
                 args = plain(dict(getattr(call, "args", None) or {}))
                 text = fetch(call.name, args) if call in taking else ALLOWANCE_SPENT
                 exchanges.append({"name": call.name, "args": args, "result": text})
-                results.append(types.Part.from_function_response(name=call.name, response={"result": text}))
+                responses.append((call.name, {"result": text}))
             if decided is not None:
                 # The rule the read side has always had: a fetch and an
                 # answer in one round, and only the fetch runs. Said in the
                 # function's own response, so the model reads it where it
                 # looks for results.
                 exchanges.append({"name": name, "args": plain(dict(decided.args or {})), "result": DECIDE_WITH_FETCH})
-                results.append(types.Part.from_function_response(name=name, response={"result": DECIDE_WITH_FETCH}))
+                responses.append((name, {"result": DECIDE_WITH_FETCH}))
+            note = _rounds_note(budget)
+            if note is not None:
+                responses[-1][1]["rounds"] = note
+                # On the record too, as its own row, so the Decisions page
+                # shows what the model was told and when.
+                exchanges.append({"name": "rounds", "args": {}, "result": note})
             # **``user``, not ``tool``.** The SDK's README shows ``tool``, and
             # the API refused it on the first live pass (2026-09-17): "Role
             # 'tool' is not supported. Please use a valid role: ... USER,
             # MODEL". Function responses travel under ``user`` on this
             # endpoint, the shape Google's function-calling guide shows.
-            contents.append(types.Content(role="user", parts=results))
+            contents.append(types.Content(
+                role="user",
+                parts=[types.Part.from_function_response(name=n, response=r) for n, r in responses],
+            ))
             continue
 
         thinking = "\n\n".join(thoughts) or None
