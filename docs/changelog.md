@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-18
 
+- **Market data** — `quotes.get_snapshots` remembers the symbols Webull says do not exist in a category and leaves them out of every later batch in the same process. It already retried once without them, but forgot them on return, so the candidate screen sent the same six names every 15 minutes and paid a refused request plus a retry each time: about 300 refused requests from 2026-09-10 to 2026-09-18. A restart forgets the list, on purpose, so a newly listed symbol gets back in.
 - **Setup** — The deployment is named `ten-acre`, after the project: container `ten-acre`, image `ten-acre:local`, log file `ten-acre.log`, and every logger `ten-acre.<module>`. It was `trading-experiment` until 2026-09-17. `compose.example.yaml`, the docs, the VS Code tasks and the rule files use the new name. The rule files also record the move from Dockge to Portainer, the bind-mounted data directory, the dashboard's port, and the start date the database holds. Log files written under the old name stay in the data directory.
 
 ## 2026-09-17

@@ -4,6 +4,8 @@ Split out of test_ask_quotes.py on 2026-09-10, when backend/services/ask.py
 was deleted -- nothing had imported it since the Discord commands were
 removed on 2026-09-01, and it still told the reader to "run /analyze first".
 """
+import pytest
+
 from backend.services import quotes
 from backend.services.quotes import extract_price
 
@@ -67,6 +69,43 @@ def test_get_snapshots_retries_once_without_the_rejected_symbols(monkeypatch):
     assert len(calls) == 2
     assert "4 ticker" in calls[0]
     assert "1 ticker" in calls[1]  # AAPL alone, after the three rejects are dropped
+
+
+@pytest.fixture(autouse=True)
+def forget_rejected_symbols(monkeypatch):
+    """Each test starts as a fresh process, with nothing remembered."""
+    monkeypatch.setattr(quotes, "_not_in_category", {})
+
+
+def test_get_snapshots_never_sends_a_rejected_symbol_again(monkeypatch):
+    """The retry above fixed one call. The next call used to send the same
+    symbols again, and the same six names sank the candidate screen's batch
+    every 15 minutes from 2026-09-10 to 2026-09-18, about 300 refused
+    requests. A rejection is remembered for the life of the process."""
+    monkeypatch.setattr(quotes, "_get_market_data", lambda: object())
+    calls = []
+
+    def fake_request(call, what):
+        calls.append(what)
+        if len(calls) == 1:
+            raise Exception(
+                "Code: INVALID_SYMBOL, Msg: The symbols does not exist "
+                "in the category. [BK, MOG.A]."
+            )
+        return _FakeResponse([{"symbol": "AAPL", "price": 100.0}])
+
+    monkeypatch.setattr(quotes, "market_data_request", fake_request)
+    quotes.get_snapshots(["AAPL", "BK", "MOG.A"])
+    assert len(calls) == 2
+
+    rows = quotes.get_snapshots(["AAPL", "BK", "MOG.A"])
+    assert rows == [{"symbol": "AAPL", "price": 100.0}]
+    assert len(calls) == 3  # one request, not a refusal and a retry
+    assert "1 ticker" in calls[2]  # BK and MOG.A were never sent
+
+    # A batch made only of remembered names costs no request at all.
+    assert quotes.get_snapshots(["BK", "MOG.A"]) == []
+    assert len(calls) == 3
 
 
 def test_get_snapshots_gives_up_on_an_unrelated_failure(monkeypatch):

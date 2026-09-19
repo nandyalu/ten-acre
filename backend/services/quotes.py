@@ -14,7 +14,7 @@ import re
 import threading
 import time
 
-log = logging.getLogger("trading-experiment.quotes")
+log = logging.getLogger("ten-acre.quotes")
 
 _SANDBOX_ENDPOINT = "api.sandbox.webull.com"
 
@@ -327,6 +327,17 @@ def get_realtime_price(ticker: str) -> float | None:
 
 _INVALID_SYMBOL_RE = re.compile(r"INVALID_SYMBOL.*?\[([^\]]+)\]")
 
+# Symbols Webull has said do not exist in a category, by category. Kept for
+# the life of the process. Before 2026-09-18 the retry below dropped them for
+# one call and the next call sent them again: the same six names sank the
+# candidate screen's batch every 15 minutes for eight days, about 300 refused
+# requests, each one a wasted vendor call plus its retry. Not written to the
+# database on purpose: tickerstatus rows are for tracked tickers, and a name
+# the screen only looked at must not get one. A restart forgets the list and
+# pays one refused request per category to learn it again, which is also how
+# a newly listed symbol gets back in.
+_not_in_category: dict[str, set[str]] = {}
+
 
 def _rejected_symbols(exc: Exception) -> set[str]:
     """The symbols Webull named as not existing in the category, if that is
@@ -353,6 +364,8 @@ def get_snapshots(tickers: list[str], category: str = "US_STOCK") -> list[dict]:
     behind them, so this is routine here, unlike a Webull-screened candidate.
     The names Webull calls out are stripped out and the request retried once
     rather than losing every other ticker in the batch to one bad symbol.
+    They are also remembered (``_not_in_category``), so no later batch in this
+    process sends them again.
 
     Unlike ``get_realtime_price`` this does not fall back across categories:
     it exists for candidate discovery, where a symbol that fails one category
@@ -361,7 +374,8 @@ def get_snapshots(tickers: list[str], category: str = "US_STOCK") -> list[dict]:
     market_data = _get_market_data()
     if market_data is None or not tickers:
         return []
-    remaining = list(dict.fromkeys(tickers))
+    known_bad = _not_in_category.setdefault(category, set())
+    remaining = [t for t in dict.fromkeys(tickers) if t not in known_bad]
     for _ in range(2):
         if not remaining:
             return []
@@ -378,6 +392,11 @@ def get_snapshots(tickers: list[str], category: str = "US_STOCK") -> list[dict]:
                     "Webull batch snapshot failed for %d ticker(s)", len(remaining), exc_info=True,
                 )
                 return []
-            log.info("Webull rejected %d invalid symbol(s), retrying without them: %s", len(bad), sorted(bad))
+            known_bad.update(bad)
+            log.info(
+                "Webull rejected %d invalid symbol(s); retrying without them and leaving them "
+                "out of every later batch this process sends: %s",
+                len(bad), sorted(bad),
+            )
             remaining = [t for t in remaining if t not in bad]
     return []
