@@ -60,7 +60,7 @@ Every release on [GitHub](https://github.com/nandyalu/ten-acre/releases) carries
 - `.env.example`, to copy and fill in.
 
 ```sh
-unzip ten-acre-v0.2.0.zip && cd ten-acre-v0.2.0
+unzip ten-acre-v0.2.1.zip && cd ten-acre-v0.2.1
 uv tool install ten-acre --find-links . --constraints constraints.txt
 ```
 
