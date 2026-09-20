@@ -103,6 +103,12 @@ services:
       # Reddit's search page through trawl's browser, where the RSS feed
       # returns 429. Unset keeps the RSS feed. See docs/setup.md.
       - REDDIT_TRAWL_URL=${REDDIT_TRAWL_URL:-}
+      # A public Reddit custom feed, for example
+      # https://www.reddit.com/user/<name>/m/<feed>. One request then searches
+      # every subreddit in it, on either path. Unset, a shared public feed is
+      # used; "off" searches wallstreetbets, stocks and investing one by one.
+      # See docs/setup.md.
+      - REDDIT_MULTIREDDIT_URL=${REDDIT_MULTIREDDIT_URL:-}
       # Every LLM call written to disk, about 0.4 MB an analysis. Unset it to
       # record nothing. A dataset of past runs cannot be collected later.
       - LLM_TRACE_DIR=/app/data/tradingagents/traces

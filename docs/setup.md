@@ -72,7 +72,9 @@ FRED_API_KEY=...
 
 **You probably cannot set it up anyway.** Reddit ended self-serve API app creation under its [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy). New applications go through an approval aimed at products, not personal tools.
 
-**If you run [trawl](https://github.com/germondai/trawl), set `REDDIT_TRAWL_URL`** to its address, for example `http://host.docker.internal:8191`. The sentiment analyst then loads Reddit's HTML search page in trawl's browser. That page loads where the RSS feed returns `429`, and it shows score and comment counts. The page has no post bodies, so the fetcher reads the body of each post it shows, one request each: up to 15 more requests for an analysis. If trawl fails, the search falls back to the RSS feed.
+**Set `REDDIT_TRAWL_URL` to a service that can fetch an HTML page through Cloudflare and a captcha.** [trawl](https://github.com/germondai/trawl) is what this deployment runs, at `http://host.docker.internal:8191`; [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) and anything else that answers a `POST /scrape` with the rendered page work the same way. The sentiment analyst then loads Reddit's HTML search page in that browser. The page loads where the RSS feed returns `429`, and it shows score and comment counts. The page has no post bodies, so the fetcher reads the body of each post it shows, one request each: up to 15 more requests for an analysis. If the fetch fails, the search falls back to the RSS feed.
+
+**Give that container at least 3 GB of RAM.** Without a custom feed the fetcher loads three search pages at once, and three browser sessions peaked at 2.5 GB here. At a 2 GB limit one of the three answered `HTTP 500` on 2026-09-20 and the analyst was told there was no discussion at all; at 5 GB, three runs in a row all loaded.
 
 **Decide about Reddit's terms yourself.** Reddit does not allow automated access without its permission. A browser built to hide automation is a clearer case than a public RSS feed.
 
@@ -86,7 +88,11 @@ What each path gives you:
 | Post body excerpt | Every post | Every post | Every post |
 | Posts older than 7 days | Filtered by Reddit | Filtered by the fetcher, because the search page ignores `t=week` | Filtered by Reddit |
 
-**The feed searches all the subreddits in one request** (`r/a+b+c`), because it allows about one request a minute per IP and a request for each subreddit spent a back-off on nearly every run. Each entry names its subreddit, so the posts are grouped back by it. Reddit's HTML search page has no such form, so trawl loads one page for each subreddit instead, at the same time.
+**A public custom feed is searched by default, and one request covers every subreddit in it.** The feed is [r/stocks, r/investing, r/wallstreetbets and r/tradingwithcongress](https://www.reddit.com/user/commercial-catch-680/m/trading), shared by the person who runs this project's own deployment. It is the cheapest path here: measured on 2026-09-20 for NVDA over one week, it returned the same 12 posts through trawl as three per-subreddit requests did, in one request instead of three and in half the time, and 13 posts through its Atom search in a single request.
+
+**Use your own feed instead with `REDDIT_MULTIREDDIT_URL`.** Create it in Reddit's sidebar, add the subreddits you want the analyst to read, make it public, and set the variable to its address, such as `https://www.reddit.com/user/<name>/m/<feed>`. This is the only way to choose which subreddits are read; the three defaults are fixed in code. The literal `off` searches those three one by one instead, for anyone who would rather not depend on a feed somebody else owns. **Nothing breaks if a feed disappears**: a feed that cannot be read falls back to searching the three subreddits, so a renamed or deleted feed costs one request rather than the sentiment report.
+
+**Without a feed, the two paths differ.** The RSS feed searches all three subreddits in one request (`r/a+b+c`), because it allows about one request a minute per IP and a request for each subreddit spent a back-off on nearly every run. Each entry names its subreddit, so the posts are grouped back by it. Reddit's HTML search page has no combined form — it answers "no results" for one — so trawl loads one page for each subreddit instead, at the same time.
 
 **On the RSS path, `429` warnings in the log are expected, not a fault.** A `429` waits for `Retry-After`, or up to 60 seconds, and retries once per run. Then the search is marked unavailable. The analyst reads "unavailable", never "no posts found", so throttling does not look like silence.
 
