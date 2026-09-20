@@ -5,9 +5,16 @@ two things it could trivially be replaced by:
 
 - **SPY buy-and-hold** — did picking anything beat picking nothing?
 - **A mechanical follower** — a rule with no model in it that buys every Buy
-  signal in equal weight and sells on a Sell signal or when the signal matures.
-  If the agent cannot beat this, the model is adding cost and noise, and you
-  should run the rule instead.
+  signal a free slot can pay for, in equal weight, and holds until a Sell
+  signal or the signal's own maturity date, whichever comes first. If the agent
+  cannot beat this, the model is adding cost and noise, and you should run the
+  rule instead.
+
+  **The rule can only follow signals the agent paid for**, since nothing is
+  analysed on a schedule. So it isolates the agent's judgement, not its choice
+  of what to research — the maturity exit is what stops the agent's research
+  habits leaking into the rule's exits too. SPY is the baseline that owes
+  nothing to either.
 
 The second is the decisive one, and it is why this module exists. Everything it
 needs is already stored — the signals carry the price they were made at, the
@@ -135,43 +142,107 @@ def _spy_strategy(budget: float, since: datetime.date) -> Strategy | None:
 
 
 def _mechanical_strategy(budget: float, since: datetime.date) -> Strategy:
-    """Buy every Buy signal in equal weight, sell on a Sell signal or when the
-    signal matures. No model, no judgement, no memory.
+    """Buy on a Buy signal while a slot is free, and hold until a Sell signal
+    or the signal's own maturity, whichever comes first. No model, no
+    judgement, no memory.
+
+    **It holds at most five names, and a slot is what the rule is worth now
+    divided by the slots still free** — so the budget is always fully deployed
+    when there are signals to deploy it into, and a rule that has doubled its
+    money puts twice as much into its next position. A fixed fraction of the
+    *starting* budget cannot do both: it either leaves the winnings in cash
+    forever or, with no count to stop it, opens a sixth and a tenth position as
+    the cash grows. Dividing the cash by the free slots needs no count of its
+    own and self-corrects — five free slots make each one a fifth.
+
+    Open positions count as one slot each rather than being marked to market,
+    which is the one simplification here: an unrealized gain is not redeployed
+    until the position closes and the gain is really in the cash. A signal
+    arriving with all five slots taken is missed, not queued, the way a fully
+    invested account misses one.
+
+    **Shares are fractional.** Whole shares would make the five weights merely
+    approximately equal — a $7 name would fill its slot and a $333 name would
+    leave a fifth of it in cash — and equal weight is the whole of what this
+    rule is.
 
     Signals are walked in date order and priced at ``price_at_signal`` — the
     price the analysis itself saw — so this is what a rule following the same
     signals would have achieved, not a rule with hindsight about entry timing.
+
+    **The maturity exit is what keeps the rule independent of the agent.**
+    Nothing has been analysed on a schedule since 2026-09-08: the agent decides
+    what gets a fresh look, so a name it stops revisiting produces no Sell
+    signal at all. A rule that sold only on a Sell signal would then hold that
+    position for as long as the agent's attention stayed elsewhere, and its
+    exits would be a reading of the agent's research habits rather than of the
+    signals. Every buy therefore also exits at its own signal's
+    ``evaluation_date``, at the ``price_at_evaluation`` the grader recorded —
+    a date the analysis fixed when it was written, and a price neither the rule
+    nor the agent chose. A signal still maturing has no graded price yet, so
+    its position stays open and is marked at today's price.
     """
     signals = sorted(
         (s for s in db.get_recent_signals(limit=1000) if s.signal_date >= since),
         key=lambda s: s.signal_date,
     )
     cash = budget
-    slot = budget / _MECHANICAL_SLOTS
-    held: dict[str, tuple[float, float]] = {}  # ticker -> (shares, entry price)
+    # ticker -> (shares, entry price, the signal that opened it). The signal is
+    # kept because only its own maturity closes the position: a later signal on
+    # the same ticker is a different call with a different horizon.
+    held: dict[str, tuple[float, float, object]] = {}
     trades = 0
 
-    for signal in signals:
+    # Two streams walked as one: the signals on the day they were made, and the
+    # forced exits on the day each one matures. A maturity sorts ahead of a
+    # signal on the same date, so the slot and the cash it frees are available
+    # to that date's buys.
+    events = [(s.signal_date, 1, "signal", s) for s in signals]
+    events += [
+        (s.evaluation_date, 0, "mature", s)
+        for s in signals
+        if s.decision in BUYISH_DECISIONS and s.price_at_evaluation
+    ]
+    events.sort(key=lambda e: (e[0], e[1]))
+
+    for _date, _first, kind, signal in events:
+        if kind == "mature":
+            position = held.get(signal.ticker)
+            # Identity, not ticker: the position may have been opened by an
+            # earlier signal whose own maturity has not arrived yet.
+            if position and position[2] is signal:
+                shares, _entry, _opened_by = held.pop(signal.ticker)
+                cash += shares * signal.price_at_evaluation
+                trades += 1
+            continue
         price = signal.price_at_signal
         if not price:
             continue
         if signal.decision in SELLISH_DECISIONS and signal.ticker in held:
-            shares, _ = held.pop(signal.ticker)
+            shares, _entry, _opened_by = held.pop(signal.ticker)
             cash += shares * price
             trades += 1
         elif signal.decision in BUYISH_DECISIONS and signal.ticker not in held:
-            shares = int(min(slot, cash) // price)
-            if shares:
-                cash -= shares * price
-                held[signal.ticker] = (shares, price)
-                trades += 1
+            free_slots = _MECHANICAL_SLOTS - len(held)
+            if free_slots <= 0 or cash <= 0:
+                continue
+            # The cash split evenly over the slots still free. With nothing
+            # held that is a fifth of the book; with four names held it is
+            # whatever one slot's worth of cash is left, which is the same
+            # number arrived at from the other end.
+            slot = cash / free_slots
+            shares = slot / price
+            cash -= shares * price
+            held[signal.ticker] = (shares, price, signal)
+            trades += 1
 
     # Anything still open is valued at today's price, exactly as the agent's own
     # book is, so the two are compared on the same basis.
     open_value = 0.0
-    for ticker, (shares, entry) in held.items():
+    for ticker, (shares, entry, _opened_by) in held.items():
         price_now = get_shown_price(ticker)
         open_value += shares * (price_now if price_now is not None else entry)
+    invested = sum(shares * entry for shares, entry, _opened_by in held.values())
 
     # It reads the same analyses the agent does, so it pays for them too.
     # Charging the agent alone would handicap it against its own yardstick and
@@ -179,13 +250,13 @@ def _mechanical_strategy(budget: float, since: datetime.date) -> Strategy:
     # nothing and pays nothing, which is the honest asymmetry: it is the
     # "was any of this worth doing" baseline.
     researched = research.total_spent()
-    note = f"equal weight, {_MECHANICAL_SLOTS} slots"
+    note = f"{_MECHANICAL_SLOTS} equal slots, exits at a Sell or the horizon"
     if researched:
         note += f", less ${researched:,.2f} of research"
     return Strategy(
         name="Mechanical signal-follower",
         equity=cash + open_value - researched,
-        invested=sum(shares * entry for shares, entry in held.values()),
+        invested=invested,
         cash=cash - researched,
         trades=trades,
         note=note,

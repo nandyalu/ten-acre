@@ -132,6 +132,16 @@ export const TERMS: Term[] = [
       'A one-line reading of the market: VIX, the S&P against its 200-day average, and the yield curve. The agent sees this same sentence first in every prompt.',
   },
   {
+    id: 'mechanical-follower',
+    label: 'mechanical signal-follower',
+    // No slot count and no start date here, for the same reason the research
+    // charge names no figure: both are computed in the backend, and a static
+    // string that named them would drift from the table beside it.
+    short:
+      'A rule with no model in it: buy on a Buy signal whenever one of its five slots is free, hold until a Sell signal or the call’s own maturity date, whichever comes first. It is what the agent has to beat.',
+    long: 'It holds at most five names at a time, each one an equal slot of the money it has now — so a rule that has doubled its money puts twice as much into its next position, and nothing sits idle while there are signals to act on. Shares are fractional, which is what makes the five weights exactly rather than roughly equal. A signal arriving with all five slots taken is missed, not queued, the way a fully invested account misses one, and a ticker already held is skipped. An open position counts as one slot rather than what it is worth today: a gain is redeployed once the position closes and the money is really there. It starts from the agent’s first trade with the same budget, reads the same signals in date order, and pays for the same research. An entry is priced at the price the analysis itself saw, and a maturity exit at the price on the day the call was graded, so the rule follows the signals without hindsight. The maturity exit matters because nothing is analysed on a schedule: the agent chooses what gets a fresh look, and a name it stops revisiting would otherwise never produce a Sell for the rule to act on. It can only follow signals the agent paid for, so it measures the agent’s judgement and not its choice of what to research — SPY is the baseline that owes nothing to either. If it wins, the judgement added nothing.',
+  },
+  {
     id: 'decision-pass',
     label: 'decision pass',
     short:

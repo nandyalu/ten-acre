@@ -298,9 +298,11 @@ The agent picks stocks with an LLM, which is only worth doing if it beats the tw
 The Auto trader page measures it against both, from the day it placed its first order, with the same budget:
 
 - **SPY buy-and-hold** — did picking anything beat picking nothing?
-- **A mechanical signal-follower** — a rule that buys every Buy signal in equal weight and sells on a Sell signal. No model, no GPU, no prompt.
+- **A mechanical signal-follower** — a rule that buys on a Buy signal whenever one of its five slots is free, and holds until a Sell signal or the call's own maturity date, whichever comes first. Each slot is an equal share of the money it has now, in fractional shares, so the five weights are exactly equal and a rule that has doubled its money puts twice as much into its next position. A signal arriving with all five slots taken is missed. No model, no GPU, no prompt.
 
 The second is the one that matters. If a rule with nothing in it beats the agent, the model is costing you money and attention for no return, and the page says so in those words.
+
+The horizon exit is what keeps that comparison honest. Nothing is analysed on a schedule, so the agent decides which names get a fresh look, and a name it stops revisiting never produces a Sell signal at all. A rule that waited for one would hold such a position for as long as the agent's attention stayed elsewhere, which measures the agent's research habits rather than its signals. The rule can still only follow signals the agent paid for — it isolates the agent's judgement, not its choice of what to study. SPY is the baseline that owes nothing to either.
 
 It refuses to draw any conclusion under ten trades. Three trades of hindsight is not evidence, and a confident verdict on it would be worse than no verdict at all.
 

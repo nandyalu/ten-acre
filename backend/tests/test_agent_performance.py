@@ -14,7 +14,9 @@ from backend.database.models import AgentTrade, Signal
 from backend.services import agent_performance
 
 
-def _signal(ticker="AAA", decision="Buy", price=100.0, day=1):
+def _signal(ticker="AAA", decision="Buy", price=100.0, day=1, graded_at=None):
+    """``graded_at`` is the price the grader recorded on the evaluation date.
+    Leaving it None is a signal still maturing, which is the common case."""
     return Signal(
         ticker=ticker,
         signal_date=datetime.date(2026, 8, day),
@@ -22,6 +24,7 @@ def _signal(ticker="AAA", decision="Buy", price=100.0, day=1):
         rationale="",
         price_at_signal=price,
         evaluation_date=datetime.date(2026, 8, day + 14),
+        price_at_evaluation=graded_at,
     )
 
 
@@ -98,6 +101,69 @@ def test_the_mechanical_rule_sells_on_a_sell_signal(world):
     assert rule.equity == pytest.approx(1040.0)
 
 
+def test_the_mechanical_rule_sells_at_maturity_without_a_sell_signal(world):
+    """The agent decides what gets re-analysed, so a name it stops revisiting
+    never produces a Sell. Without this exit the rule would hold that position
+    forever, and its exits would measure the agent's research habits rather
+    than the signals."""
+    world(
+        signals=[_signal("AAA", "Buy", 100.0, day=1, graded_at=130.0)],
+        prices={"AAA": 500.0},  # Never reached: the position is closed by 8/15.
+    )
+
+    rule = agent_performance._mechanical_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    assert rule.trades == 2
+    assert rule.invested == 0.0
+    # Bought 2 at 100 on 8/1, sold 2 at the graded 130 on 8/15.
+    assert rule.equity == pytest.approx(1060.0)
+
+
+def test_a_sell_signal_beats_the_maturity_date_to_it(world):
+    """Whichever comes first. The Sell lands on 8/3, eleven days before the
+    buy's own evaluation date, so the position is already gone when it
+    matures — and the maturity must not sell shares twice."""
+    world(
+        signals=[
+            _signal("AAA", "Buy", 100.0, day=1, graded_at=130.0),
+            _signal("AAA", "Sell", 120.0, day=3),
+        ],
+        prices={"AAA": 500.0},
+    )
+
+    rule = agent_performance._mechanical_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    assert rule.trades == 2
+    assert rule.equity == pytest.approx(1040.0)
+
+
+def test_a_signal_still_maturing_stays_open(world):
+    """No graded price yet means no exit date has arrived. The position is
+    marked at today's price, exactly as the agent's own book is."""
+    world(signals=[_signal("AAA", "Buy", 100.0, day=1)], prices={"AAA": 150.0})
+
+    rule = agent_performance._mechanical_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    assert rule.trades == 1
+    assert rule.invested == pytest.approx(200.0)
+    assert rule.equity == pytest.approx(1000.0 - 200.0 + 2 * 150.0)
+
+
+def test_maturity_frees_its_slot_for_the_same_day(world):
+    """A maturity is walked before that date's own signals, so the cash it
+    releases is available to a buy made the same day — the same ordering the
+    agent gets when it sells to fund a buy."""
+    signals = [_signal(f"T{i}", "Buy", 100.0, day=1, graded_at=100.0) for i in range(5)]
+    # Lands on the day the five above mature, with the budget fully committed
+    # until they do.
+    signals.append(_signal("LATE", "Buy", 100.0, day=15))
+    world(signals=signals, prices={"LATE": 100.0})
+
+    rule = agent_performance._mechanical_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    assert rule.invested == pytest.approx(200.0)  # LATE was affordable.
+
+
 def test_the_mechanical_rule_ignores_hold_signals(world):
     """A Hold is not a trade. If the rule acted on it, it would not be a
     baseline for the agent's signal-following — it would be a different bet."""
@@ -119,6 +185,79 @@ def test_the_mechanical_rule_cannot_spend_more_than_the_budget(world):
 
     assert rule.cash >= 0
     assert rule.invested <= 1000.0
+
+
+def test_it_never_holds_more_than_five_names(world):
+    """Five slots, and a sixth signal is missed rather than opening a sixth
+    position. Nothing else caps the count — before the cap existed, a rule
+    whose cash had grown simply opened more positions."""
+    world(
+        signals=[_signal(f"T{i}", "Buy", 90.0, day=i + 1) for i in range(6)],
+        prices={f"T{i}": 90.0 for i in range(6)},
+    )
+
+    rule = agent_performance._mechanical_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    assert rule.trades == 5
+    assert rule.cash == pytest.approx(0.0)  # Fully deployed, nothing idle.
+
+
+def test_the_slots_stay_equal_at_any_share_price(world):
+    """Fractional shares are what makes "equal weight" literally true. With
+    whole shares the $7 name would fill its slot and the $333 name would leave
+    most of one in cash, and the five weights would only be roughly equal."""
+    world(
+        signals=[
+            _signal("AAA", "Buy", 90.0, day=1),
+            _signal("BBB", "Buy", 333.0, day=2),
+            _signal("CCC", "Buy", 7.0, day=3),
+        ],
+        prices={"AAA": 90.0, "BBB": 333.0, "CCC": 7.0},
+    )
+
+    rule = agent_performance._mechanical_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    # $1,000/5, then $800/4, then $600/3 — one slot of $200 every time.
+    assert rule.invested == pytest.approx(600.0)
+    assert rule.cash == pytest.approx(400.0)
+
+
+def test_a_slot_grows_with_what_the_rule_is_worth(world):
+    """A fifth of the money it has now, not a fifth of what it started with.
+    A fixed fraction of the starting budget would either leave the winnings in
+    cash forever or, with no cap, open a sixth position with them."""
+    world(
+        signals=[
+            _signal("AAA", "Buy", 100.0, day=1, graded_at=300.0),  # Matures 8/15.
+            _signal("BBB", "Buy", 100.0, day=16),
+        ],
+        prices={"BBB": 100.0},
+    )
+
+    rule = agent_performance._mechanical_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    # $200 into AAA became $600 at maturity, so the book is $1,400 and the
+    # next slot is $280 — not the $200 it would have been on day one.
+    assert rule.invested == pytest.approx(280.0)
+    assert rule.equity == pytest.approx(1400.0)
+
+
+def test_an_unrealized_gain_is_not_redeployed_until_it_is_cash(world):
+    """The one simplification: an open position counts as one slot, not as
+    what it is now worth. Redeploying a gain the rule cannot yet spend would
+    be marking to market to size the next bet."""
+    world(
+        signals=[
+            _signal("AAA", "Buy", 100.0, day=1),  # Still maturing, up 5x.
+            _signal("BBB", "Buy", 100.0, day=2),
+        ],
+        prices={"AAA": 500.0, "BBB": 100.0},
+    )
+
+    rule = agent_performance._mechanical_strategy(1000.0, datetime.date(2026, 8, 1))
+
+    # $800 over the four free slots, not a share of AAA's paper gain.
+    assert rule.invested == pytest.approx(400.0)
 
 
 def test_the_spy_baseline_is_priced_from_its_own_bars(monkeypatch):

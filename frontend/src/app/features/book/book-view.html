@@ -106,9 +106,11 @@
             <h2>Against the strategies that need no model</h2>
             <p class="hint">
               The agent against the two things it could be replaced by, all starting from its first
-              trade on {{ p.since }} with the same {{ money(p.budget) }}. The mechanical follower
-              buys every Buy signal in equal weight and needs no model at all — if it wins, the
-              agent is spending the research budget for nothing.
+              trade on {{ p.since }} with the same {{ money(p.budget) }}. The
+              <app-term key="mechanical-follower" /> needs no model at all — if it wins, the agent
+              is spending the research budget for nothing. It can only follow signals the agent paid
+              for, so it weighs the agent’s judgement rather than its choice of what to research;
+              SPY owes nothing to either.
             </p>
           </div>
           <div class="card-body">

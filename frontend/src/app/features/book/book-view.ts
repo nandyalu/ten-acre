@@ -5,10 +5,11 @@ import { RouterLink } from '@angular/router';
 import { AgentTrade } from '../../core/models/api.models';
 import { EquityChart, EquityPoint } from '../../shared/equity-chart';
 import { AgentService } from '../../core/services/agent.service';
+import { Term } from '../../shared/glossary/term';
 
 @Component({
   selector: 'app-book-view',
-  imports: [RouterLink, UpperCasePipe, EquityChart],
+  imports: [RouterLink, UpperCasePipe, EquityChart, Term],
   templateUrl: './book-view.html',
 })
 export class BookView {

@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-20
+
+- **The site** — "mechanical signal-follower" is a glossary term now, defined once and used on the Auto trader page, which had explained it inline. The definition states the whole rule: buy on a Buy signal whenever one of the five slots is free, hold until a Sell signal or the call's maturity date, whichever comes first. It also carries what the baseline can and cannot measure — it follows only the signals the agent paid for, so it weighs the agent's judgement and not its choice of what to research. Both rules behind it changed the same day — see [the journey](journey.md).
+
 ## 2026-09-19
 
 - **Dependencies** — quiv moves from 0.10.0 to 1.0.0, which was released on 2026-09-17. The lock was never refreshed after it shipped, so the container ran 0.10.0 while the 2026-09-18 entry below already cited 1.0.0's soak test as a reason for a design choice. The one breaking change in 1.0.0 renames the three injected handler parameters, and no handler here declares any of them; the other six migration steps were already settled when this app moved to 0.10.0. The `run_on_main` traceback that every shutdown logs is not fixed by the upgrade, because 1.0.0 carries the same code, and the fix for it is not released yet.
