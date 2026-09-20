@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-20
 
+- **The analysis pipeline** — The vendored TradingAgents moves to v0.5.0, upstream's first tagged release since v0.4.0. 29 of its 60 commits are on our branch. The ones that do not change an analysis: vendor API keys are kept out of request errors by one shared helper, a throttled vendor chain answers "unavailable" instead of ending the run, an indicator Alpha Vantage cannot compute falls through to the next vendor, an outage is told apart from an unknown symbol on every Yahoo path, a failed reflection no longer stops the next run, US statements can be served as filed from SEC EDGAR, and six dependencies nothing imports are gone. What changed for the agent is in [the journey](journey.md). The backtest, the portfolio input and the past-date work were left upstream on purpose; `.claude/rules/tradingagents-submodule.md` lists them for whoever builds the backtester.
 - **The site** — "mechanical signal-follower" is a glossary term now, defined once and used on the Auto trader page, which had explained it inline. The definition states the whole rule: buy on a Buy signal whenever one of the five slots is free, hold until a Sell signal or the call's maturity date, whichever comes first. It also carries what the baseline can and cannot measure — it follows only the signals the agent paid for, so it weighs the agent's judgement and not its choice of what to research. Both rules behind it changed the same day — see [the journey](journey.md).
 
 ## 2026-09-19

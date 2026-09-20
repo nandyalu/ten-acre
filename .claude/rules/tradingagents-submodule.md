@@ -58,7 +58,7 @@ Commit `4c6c356` repairs how those picks fit together. #1189 (an unparseable rat
 
 ## Upstream releases after the base
 
-**Upstream stopped tagging after v0.4.0.** v0.4.1 and v0.4.2 exist only as merged pull requests named after the version. The GitHub Releases page and `git tag` do not show them. To see what upstream has that we do not, run:
+**Upstream tagged v0.4.0, then nothing until v0.5.0 on 2026-09-18.** v0.4.1 and v0.4.2 exist only as merged pull requests named after the version, so the GitHub Releases page and `git tag` do not show those two. To see what upstream has that we do not, run:
 
 ```
 cd TradingAgents && git fetch origin
@@ -77,6 +77,43 @@ git cherry -v HEAD origin/main                 # "+" = not on our branch
 | `16f7fd6`, `ffd5d9a`, `d6ca23a`, `260c899`, `94113c8`, `d58b838`, `821848b` | Alpha Vantage date trim, logging cleanup, Kimi models, tests, comments. | **Take for an easier sync.** None of them changes a live run. We use yfinance, not Alpha Vantage. |
 
 Read `git log --stat` for each new commit before you take it. Do not merge `origin/main` as a whole: it would bring back `1c44dd1`.
+
+## v0.5.0
+
+**v0.5.0** (PR #1364, merged 2026-09-18, and the first tag since v0.4.0) holds 60 commits. **29 of them are on this branch**, cherry-picked on 2026-09-20 in upstream order. `git log --oneline pre-v050-sync..HEAD` lists them, and the tag `pre-v050-sync` marks the commit before the sync.
+
+Most of the picks needed no decision. These did:
+
+| What we took | Note |
+|---|---|
+| `62d3479` conflict alone is not a reason to Hold | A prompt change at four sites: both managers' prompts and both rating fields. See the 2026-09-20 entry in `JOURNEY.md`. |
+| `486dec1` the decision prompts state their output shape | Taken with the trader's section rewritten. Upstream asks the trader for **Entry Price** and **Stop Loss**; this fork asks for the ATR multiples, because Python computes every level. |
+| `241638d` one combined Reddit request | Reconciled with our trawl commit `5260a28`. The combined feed (`r/a+b+c`) now goes through `_fetch_subreddit`, so OAuth and trawl still serve it, and the parallel per-subreddit fetch is gone. A trawl post gets its subreddit from its own permalink, since only the RSS feed labels each entry. |
+| `b20c8e6` vendor keys out of request errors | Upstream's shared `get_scrubbed` helper replaced our local `ce80173`. It detaches the response and the exception chain, because both hold the URL. `fred.redact` stays for FRED's own 400 body, which no request helper sees. |
+| `f8042ef` an unreadable price does not discard the decision | Only the coercion half. A range ("2-3") in an ATR multiple now nulls one field instead of failing the whole proposal. The renderer half names price fields this fork does not have. |
+| `d5ba41b` a vendor failure is reported as one | Merged into our circuit-breaker routing from #1071. A chain where every vendor is throttled now answers `DATA_UNAVAILABLE` instead of ending the run. |
+| `aef4af9` the next vendor serves what Alpha Vantage cannot | An unsupported indicator is a `NoMarketDataError`, not a `BadVendorArgumentError`, so the router falls through to yfinance. |
+| `f881c4a` US statements as filed, from SEC EDGAR | Opt in by naming `sec_edgar` in the `fundamental_data` chain. It feeds the fundamentals **analyst**, and is separate from `backend/services/fundamentals.py`, which the agent reads. |
+
+**`8ac4371` (Ollama takes the local-compatible client) arrived as a test only.** This fork already had the client fix, and that fork test now asserts our stronger contract: structured output on Ollama answers with `json_schema`, which constrains the server's sampler, so no tool and no `tool_choice` are sent.
+
+**`8d64416` was skipped.** Our `bfac9bc` already trims global news before the limit, with one bucket per macro query.
+
+### What v0.5.0 holds for the backtester and replay, and is not on this branch
+
+**Take this set together when the backtester or replay is built**, not before. Every commit here is about a run dated in the past, which no live run performs. Taking one on its own pulls in test files for the other two.
+
+| Commit | What it does |
+|---|---|
+| `8721b92`, `d8eceb6`, `2ca59cc`, `76a93d6` | `tradingagents/backtest.py`: run the graph over a grid of tickers and dates, and score each decision against the direction it claimed. Reads the decision log, not a portfolio; upstream states it must never grow an execution model. `iter_grid` stops the grid at today. |
+| `6436d1f` | `propagate(..., portfolio=...)` and `tradingagents/portfolio.py`: the caller's holdings and cash reach the trader and the portfolio manager. Three states stay distinct: a position, a flat book, and no context. Our `propagate` already carries `horizon`, so this is a merge point. |
+| `85d9137` | `holding_period_days` sets the window an outcome is measured over, and the reflection states the window it judges. |
+| `d04693a`, `fadc698`, `c3bb991`, `f0a1cf6`, `96111aa` (v0.4.2) | Tool dates bounded by the run's trade date; insider rows dated by the trade; prediction markets bounded; the company profile withheld when it has no historical vintage. `date_window.withhold_live_profile` belongs here. This is the precondition for an honest past-dated run. |
+| `375af05`, `9683194`, `6398951`, `4a9f196`, `34899bd`, `008ac65`, `2c1ba38` | The CLI's run surface, remembered selections, and the decision log on the CLI path. This app never runs the CLI. |
+
+**Two upstream tests were removed from the picks for the same reason**, with a comment at the end of `tests/test_rating_integrity.py`: one grades a backtest run, one drives the CLI.
+
+**`tests/test_structured_agents.py::TestSentimentAnalystAgent::test_structured_path_produces_rendered_markdown` hangs**, on this branch and on `pre-v050-sync` alike, so it is not from the sync. Run the suite with `-k "not SentimentAnalystAgent"` until someone fixes it.
 
 ## Pull requests to watch
 

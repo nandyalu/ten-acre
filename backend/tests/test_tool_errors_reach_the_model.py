@@ -81,10 +81,11 @@ def test_a_transient_failure_still_opens_the_circuit(monkeypatch):
     monkeypatch.setattr(interface, "_resolve_vendor_chain", lambda *a, **kw: ["yfinance"])
 
     for _ in range(3):
-        # With no vendor left to try, the router raises. That is expected here
-        # and is not what this test is about — the breaker's count is.
-        with pytest.raises(RuntimeError):
-            interface.route_to_vendor("get_indicators", "AAPL", "rsi", "2026-09-01", 30)
+        # A chain where every vendor is throttled reports the vendors, not the
+        # instrument (upstream v0.5.0). That answer is not what this test is
+        # about — the breaker's count is — but it must not be an exception.
+        out = interface.route_to_vendor("get_indicators", "AAPL", "rsi", "2026-09-01", 30)
+        assert out.startswith("DATA_UNAVAILABLE")
 
     assert interface._circuit_breaker.is_open("yfinance") is True
 
