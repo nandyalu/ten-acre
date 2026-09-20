@@ -302,7 +302,7 @@ Two different faults. The model sometimes puts an order **beside** `orders` rath
 
 **2026-09-02 — the agent can say what it needs, and is told what went wrong.** It had been acting blind to its own refusals and broker failures, with no way to report a tool it was missing.
 
-**2026-09-01 — everything except the agent is removed.** Both previous deployments stop and every manual control goes with them, because a person who can nudge the book puts a second decision-maker in the record and afterwards nothing can say which one produced a result.
+**2026-09-01 — everything except the agent is removed.** Both previous deployments stop and every manual control goes with them, because a person who can nudge the book puts a second decision-maker in the record and afterwards nothing can say which one produced a result. The tag `v1-two-book-experiment` marks the commit before the removal.
 
 **2026-09-01 — the agent's prompt and answer are recorded, and there is a page for them.** Behaviour here is mostly prompt, so a run whose prompt was not kept cannot be analysed afterwards.
 

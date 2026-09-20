@@ -1,8 +1,10 @@
 # frontend — Claude Code context
 
-**This is the public site for Ten Acre**, an experiment in which one AI agent trades a simulated account with no human help. It is a publication, not a tool: nothing here operates anything, and no control on it can change what the agent does. See `../plan.md` for the design plan and `../CLAUDE.md` for the experiment itself.
+**This is the public site for Ten Acre**, an experiment in which one AI agent trades a simulated account with no human help. It is a publication, not a tool: nothing here operates anything, and no control on it can change what the agent does. See `../PLAN.md` for the design plan and `../CLAUDE.md` for the experiment itself.
 
 Angular 22 (standalone components, signals, zoneless), vitest for tests, `lightweight-charts` for both charts. No UI framework and no CSS preprocessor. Commands run from `frontend/`: `npx ng build` (full template type-check), `npx ng test`, `npx prettier --write "src/**/*.{ts,html,css}"`.
+
+**The database holds the start date, not the site.** The date is stamped when the agent is first switched on, and this deployment's says 2026-09-10. `src/app/shared/experiment.ts` holds 2026-09-02 only as the fallback for a site with no API.
 
 ## Who reads it
 

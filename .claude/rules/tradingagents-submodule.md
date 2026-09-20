@@ -5,8 +5,6 @@ paths:
   - "pyproject.toml"
 ---
 
-<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
-
 ## Vendored TradingAgents repo
 
 **`TradingAgents/` is a git submodule.** `.gitmodules` registers it, and a `160000` gitlink pins it to one commit. This repo tracks which TradingAgents commit is checked out and keeps that repo's history intact. `git clone` needs `--recurse-submodules`. Or run `git submodule update --init` after the clone.

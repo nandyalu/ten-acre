@@ -17,8 +17,6 @@ paths:
   - "docs/deploying.md"
 ---
 
-<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
-
 ## Deployment topology (important, non-obvious)
 
 Two copies of the compose config exist and are **not synced automatically**:

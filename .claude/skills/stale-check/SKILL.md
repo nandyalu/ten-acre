@@ -5,6 +5,8 @@ description: Run after any change to this app, before committing. Records the
   and sweeps the surfaces that go stale silently — the prompt quoted in .claude/rules/agent.md,
   docs, site copy, code comments, and hardcoded values that are really
   settings. Every check here caught a real bug on 2026-09-10.
+model: sonnet
+context: fork
 ---
 
 # stale-check
@@ -70,7 +72,7 @@ EOF
 
 **Read every hit; do not treat the list as a failure count.** The rule file paraphrases some rules and abbreviates others with `[...]`, so a paraphrase shows up here looking like a gap. The first run of this check flagged six, of which three were paraphrases and three were rules genuinely missing from CLAUDE.md — including two that appear only in the state that produces them (a zero balance, a conviction floor), which is exactly why reading the code had missed them.
 
-Also re-read any CLAUDE.md sentence saying a thing **is not built**. Those rot fastest — one claimed an unbuilt feature that had shipped the previous day.
+Also re-read any sentence in `PLAN.md` or `CLAUDE.md` saying a thing **is not built**. Those rot fastest — one claimed an unbuilt feature that had shipped the previous day. `PLAN.md` holds the backlog and the rejected work since 2026-09-20; `CLAUDE.md` keeps only the permanent non-goals.
 
 ---
 

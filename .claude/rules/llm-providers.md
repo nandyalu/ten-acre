@@ -10,8 +10,6 @@ paths:
   - "ollama/**"
 ---
 
-<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
-
 ## LLM provider switching
 
 `TradingAgents/tradingagents/llm_clients/` is a full multi-provider abstraction (ollama, google, openai, anthropic, azure, bedrock, etc.) — switching providers is a config change, not a code change.

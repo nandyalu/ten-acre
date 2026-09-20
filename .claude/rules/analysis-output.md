@@ -8,8 +8,6 @@ paths:
   - "TradingAgents/tradingagents/graph/**"
 ---
 
-<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
-
 ## A tool error goes to the model, not to the logs
 
 **A raising tool used to end the analysis.** On 2026-09-02 that discarded two complete forty-minute runs: the model asked for an indicator called `macd_histogram` when the real name is `macdh`, and the error listing all thirteen valid names went to the logs instead of to the model.

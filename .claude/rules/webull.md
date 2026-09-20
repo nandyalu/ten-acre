@@ -1,9 +1,21 @@
 ---
 paths:
-  - "backend/services/{sandbox_broker,quotes,intraday,trade_stream}.py"
+  - "backend/services/{sandbox_broker,quotes,intraday,trade_stream,setup_check}.py"
+  - ".env.example"
 ---
 
-<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
+## The four guards, and why each one is written the way it is
+
+`CLAUDE.md` states the four guards as rules. This section holds the reasoning behind them, which a future edit must not undo.
+
+**The prompt may lie to the model. The code must never lie to itself.** Since 2026-09-09 the prompt tells the agent "You manage a small account of real money", because an agent that knows the stakes are imaginary is not asked the question this experiment exists to ask. The four checks below are the code's own knowledge of what it is connected to.
+
+- **`_assert_sandbox()`** runs immediately before every order, not once at import, so a change to the environment mid-process cannot leave a live client armed.
+- **The `DE` account-number prefix check.** Every simulated account on the sandbox host is DE-prefixed, in both the DEM and DEL series. The widening from `DEM` to `DE` on 2026-09-03 corrected a wrong observation and was not a relaxation.
+- **The account-class check.** The target is resolved by `account_class == INDIVIDUAL_CASH`, never hardcoded.
+- **`WEBULL_ACCOUNT_ID` names the one account this deployment owns.** An unset or empty value stops order flow and never falls back to anything. It takes the account number (`DE…`) or the internal id, and it applies after the other three checks, so it can only narrow what they allowed. There is no default on purpose: a person must write down which book the container owns.
+
+**The day someone relaxes one of them because the agent thinks the money is real anyway is the day this becomes dangerous.**
 
 ## Webull OpenAPI reference
 

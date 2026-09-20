@@ -5,8 +5,6 @@ paths:
   - "backend/services/analysis.py"
 ---
 
-<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
-
 ## Ollama pool topology (deployed ≠ the repo template)
 
 `dockge/ollama-pool.compose.yaml` describes **two** backends (`ollama-pool`, `ollama-pool-b`) behind an nginx round-robin named `ollama-lb`. That is stale. What actually runs (verified 2026-08-06):

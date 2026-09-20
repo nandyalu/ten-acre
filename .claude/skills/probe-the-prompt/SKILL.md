@@ -4,6 +4,8 @@ description: Send the real prompt to the real model, out of the app, and read
   the reasoning block. Use after any prompt change, and before believing a
   prompt change worked. Rendering a section is not the same as it being read —
   four sections here were correct, correctly rendered, and completely ignored.
+model: sonnet
+context: fork
 ---
 
 # probe-the-prompt

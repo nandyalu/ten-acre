@@ -5,8 +5,6 @@ paths:
   - "TradingAgents/tradingagents/dataflows/**"
 ---
 
-<!-- Moved from CLAUDE.md on 2026-09-13. This file loads when Claude reads a file that matches paths. -->
-
 ## Market data goes through the bar cache
 
 `backend/services/bars.py` is a read-through cache over the `dailybar` table (`(ticker, date)`). **Route any new daily-history read through `bars.get_bars()`, not `yf.Ticker(...).history()` or a direct Webull call** — the whole point is that a completed session never changes, so refetching one is waste and rate-limit risk.
