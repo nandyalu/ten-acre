@@ -86,7 +86,7 @@ What each path gives you:
 | Post body excerpt | Every post | Every post | Every post |
 | Posts older than 7 days | Filtered by Reddit | Filtered by the fetcher, because the search page ignores `t=week` | Filtered by Reddit |
 
-**All the subreddits are searched in one request** (`r/a+b+c`), because the feed allows about one request a minute per IP and a request for each subreddit spent a back-off on nearly every run. Each entry names its subreddit, so the posts are grouped back by it.
+**The feed searches all the subreddits in one request** (`r/a+b+c`), because it allows about one request a minute per IP and a request for each subreddit spent a back-off on nearly every run. Each entry names its subreddit, so the posts are grouped back by it. Reddit's HTML search page has no such form, so trawl loads one page for each subreddit instead, at the same time.
 
 **On the RSS path, `429` warnings in the log are expected, not a fault.** A `429` waits for `Retry-After`, or up to 60 seconds, and retries once per run. Then the search is marked unavailable. The analyst reads "unavailable", never "no posts found", so throttling does not look like silence.
 

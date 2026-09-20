@@ -56,6 +56,21 @@ Commit `4c6c356` repairs how those picks fit together. #1189 (an unparseable rat
 - `7a6d4c2` (merge of fork PR #1) + `78dbb52`: the news analyst can attach Gemini's built-in search-grounding tool, behind `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING` (default off). The PR as submitted needed a fix: Gemini rejects `google_search` mixed with the analyst's custom tools unless `tool_config.include_server_side_tool_invocations` is set, confirmed against the live API. **Do not flip the default on** — the Free tier gives Gemini 3 zero grounding quota (`429 RESOURCE_EXHAUSTED` on every Gemini 3 model tested, including aliases like `gemini-flash-latest`), so turning it on unconditionally breaks the news analyst on any deployment without a Google Cloud billing account (Tier 1) linked. Gemma models (e.g. `gemma-4-31b-it`) had working grounding on the same Free-tier key — the block is Gemini-3-specific, not account-wide.
 - `7e6ec65`: `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING_MODEL` lets the news analyst run on a different Google model than `quick_think_llm`/`deep_think_llm` when grounding is on — e.g. keep `gemini-3.1-flash-lite` for everything else and set this to `gemma-4-31b-it`, so grounding works on a Free-tier key without touching the main model. `TradingAgentsGraph.news_analyst_llm` resolves this and is what `GraphSetup` hands to `create_news_analyst`; every other analyst still gets `quick_thinking_llm`.
 
+## Editing the fork: the venv does not follow the source
+
+**`uv` does not rebuild `tradingagents` when only its source files change.** `[tool.uv.sources]` installs it from `TradingAgents/` as a built, non-editable copy, and neither `uv run` nor `uv sync` notices an edit that leaves the version alone. The installed copy then lags the source, silently.
+
+**The tests do not catch this, because they do not use the installed copy.** pytest puts `TradingAgents/` on `sys.path`, so `import tradingagents` in a test reads the source tree while the app reads `.venv`. On 2026-09-20 that combination produced two wrong conclusions in one afternoon: a green test run beside a live run that crashed on the bug the tests said was fixed, and a "the fix did not work" verdict on a run that was executing the old code.
+
+**Before any run that is not pytest — a probe, a script, a container-less start — rebuild it:**
+
+```
+uv sync --extra dev --reinstall-package tradingagents
+diff -q .venv/lib/python3.14/site-packages/tradingagents/dataflows/reddit.py TradingAgents/tradingagents/dataflows/reddit.py
+```
+
+The second line is the check that matters: compare the file you edited. `--extra dev` is not optional — `uv sync` without it prunes pytest. The Docker image is never affected, because it copies the source tree and builds it.
+
 ## Upstream releases after the base
 
 **Upstream tagged v0.4.0, then nothing until v0.5.0 on 2026-09-18.** v0.4.1 and v0.4.2 exist only as merged pull requests named after the version, so the GitHub Releases page and `git tag` do not show those two. To see what upstream has that we do not, run:
@@ -88,7 +103,7 @@ Most of the picks needed no decision. These did:
 |---|---|
 | `62d3479` conflict alone is not a reason to Hold | A prompt change at four sites: both managers' prompts and both rating fields. See the 2026-09-20 entry in `JOURNEY.md`. |
 | `486dec1` the decision prompts state their output shape | Taken with the trader's section rewritten. Upstream asks the trader for **Entry Price** and **Stop Loss**; this fork asks for the ATR multiples, because Python computes every level. |
-| `241638d` one combined Reddit request | Reconciled with our trawl commit `5260a28`. The combined feed (`r/a+b+c`) now goes through `_fetch_subreddit`, so OAuth and trawl still serve it, and the parallel per-subreddit fetch is gone. A trawl post gets its subreddit from its own permalink, since only the RSS feed labels each entry. |
+| `241638d` one combined Reddit request | Reconciled with our trawl commit `5260a28`, and the first reconciliation was wrong: Reddit's HTML search page has no `r/a+b+c` form, so the trawl path returned zero posts and reported them as a real absence. The feed and the OAuth endpoint take the combined request; trawl asks for each subreddit on its own, at the same time, and a page it cannot read goes to the feed by itself. A trawl post gets its subreddit from its own permalink, since only the feed labels each entry. See `market-data.md`. |
 | `b20c8e6` vendor keys out of request errors | Upstream's shared `get_scrubbed` helper replaced our local `ce80173`. It detaches the response and the exception chain, because both hold the URL. `fred.redact` stays for FRED's own 400 body, which no request helper sees. |
 | `f8042ef` an unreadable price does not discard the decision | Only the coercion half. A range ("2-3") in an ATR multiple now nulls one field instead of failing the whole proposal. The renderer half names price fields this fork does not have. |
 | `d5ba41b` a vendor failure is reported as one | Merged into our circuit-breaker routing from #1071. A chain where every vendor is throttled now answers `DATA_UNAVAILABLE` instead of ending the run. |
