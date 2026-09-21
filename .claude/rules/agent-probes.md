@@ -62,6 +62,7 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 | Moving the wakeup ask and its fallback to one section at the end | 7 + 7 before, 7 after | **No regression.** The fallback is still read from the bottom, 7 of 7 |
 | A refusal fed back to the model | 5 of 7, then 6 of 7 | **Read.** Where the section sits made no measurable difference |
 | The alerts table, moved above the account and the tables | 1 of 7, then 4 of 7 | **Suggestive, not settled.** The move is in the predicted direction and sits at the floor |
+| Fencing the analysis in a read | 7 of 7 both ways | **No difference to whether it is read.** Kept, for the structure it guarantees |
 
 ## Read, and the evidence for it
 
@@ -127,6 +128,21 @@ The refusal read `BUY 500 COIN: costs more than the $8,556.59 you have`, under "
 **Treat this as suggestive and no more.** The measured floor of 3 comes from `turn1`, which carries no alerts, so there is no floor for this metric — a swing of 3 is exactly the size that run-to-run noise produces elsewhere. What can be said is that the move is in the predicted direction and nothing else changed.
 
 **The wake reason itself was quoted by 0 of 7 in both arms**, which matches the 2026-09-13 finding that the ask does the work rather than the reason line. The reason is not what makes the alerts get read; being near them may be.
+
+**Fencing the analysis inside a read, 2026-09-21 — a matched pair with a derived marker set.** The question was whether wrapping the analysis in a ```` ```` ```` block would turn careful reading into skimming, which is the risk that had kept the collision fix to demoting headings rather than fencing.
+
+The markers were not hand-picked: every number appearing in the whole prompt **exactly once** and inside the read section is a figure the model can only have taken from the analysis. Thirty-five of them, the same thirty-five in both arms.
+
+| | Unfenced | Fenced |
+|---|---|---|
+| Samples quoting a read-only figure | 7 of 7 | 7 of 7 |
+| Read-only figures quoted, all samples | 9 | 8 |
+| Mentioned the analysis at all | 7 of 7 | 7 of 7 |
+| Placed an order | 3 of 7 | 0 of 7 |
+
+**The fence makes no difference to whether the analysis is read**, so the choice falls to what else it buys: a hard boundary around a document that carries its own markdown, on top of the demotion. Kept on that ground, not on a reading improvement.
+
+**The one thing to watch is orders, not reading.** 3 of 7 to 0 of 7 is at the floor and cannot be attributed — the floor run itself swung "ordered research" from 3 to 1 on identical code, and the consolidation probe showed the same 3-to-0 pattern. But a read exists to be acted on, so if the live book starts reading and not acting, unfence first and probe again before looking anywhere else.
 
 ## Unconfirmed as read, and kept anyway
 

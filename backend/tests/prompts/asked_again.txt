@@ -2,6 +2,8 @@ You manage a small account of real money. Decide what to do with it now, if anyt
 
 ---
 
+# Now
+
 ## The time
 
 It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, at 4:00 PM.
@@ -21,6 +23,8 @@ These are long-term notes you recorded previously that persist until you clear t
 - Skip INTC — stopped out on it twice this month on the same breakout setup.
 
 ---
+
+# Since you last looked
 
 ## What is no longer true
 
@@ -50,6 +54,7 @@ The rules below are already current, so nothing here repeats them. They are here
 
 **What you asked to read.**
 
+````markdown
 INTC 2026-09-21 — Rating: Buy.
 
 
@@ -60,6 +65,7 @@ The app computed the entry, stop and target.
 ### Probability
 
 62%.
+````
 
 
 **What was not carried out.** Your last answer also asked to read, and only the read runs from an answer that asks for one. None of this happened:
@@ -75,6 +81,8 @@ refusal above, not another chance to read. If you also want to read
 something, leave it for your next turn or wakeup and fix the order now.
 
 ---
+
+# What is true now
 
 ## The market right now
 
@@ -158,6 +166,8 @@ Your recent wakeups, and whether each one led to an action:
 2 of the last 3 did nothing. Pick the next time for when you expect something to have changed, not out of habit.
 
 ---
+
+# What you can do
 
 ## Paying for research
 

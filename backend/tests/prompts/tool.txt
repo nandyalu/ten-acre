@@ -2,6 +2,8 @@ You manage a small account of real money. Decide what to do with it now, if anyt
 
 ---
 
+# Now
+
 ## The time
 
 It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, at 4:00 PM.
@@ -14,6 +16,8 @@ These are long-term notes you recorded previously that persist until you clear t
 - Skip INTC — stopped out on it twice this month on the same breakout setup.
 
 ---
+
+# Since you last looked
 
 ## What is no longer true
 
@@ -34,6 +38,8 @@ The rules below are already current, so nothing here repeats them. They are here
 **Reporting earnings soon:** ORCL on 2026-09-24. A report is the event most likely to move one of these sharply, and you can sell before it, study it, or hold through it.
 
 ---
+
+# What is true now
 
 ## The market right now
 
@@ -112,6 +118,8 @@ Your last 3 wakeups: 1 led to an action, 2 did nothing.
 2 of the last 3 did nothing. Pick the next time for when you expect something to have changed, not out of habit.
 
 ---
+
+# What you can do
 
 ## Paying for research
 

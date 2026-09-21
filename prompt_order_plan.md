@@ -1,6 +1,6 @@
 # Prompt order: a plan to restructure `build_prompt`
 
-**Status:** in progress. Started 2026-09-21.
+**Status:** phases 1 and 2 complete, 2026-09-21. Every step probed. The open item is asking the agent what order it wants.
 
 ## Why
 
@@ -286,6 +286,12 @@ The cost is four lines.
 If the answer to all three is no change, keep the headings anyway only if they cost nothing that matters, and record the null result in `agent-probes.md`.
 A null result is worth writing down. It stops the next person trying it again.
 
+**Step 2.7 done 2026-09-21, and the plan is finished.** Four `#` group headings — Now, Since you last looked, What is true now, What you can do — each named once above its first non-empty section. A group whose sections are all empty never appears. Nothing moved and no words changed; the prompt gained four lines.
+
+**The fence question, settled by probe.** A matched pair on the `read` variant, with a derived marker set: every number appearing exactly once in the whole prompt and inside the read is a figure the model can only have taken from the analysis. Thirty-five of them, the same in both arms. **7 of 7 quoted one either way.** The fence makes no difference to whether the analysis is read, so it was kept for the structural guarantee rather than a reading gain, on top of the demotion.
+
+**The one thing to recheck if the live book misbehaves:** orders went 3 of 7 to 0 of 7 across the fence pair, and the same 3-to-0 appeared across the consolidation pair. Both are at the floor, and the floor run itself swung "ordered research" from 3 to 1 on identical code. But a read exists to be acted on. If the agent starts reading and not acting, unfence first.
+
 ## How to probe
 
 Run after every phase-2 step:
@@ -372,5 +378,5 @@ One opinion once is noise.
 - [x] 2.4 consolidate `last_answer`
 - [x] 2.5 move `noticed` beside the wake reason
 - [x] 2.6 move `regime` into What is true now (subsumed by 2.5)
-- [ ] 2.7 add the `#` group headings
-- [ ] ask the agent what order it wants
+- [x] 2.7 add the `#` group headings
+- [ ] ask the agent what order it wants (not started)

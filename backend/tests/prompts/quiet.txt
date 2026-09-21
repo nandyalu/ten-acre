@@ -2,11 +2,15 @@ You manage a small account of real money. Decide what to do with it now, if anyt
 
 ---
 
+# Now
+
 ## The time
 
 It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, at 4:00 PM.
 
 ---
+
+# What is true now
 
 ## Your account
 
@@ -28,6 +32,8 @@ You hold nothing. The whole account is in cash.
 No new signals today.
 
 ---
+
+# What you can do
 
 ## Rules
 

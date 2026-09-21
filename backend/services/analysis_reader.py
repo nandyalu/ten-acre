@@ -260,12 +260,20 @@ def describe(readings: list[str]) -> list[str]:
     Headed so the agent does not mistake it for information that arrived on
     its own — it asked for this, and the next answer is the one that counts.
 
-    An analyst's own `---` inside the text is dropped by `agent._joined`,
-    which owns the separator between sections.
+    **Each analysis is fenced (2026-09-21).** It is a document the agent asked
+    for, not part of these instructions, and it carries its own markdown: 60 of
+    the 126 stored analyst reports contain a `## ` heading, the same level a
+    section of this prompt uses. `agent._joined` already drops a bare `---` and
+    demotes an embedded heading, but a fence says where the document starts and
+    stops rather than repairing it line by line.
+
+    Four backticks, because a report may contain a three-backtick block of its
+    own. The opening line names what is inside, so the fence does not read as
+    code.
     """
     if not readings:
         return []
     lines = ["**What you asked to read.**", ""]
     for text in readings:
-        lines += [text, ""]
+        lines += ["````markdown", text, "````", ""]
     return lines

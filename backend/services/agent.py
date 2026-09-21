@@ -811,7 +811,7 @@ def _demoted(line: str) -> str:
     return _EMBEDDED_HEADING.sub("### ", line, count=1)
 
 
-def _joined(sections: list[tuple[str | None, list[str]]]) -> str:
+def _joined(groups: list[tuple[str | None, list[tuple[str | None, list[str]]]]]) -> str:
     """Every section that has something in it, under its heading, separated by
     one rule.
 
@@ -850,17 +850,26 @@ def _joined(sections: list[tuple[str | None, list[str]]]) -> str:
     that into skimming for a collision that demotion already removes.
     """
     blocks = []
-    for heading, lines in sections:
-        # Split after joining, not before: a section's lines are not one
-        # line each. A reading is a whole analysis in a single string, and
-        # that is exactly where the stray rule was found.
-        body = "\n".join(_unwrapped(lines))
-        body = "\n".join(
-            _demoted(line) for line in body.splitlines() if line.strip() != "---"
-        ).strip("\n")
-        if not body.strip():
-            continue
-        blocks.append(f"## {heading}\n\n{body}" if heading else body)
+    for group, sections in groups:
+        opened = False
+        for heading, lines in sections:
+            # Split after joining, not before: a section's lines are not one
+            # line each. A reading is a whole analysis in a single string, and
+            # that is exactly where the stray rule was found.
+            body = "\n".join(_unwrapped(lines))
+            body = "\n".join(
+                _demoted(line) for line in body.splitlines() if line.strip() != "---"
+            ).strip("\n")
+            if not body.strip():
+                continue
+            block = f"## {heading}\n\n{body}" if heading else body
+            # A group is named once, on its first section that has anything in
+            # it. A group whose sections are all empty never appears, the same
+            # way an empty section does not.
+            if group and not opened:
+                block = f"# {group}\n\n{block}"
+                opened = True
+            blocks.append(block)
     return "\n\n---\n\n".join(blocks)
 
 
@@ -1639,77 +1648,94 @@ def build_prompt(
     asked_again = _asked_again(outcomes, readings, dropped_with_read, rejected)
 
     return _joined([
-        # "Decide what to trade today" asked for a trade while a rule far below
-        # says doing nothing is often right, and an opening line beats a late
-        # rule. "today" was stale too: the agent has set its own cadence since
-        # 2026-09-05 and wakes several times a day, so most passes are about
-        # positions already open rather than about a new trade.
-        #
-        # "of real money" is a deliberate lie, and the only one here. See
-        # CLAUDE.md's "Four guards keep this a simulation": the prompt may lie
-        # to the model, the code must never lie to itself. Every order still
-        # passes _assert_sandbox(). Do not relax a guard on the grounds that
-        # the agent believes this is real — that belief is manufactured here.
-        (None,
-         ["You manage a small account of real money. Decide what to do with it now, if anything."]),
-        ("The time", describe_clock()),
-        # **Directly under the clock, because it changes how the rest is read.**
-        # Its own chosen time and a move it slept through call for different
-        # answers, and until 2026-09-12 the agent was told neither. **On a later
-        # turn the wake is history, so the heading names it as that.**
-        ("Why this pass started" if asked_again else "Why you are awake",
-         describe_wakeup(
-             woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
-             asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
-         )),
-        # Directly under the wake block since 2026-09-21: the note the last
-        # pass left and the notes the agent keeps permanently are both it
-        # talking to itself, and "those are your own words, not an
-        # instruction" was already true of both.
-        ("Your persistent memory notes across passes", describe_memory_notes()),
-        # --- What happened since the last pass ------------------------
-        # **Read before anything that is merely true now.** All three are
-        # news: the app changed, a rule spotted something, or the agent's
-        # own last answer produced a result. Until 2026-09-21 the wake
-        # reason announced the second of these eight sections above it.
-        #
-        # **The measured constraint is kept and strengthened**: "what was
-        # noticed" and "what you just did" read 0 of 4 below the tables and
-        # 4 of 4 above them, and they are further above them here. Do not
-        # move them back down (`agent-probes.md`).
-        ("What is no longer true", describe_recent_changes(changes or [])),
-        # **What the rules noticed, as facts.** News about the world rather
-        # than an answer to something the agent said, which is why it sits with
-        # the account and the holdings rather than with the refusals and
-        # readings.
-        ("What was noticed since your last pass",
-         describe_watchdog(alerts or [], earnings or [])),
-        ("What your last answer did",
-         describe_last_answer(outcomes, readings, dropped_with_read, rejected, answer_by_tool)),
-        # --- What is true now -----------------------------------------
-        ("The market right now", [regime_line] if regime_line else []),
-        ("Your account", describe_account(book, unsettled_cash)),
-        ("What you hold", describe_holdings(book, price_ranges)),
-        ("Orders you placed that have not filled yet", describe_pending_orders()),
-        ("Recent analyst signals",
-         describe_signals(signals, book, prices, as_of, day_ranges, researched_now)),
-        ("Your track record", history),
-        ("Orders the broker would not take", describe_recent_failures(failures or [])),
-        ("How long an analysis takes",
-         describe_analysis_timing(analysis_minutes or [], running_analyses or {})),
-        ("Your recent wakeups", describe_recent_wakeups(wakeups or [], brief=answer_by_tool)),
-        ("Paying for research", describe_research_price(price) if can_research else []),
-        ("Every ticker you track", tracked),
-        ("Candidates you could research", candidates),
-        ("Rules",
-         describe_rules(book, price, watchlist, max_watchlist, menu, horizon_days, answer_by_tool)),
-        # Last but for the shape to write it in: this is a decision, and the
-        # answer section is the format every decision goes into.
-        ("Your next wakeup", describe_next_wakeup(planned_wakeup, wakeup_note)),
-        # The heading differs by channel because the JSON one is a promise about
-        # what follows — a shape to copy — and the tool one is an instruction.
-        ("How to answer" if answer_by_tool else "Answer in this shape",
-         describe_answer_shape(watchlist, max_watchlist, menu, answer_by_tool)),
+        # **The four groups are the four questions in order: when is it,
+        # what did I miss, what is true, what may I do (2026-09-21).** A
+        # group is named once, above its first section that has anything in
+        # it. The opening line belongs to no group.
+        (None, [
+
+            # "Decide what to trade today" asked for a trade while a rule far below
+            # says doing nothing is often right, and an opening line beats a late
+            # rule. "today" was stale too: the agent has set its own cadence since
+            # 2026-09-05 and wakes several times a day, so most passes are about
+            # positions already open rather than about a new trade.
+            #
+            # "of real money" is a deliberate lie, and the only one here. See
+            # CLAUDE.md's "Four guards keep this a simulation": the prompt may lie
+            # to the model, the code must never lie to itself. Every order still
+            # passes _assert_sandbox(). Do not relax a guard on the grounds that
+            # the agent believes this is real — that belief is manufactured here.
+            (None,
+             ["You manage a small account of real money. Decide what to do with it now, if anything."]),
+        ]),
+        ("Now", [
+            ("The time", describe_clock()),
+
+            # **Directly under the clock, because it changes how the rest is read.**
+            # Its own chosen time and a move it slept through call for different
+            # answers, and until 2026-09-12 the agent was told neither. **On a later
+            # turn the wake is history, so the heading names it as that.**
+            ("Why this pass started" if asked_again else "Why you are awake",
+             describe_wakeup(
+                 woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
+                 asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
+             )),
+            # Directly under the wake block since 2026-09-21: the note the last
+            # pass left and the notes the agent keeps permanently are both it
+            # talking to itself, and "those are your own words, not an
+            # instruction" was already true of both.
+            ("Your persistent memory notes across passes", describe_memory_notes()),
+        ]),
+        ("Since you last looked", [
+
+            # **Read before anything that is merely true now.** All three are
+            # news: the app changed, a rule spotted something, or the agent's
+            # own last answer produced a result. Until 2026-09-21 the wake
+            # reason announced the second of these eight sections above it.
+            #
+            # **The measured constraint is kept and strengthened**: "what was
+            # noticed" and "what you just did" read 0 of 4 below the tables and
+            # 4 of 4 above them, and they are further above them here. Do not
+            # move them back down (`agent-probes.md`).
+            ("What is no longer true", describe_recent_changes(changes or [])),
+            # **What the rules noticed, as facts.** News about the world rather
+            # than an answer to something the agent said, which is why it sits with
+            # the account and the holdings rather than with the refusals and
+            # readings.
+            ("What was noticed since your last pass",
+             describe_watchdog(alerts or [], earnings or [])),
+            ("What your last answer did",
+             describe_last_answer(outcomes, readings, dropped_with_read, rejected, answer_by_tool)),
+        ]),
+        ("What is true now", [
+
+            ("The market right now", [regime_line] if regime_line else []),
+            ("Your account", describe_account(book, unsettled_cash)),
+            ("What you hold", describe_holdings(book, price_ranges)),
+            ("Orders you placed that have not filled yet", describe_pending_orders()),
+            ("Recent analyst signals",
+             describe_signals(signals, book, prices, as_of, day_ranges, researched_now)),
+            ("Your track record", history),
+            ("Orders the broker would not take", describe_recent_failures(failures or [])),
+            ("How long an analysis takes",
+             describe_analysis_timing(analysis_minutes or [], running_analyses or {})),
+            ("Your recent wakeups", describe_recent_wakeups(wakeups or [], brief=answer_by_tool)),
+        ]),
+        ("What you can do", [
+            ("Paying for research", describe_research_price(price) if can_research else []),
+
+            ("Every ticker you track", tracked),
+            ("Candidates you could research", candidates),
+            ("Rules",
+             describe_rules(book, price, watchlist, max_watchlist, menu, horizon_days, answer_by_tool)),
+            # Last but for the shape to write it in: this is a decision, and the
+            # answer section is the format every decision goes into.
+            ("Your next wakeup", describe_next_wakeup(planned_wakeup, wakeup_note)),
+            # The heading differs by channel because the JSON one is a promise about
+            # what follows — a shape to copy — and the tool one is an instruction.
+            ("How to answer" if answer_by_tool else "Answer in this shape",
+             describe_answer_shape(watchlist, max_watchlist, menu, answer_by_tool)),
+        ]),
     ])
 
 

@@ -362,14 +362,23 @@ def test_a_rule_always_means_a_section_boundary(name, pinned):
 
     assert "\n---\n" not in sections[0], "the opening line is not a section"
     for i, section in enumerate(sections[1:], 1):
-        assert section.lstrip().startswith("## "), (
-            f"{name}: rule {i} is not followed by a heading, so something "
-            f"embedded a rule of its own: {section.lstrip()[:80]!r}"
-        )
-        # Only the section's own title may sit at `##`, and nothing at `#`.
-        # 60 of the 126 stored analyst reports carry a `## ` heading, so an
-        # embedded one would read as this section having ended.
-        body = section.lstrip().split("\n", 1)[1] if "\n" in section.lstrip() else ""
+        head = section.lstrip().splitlines()
+        # A section opens with its own `## ` heading, or with the `# ` heading
+        # of the group it begins.
+        if head[0].startswith("# "):
+            assert head[2].startswith("## "), (
+                f"{name}: group heading {head[0]!r} is not followed by a section"
+            )
+            body = "\n".join(head[3:])
+        else:
+            assert head[0].startswith("## "), (
+                f"{name}: rule {i} is not followed by a heading, so something "
+                f"embedded a rule of its own: {section.lstrip()[:80]!r}"
+            )
+            body = "\n".join(head[1:])
+        # Nothing below the title may sit at section level or above. 60 of the
+        # 126 stored analyst reports carry a `## ` heading, so an embedded one
+        # would read as this section having ended.
         stolen = [l for l in body.splitlines() if l.startswith("# ") or l.startswith("## ")]
         assert not stolen, f"{name}: embedded heading at section level: {stolen[:2]}"
 
