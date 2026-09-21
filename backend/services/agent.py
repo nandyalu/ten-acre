@@ -4156,21 +4156,38 @@ def usable_levels(
     An unknown price is not evidence against a level, so nothing is dropped
     when the quote is missing.
     """
+    refused = level_refusals(stop_price, target_price, price)
+    for reason in refused.values():
+        log.warning("Refusing %s on %s", reason, ticker)
+    return (
+        None if "stop" in refused else stop_price,
+        None if "target" in refused else target_price,
+    )
+
+
+def level_refusals(
+    stop_price: float | None, target_price: float | None, price: float | None
+) -> dict[str, str]:
+    """Say why each exit level that `usable_levels` drops is dropped.
+
+    The agent sees this text. "No usable level" alone let it ask for a stop
+    above the price three times in a row on 2026-09-21, because nothing told
+    it that a sell stop above the market fires at once.
+    """
+    refused: dict[str, str] = {}
     if price is None:
-        return stop_price, target_price
+        return refused
     if stop_price is not None and stop_price >= price:
-        log.warning(
-            "Refusing a stop at %.2f on %s trading at %.2f — it would trigger at once",
-            stop_price, ticker, price,
+        refused["stop"] = (
+            f"a stop at ${stop_price:,.2f}, above the price ${price:,.2f}: "
+            "a sell stop above the price triggers at once"
         )
-        stop_price = None
     if target_price is not None and target_price <= price:
-        log.warning(
-            "Refusing a target at %.2f on %s trading at %.2f — it would fill at once",
-            target_price, ticker, price,
+        refused["target"] = (
+            f"a target at ${target_price:,.2f}, below the price ${price:,.2f}: "
+            "a take-profit below the price fills at once"
         )
-        target_price = None
-    return stop_price, target_price
+    return refused
 
 
 # How long to wait for a buy to fill before arming its exits, and how often to
@@ -4636,19 +4653,30 @@ def _describe_fill(order, result, prices, stops, targets) -> str:
             f"{ticker}: limit buy of {order['quantity']:g} at "
             f"${float(order['limit_price']):,.2f} placed, not yet filled.{note}"
         )
+    # What was really placed, not what the signal offered. `_place` drops a
+    # level the price has passed and may put a volatility stop in its place;
+    # saying "stop $X" from the signal would name a level nothing rests at.
+    refused = level_refusals(stop, target, price)
     if result.get("exits") is not None:
         under = "The broker took the stop and target with it."
-    elif stop or target:
-        under = "The broker refused the bracket, so the exits were armed separately."
+        placed = {leg["kind"]: leg["price"] for leg in result["exits"]}
     else:
-        under = "NOTHING is resting under it — no usable stop or target was on the signal."
-    levels = []
-    if stop:
-        levels.append(f"stop ${stop:,.2f}")
-    if target:
-        levels.append(f"target ${target:,.2f}")
+        placed = {
+            k: v for k, v in (("stop", stop), ("target", target)) if v and k not in refused
+        }
+        if stop or target:
+            under = "The broker refused the bracket, so the exits were armed separately."
+        else:
+            under = "NOTHING is resting under it — no usable stop or target was on the signal."
+    notes = [f" Not placed: {r}." for r in refused.values()]
+    if "stop" in placed and (not stop or abs(placed["stop"] - stop) >= 0.005):
+        notes.append(
+            f" A volatility stop of ${placed['stop']:,.2f} was placed"
+            + (" instead." if stop else ", because the signal had no stop.")
+        )
+    levels = [f"{k} ${placed[k]:,.2f}" for k in ("stop", "target") if k in placed]
     tail = f" ({', '.join(levels)})" if levels else ""
-    return f"{ticker}: bought {order['quantity']}{at}. {under}{tail}"
+    return f"{ticker}: bought {order['quantity']}{at}. {under}{tail}{''.join(notes)}"
 
 
 def _fold_in(run, decision, reasoning, rejected, book) -> None:
@@ -5356,9 +5384,11 @@ def adjust_exits(
         return {"ok": False, "message": "Webull is not in sandbox mode, so no order can be placed."}
 
     price = get_current_price(ticker)
+    refused = level_refusals(stop, target, price)
     stop, target = usable_levels(ticker, stop, target, price)
     if stop is None and target is None:
-        return {"ok": False, "message": f"No usable level for {ticker} — nothing was changed."}
+        why = "".join(f" Refused {r}." for r in refused.values())
+        return {"ok": False, "message": f"No usable level for {ticker} — nothing was changed.{why}"}
 
     resting = {t.exit_kind: t for t in db.get_resting_exits(ticker) if t.exit_kind}
     moved, armed, failed = [], [], []
@@ -5416,6 +5446,7 @@ def adjust_exits(
     parts += [f"placed {k} at ${v:,.2f}" for k, v in armed]
     if failed:
         parts += [f"could not move {f}" for f in failed]
+    parts += [f"refused {r}" for r in refused.values()]
     if not parts:
         return {"ok": True, "message": f"{ticker} exits already at those levels."}
     return {"ok": not failed, "message": f"{ticker}: {', '.join(parts)}."}

@@ -6,6 +6,11 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-21
+
+- **Order messages** — A refused stop or target now says why. `adjust_exits` names the level, the price and the rule, for example "a stop at $336.00, above the price $335.21: a sell stop above the price triggers at once". Before, it said only "No usable level", and on 2026-09-21 the agent asked for a stop above the price three times in a row (run 73) because nothing told it that this fires at once. A refused leg is also named when the other leg goes through.
+- **Order messages** — The fill line for a buy names the exits that really rest at the broker. It printed the signal's stop and target before, even when `_place` had dropped a level the price had passed or put a volatility stop in its place. It now says which level was not placed and why, and when a volatility stop replaced the signal's stop. `arm_exits_now` is unchanged.
+
 ## 2026-09-20
 
 - **The site** — A ticker on the Decisions page — an order, a refusal, a failure, a fetch — now links to its own research page, the same way every other page already links a ticker. It used to be plain text, the one thing on the row a reader would want to follow.

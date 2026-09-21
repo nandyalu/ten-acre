@@ -2397,6 +2397,8 @@ def test_a_level_that_would_execute_at_once_is_refused(monkeypatch):
     result = agent.adjust_exits("GOOG", 400.00, None)
 
     assert result["ok"] is False and "No usable level" in result["message"]
+    assert "$400.00, above the price $341.70" in result["message"]
+    assert "triggers at once" in result["message"]
 
 
 def test_a_level_already_where_it_was_asked_for_is_left_alone(monkeypatch):
@@ -3002,3 +3004,27 @@ def test_the_rules_expect_a_read_before_acting_on_a_signal():
     # And a Hold is still named as the decision most worth reading, because it
     # is the one word that hides the most.
     assert "the one most worth" in rules
+
+
+def test_describe_fill_names_the_stop_that_replaced_a_refused_signal_stop():
+    """The signal's $34.21 stop was above the $33.50 price, so `_place` sent a
+    volatility stop. The line must name what rests, not what the signal offered."""
+    order = {"ticker": "SMCI", "side": "buy", "quantity": 1}
+    exits = [{"kind": "stop", "price": 31.80}, {"kind": "target", "price": 40.00}]
+
+    line = agent._describe_fill(
+        order, {"exits": exits}, {"SMCI": 33.50}, {"SMCI": 34.21}, {"SMCI": 40.00}
+    )
+
+    assert "stop $31.80, target $40.00" in line
+    assert "$34.21" in line and "above the price $33.50" in line
+    assert "volatility stop of $31.80 was placed instead" in line
+
+
+def test_describe_fill_says_a_refused_level_was_not_armed_after_a_refused_bracket():
+    order = {"ticker": "SMCI", "side": "buy", "quantity": 1}
+
+    line = agent._describe_fill(order, {}, {"SMCI": 33.50}, {"SMCI": 34.21}, {"SMCI": 40.00})
+
+    assert "(target $40.00)" in line
+    assert "Not placed: a stop at $34.21" in line
