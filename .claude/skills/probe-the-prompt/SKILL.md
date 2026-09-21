@@ -6,6 +6,7 @@ description: Send the real prompt to the real model, out of the app, and read
   four sections here were correct, correctly rendered, and completely ignored.
 model: sonnet
 context: fork
+agent: probe-the-prompt
 ---
 
 # probe-the-prompt
