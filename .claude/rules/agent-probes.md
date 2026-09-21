@@ -32,6 +32,7 @@ paths:
 | The closed-market rule and its `adjust` exemption | 6 of 7 restate it | **Read.** The behavioural claim is unproven |
 | Alerts and "what you just did", above the tables | 4 of 4 after the move | **Read**, and the placement is why |
 | The tool channel, end to end | 4 of 4 | **Works** |
+| Every section under a `##` heading, with a rule between | 7 before, 7 after | **No regression.** Every difference is inside temperature-1 noise |
 
 ## Read, and the evidence for it
 
@@ -54,6 +55,27 @@ paths:
 **Placement, measured (the alerts section).** "What you just did" and "What was noticed" sat between the two tables, at 42% and 47% of the prompt, and four probe runs referenced neither. Moved above the tables, the next four runs quoted the figures verbatim: `$37.38`, `40.34` and `7.9%` appear nowhere else in the prompt, which is what makes it evidence rather than an impression.
 
 **The tool channel, confirmed live on 2026-09-17** in a local container on the same image. The API accepts `anyOf` inside `parameters_json_schema`; the thinking summary arrives beside the function call at thinking level high; 4 of 4 samples fetched (all three no-argument fetches in the first round, then one to three reads) and answered through `decide`; one sample's thinking quoted nine prices present only in fetch results. A pass costs 3 to 4 requests and 20,000 to 30,000 prompt tokens, since each round resends the conversation.
+
+**Section headings and rules, 2026-09-21 — the first probe here run as a matched pair.** Seven samples on the prompt as it was, seven on the restructured one, same `sqlite3 .backup` copy of the live book, same `gemini-3.5-flash-lite`, both inside a container with `backend/` mounted over `/app/backend`. The restructure added a `##` heading and a `---` rule to every section and removed nothing but the titles the headings now carry, so this measures the shape alone. `turn1` went from 6,139 to 6,406 characters, **4.3% for 24 headings and 24 rules**.
+
+| Section | Before | After | | Fetch | Before | After |
+|---|---|---|---|---|---|---|
+| The time | 5 of 7 | 7 of 7 | | `watchlist` | 7 of 7 | 7 of 7 |
+| The market right now | 5 of 7 | 6 of 7 | | `read` | 7 of 7 | 7 of 7 |
+| Your account | 6 of 7 | 7 of 7 | | `track_record` | 7 of 7 | 5 of 7 |
+| What you hold | 7 of 7 | 7 of 7 | | `candidates` | 6 of 7 | 5 of 7 |
+| Recent analyst signals | 6 of 7 | 6 of 7 | | `fundamentals` | 1 of 7 | 1 of 7 |
+| Every ticker you track | 6 of 7 | 5 of 7 | | | | |
+| Paying for research | 1 of 7 | 4 of 7 | | Named a `next_wakeup` | 5 of 7 | 7 of 7 |
+| Your track record | 1 of 7 | 0 of 7 | | Wrote a `next_wakeup_note` | 5 of 7 | 7 of 7 |
+| Your recent wakeups | 1 of 7 | 1 of 7 | | Placed any order | 2 of 7 | 4 of 7 |
+| How long an analysis takes | 0 of 7 | 0 of 7 | | | | |
+
+**Read this as "nothing broke", not as "headings work".** Every difference but one is ±1 or ±2 at seven samples and temperature 1, which is what this model produces run to run. The one worth another look is **"Paying for research", 1 of 7 to 4 of 7**, alongside orders placed going 2 to 4 — two of the four after-samples commissioned an INTC research. It moves with the wakeup pair below, and three small moves in the same direction are a lead, not a finding. **Do not cite any of this as evidence a heading improved anything** until someone runs it at a larger sample.
+
+**A zero here does not mean a section was skipped, and this probe is the reason to say so.** "Your track record" scored 0 of 7 on quoting its net figure, and 5 of 7 samples called `track_record`. That section is one line and a pointer to a fetch, so its content never appears in the prompt to be quoted — the fetch is the evidence it was read. The same holds for "Every ticker you track": its `+14.0%` on INTC is what sent three after-samples to research INTC. **Before scoring a one-line pointer section as unread, check whether the model called the tool it points at.**
+
+**"How long an analysis takes" is untested rather than ignored.** No sample needed it: research runs inside the pass, so nobody had to plan a wakeup around one. Rebuild a scenario where a pass must wait before judging it.
 
 ## Unconfirmed as read, and kept anyway
 

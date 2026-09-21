@@ -138,6 +138,17 @@ Then follow the project's order for a prompt change:
 That is a string search into an assembled list, and it breaks the day someone edits that heading.
 With named sections you swap one entry for another.
 
+**Step 1.5 done 2026-09-21.** Committed as `1101257`, with the JOURNEY entry and the `.claude/rules/agent.md` order table.
+
+Probed as a matched pair — seven samples on the old prompt, seven on the new, same database copy and same model. **No regression.** Every difference is ±1 or ±2 at seven samples, which is temperature-1 noise. The full table is in `.claude/rules/agent-probes.md`.
+
+Two things learned that change how later steps should be read:
+
+- **A one-line pointer section scores zero on quoting and still works.** "Your track record" was quoted by 0 of 7 and its `track_record` fetch was called by 5 of 7. Check the fetch before calling such a section unread.
+- **The headings cost 4.3%** — `turn1` went from 6,139 to 6,406 characters for 24 headings and 24 rules.
+
+One lead, not a finding: "Paying for research" went 1 of 7 to 4 of 7, orders placed went 2 to 4, and both `next_wakeup` and `next_wakeup_note` went 5 of 7 to 7 of 7. Three small moves in one direction. Worth a larger sample before anyone believes it.
+
 ## Phase 2 — reorder and trim, one move per probe
 
 Each step below is its own commit, its own `JOURNEY.md` entry and its own probe.
@@ -306,7 +317,7 @@ One opinion once is noise.
 - [x] 1.2 add the section shape
 - [x] 1.3 extract the sections
 - [x] 1.4 add the `##` headings
-- [ ] 1.5 read the diff, JOURNEY entry, probe, commit
+- [x] 1.5 read the diff, JOURNEY entry, probe, commit
 - [ ] 2.1 cut the duplication
 - [ ] 2.2 the `next_wakeup` section
 - [ ] 2.3 move `memory` into Now
