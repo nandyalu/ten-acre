@@ -21,6 +21,24 @@
             "problemMatcher": []
         },
         {
+            "label": "Build pages-publisher Docker image",
+            "type": "shell",
+            // SNAPSHOT_BASE_URL must match R2_SNAPSHOT_BUCKET in .env, or the
+            // published site renders empty (see deployment.md, 2026-09-12
+            // incident).
+            "command": "docker build -f Dockerfile.pages-publisher --build-arg SNAPSHOT_BASE_URL=https://data.ten-acre.nandyalu.com -t ten-acre-pages-publisher:local .",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Stop ten-acre container",
             "type": "shell",
             "command": "docker stop ten-acre",
