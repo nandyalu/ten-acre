@@ -494,7 +494,7 @@ async def _alarm_job() -> None:
 _WOKE_BECAUSE = {
     "Alarm": "You asked to be woken now.",
     "Wakeup": "You asked to be woken around now.",
-    "Event-driven": "Something was noticed while you were away. You did not ask for this pass.",
+    "Event-driven": "A rule watching your tickers spotted something. You did not ask for this pass.",
     "Earnings": "A company you track reports earnings soon. You did not ask for this pass.",
     "Final": "This is the last pass before the close. Anything you want done today has to be done now.",
     "Change": "A change to this app woke you. You did not ask for this pass.",

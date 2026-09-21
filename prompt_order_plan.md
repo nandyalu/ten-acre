@@ -165,6 +165,14 @@ Lowest risk, so do it first. No section moves.
 `CLAUDE.md` names three rules that exist because the model got that exact thing wrong on a live run, and `agent-probes.md` names more.
 If a sentence appears once, leave it.
 
+**Step 2.1 done 2026-09-21.** Four cuts, **2.2% off every prompt**. The event-driven wake reason went too — `AgentRun.woke_because` landed the same day with no row written, so rewording it changed nothing on the Decisions page.
+
+**The line drawn, and it is the one to keep:** a repeated *term* is not duplication, a repeated *explanation* is. `runs inside this pass` deliberately stays in all three sections — one name for one thing, and the timing section is the only one that renders when there is nothing yet to research. A test caught this: it builds a prompt with no watchlist and no menu, where the timing line is the only section left that can say research lands in-pass.
+
+**The probe method changed here, and every later step inherits it.** See "The noise floor" at the top of `.claude/rules/agent-probes.md`: two runs of seven samples on identical code swing by up to 3 of 7. A seven-sample probe catches breakage and nothing finer. Steps 2.2 to 2.7 should each get one seven-sample run to confirm nothing broke, and a 20-to-30-sample pair only where the answer would change what gets built.
+
+**Still untested:** `turn1` carries no alerts, so the watchdog lead cut never reached the model. Fold a `woken` probe into step 2.5, which touches that section anyway.
+
 ### Step 2.2 — build the `next_wakeup` section
 
 One section, always present, at the end beside the answer shape. It carries:
@@ -318,7 +326,7 @@ One opinion once is noise.
 - [x] 1.3 extract the sections
 - [x] 1.4 add the `##` headings
 - [x] 1.5 read the diff, JOURNEY entry, probe, commit
-- [ ] 2.1 cut the duplication
+- [x] 2.1 cut the duplication
 - [ ] 2.2 the `next_wakeup` section
 - [ ] 2.3 move `memory` into Now
 - [ ] 2.4 consolidate `last_answer`

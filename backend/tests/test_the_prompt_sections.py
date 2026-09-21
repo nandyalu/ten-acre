@@ -193,7 +193,7 @@ def _woken():
     """Something was noticed while the agent slept, so the pointer fires."""
     return dict(kwargs=dict(
         FULL,
-        woke_because="Something was noticed while you were away. You did not ask for this pass.",
+        woke_because="A rule watching your tickers spotted something. You did not ask for this pass.",
         last_pass_notes=["Waiting to see whether NVDA holds $170 after the open."],
     ))
 

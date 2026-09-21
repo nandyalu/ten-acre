@@ -10,6 +10,31 @@ paths:
 
 **Presence is not proof of use.** Every section below rendered correctly and passed its tests. The only question this file answers is whether the model's own reasoning shows it read them. How to run a probe and how to read a result are in the `probe-the-prompt` skill; do not copy that here.
 
+## The noise floor: seven samples resolve nothing smaller than 3 of 7
+
+**Measured on 2026-09-21, and it should be read before any table below.** Two runs of seven samples, the same code, the same `sqlite3 .backup` copy of the live book, the same `gemini-3.5-flash-lite`, eight minutes apart. Every difference between them is noise by construction, because nothing differed but the sampling.
+
+| Signal | Run A | Run B | Swing |
+|---|---|---|---|
+| "Every ticker you track" quoted | 7 of 7 | 4 of 7 | **3** |
+| "Paying for research" quoted | 4 of 7 | 2 of 7 | **2** |
+| `track_record` called | 6 of 7 | 4 of 7 | **2** |
+| Ordered a research | 3 of 7 | 1 of 7 | **2** |
+| `candidates` called | 2 of 7 | 3 of 7 | 1 |
+| "The time" quoted | 6 of 7 | 7 of 7 | 1 |
+| Named a `next_wakeup` | 6 of 7 | 7 of 7 | 1 |
+| Your account, What you hold, the `read` and `watchlist` fetches | — | — | 0 |
+
+**A difference of 3 of 7 or less between two arms of a probe means nothing.** That covers almost every difference this file has ever reported from a seven-sample run, including the ones in the section-headings entry below, which is why that entry's verdict is "no regression" and not "headings help".
+
+Three things follow, and they are the method now:
+
+- **Use a seven-sample probe to catch breakage, not to measure an improvement.** A section that goes from 7 of 7 to 0 of 7 is a finding. A section that goes from 5 to 2 is a coin.
+- **Read the reasoning, and weigh what does not move.** The four signals with a swing of 0 — the account, the holdings, the `read` and `watchlist` fetches — are stable enough that a change in one of those *would* mean something.
+- **A hypothesis worth resolving needs roughly 20 to 30 samples an arm**, which is 70 to 100 requests an arm against a 500-a-day limit. Spend that only where the answer changes what gets built.
+
+The `probe-the-prompt` skill's "sample size" warning carries this number now. **Do not restate a small difference as a finding here, however tempting the story around it.**
+
 ## The verdict, in one table
 
 | Prompt section | Samples | Verdict |
@@ -32,7 +57,8 @@ paths:
 | The closed-market rule and its `adjust` exemption | 6 of 7 restate it | **Read.** The behavioural claim is unproven |
 | Alerts and "what you just did", above the tables | 4 of 4 after the move | **Read**, and the placement is why |
 | The tool channel, end to end | 4 of 4 | **Works** |
-| Every section under a `##` heading, with a rule between | 7 before, 7 after | **No regression.** Every difference is inside temperature-1 noise |
+| Every section under a `##` heading, with a rule between | 7 before, 7 after | **No regression.** Every difference is inside the noise floor |
+| Cutting the repeated research explanation | 7 before, 7 after | **No regression.** Every difference is inside the noise floor |
 
 ## Read, and the evidence for it
 
@@ -71,7 +97,7 @@ paths:
 | Your recent wakeups | 1 of 7 | 1 of 7 | | Placed any order | 2 of 7 | 4 of 7 |
 | How long an analysis takes | 0 of 7 | 0 of 7 | | | | |
 
-**Read this as "nothing broke", not as "headings work".** Every difference but one is ±1 or ±2 at seven samples and temperature 1, which is what this model produces run to run. The one worth another look is **"Paying for research", 1 of 7 to 4 of 7**, alongside orders placed going 2 to 4 — two of the four after-samples commissioned an INTC research. It moves with the wakeup pair below, and three small moves in the same direction are a lead, not a finding. **Do not cite any of this as evidence a heading improved anything** until someone runs it at a larger sample.
+**Read this as "nothing broke", and nothing more.** The noise floor above was measured after this table and settles it: two runs of the same code swing by up to 3 of 7, and 2 on "Paying for research" specifically. **Every difference in this table is at or inside that floor**, including the 1-to-4 on "Paying for research" that this entry first called a lead worth chasing. It was not; it was a coin. The correction stands as a warning, because the story around those three same-direction moves was a convincing one.
 
 **A zero here does not mean a section was skipped, and this probe is the reason to say so.** "Your track record" scored 0 of 7 on quoting its net figure, and 5 of 7 samples called `track_record`. That section is one line and a pointer to a fetch, so its content never appears in the prompt to be quoted — the fetch is the evidence it was read. The same holds for "Every ticker you track": its `+14.0%` on INTC is what sent three after-samples to research INTC. **Before scoring a one-line pointer section as unread, check whether the model called the tool it points at.**
 

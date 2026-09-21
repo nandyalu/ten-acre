@@ -59,11 +59,11 @@ def test_a_long_note_is_capped():
 
 def test_the_prompt_says_why_the_agent_is_awake():
     prompt = agent.build_prompt(
-        _book(), [], {}, woke_because="Something was noticed while you were away.",
+        _book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Event-driven"],
     )
 
     assert "## Why you are awake" in prompt
-    assert "Something was noticed while you were away." in prompt
+    assert scheduler._WOKE_BECAUSE["Event-driven"] in prompt
 
 
 def test_the_note_comes_back_as_the_agents_own_words():

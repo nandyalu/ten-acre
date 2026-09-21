@@ -57,7 +57,7 @@ Do not grep the reasoning for the words you wrote. **The model paraphrases**, an
 
 ## Things that will mislead you
 
-- **Sample size.** Temperature is 1. Four runs is a hint; run `--parallel` for seven at once.
+- **Sample size, and it is worse than it looks.** Temperature is 1. **Two runs of seven samples on identical code swing by up to 3 of 7** — measured 2026-09-21, the table is in `agent-probes.md`. So a seven-sample probe catches breakage and nothing finer: 7 of 7 going to 0 of 7 is a finding, 5 going to 2 is a coin. Resolving a real improvement needs roughly 20 to 30 samples an arm, which is 70 to 100 requests against a 500-a-day limit. Weigh what does not move, too: the signals that swung 0 between identical runs are the ones where a change would mean something.
 - **Wall clock from a parallel run.** gemma4's E-series keeps per-layer embeddings in host RAM, so seven cards contend for the same memory bandwidth — the same model measured 43.5, 28.0 and 69.6 tok/s depending only on pool load. Compare timings only against runs made the same way.
 - **The book you probe on.** A probe run on a Saturday with $8.05 cash tests how the agent *reads*, not how it *trades*. Re-run on a weekday with cash before trusting a conclusion about trading behaviour.
 - **Double-sending the system prompt.** `agent._invoke` prepends `SYSTEM_PROMPT` itself. Pass the user prompt alone, or the model sees it twice.

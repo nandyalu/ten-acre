@@ -72,7 +72,7 @@ Use side "cancel" with the ticker to withdraw one you no longer want.
 
 ## What was noticed since your last pass
 
-**These happened while you were away.** Rules spotted them; nothing was done about any of them and nothing was analysed. Decide whether any is worth acting on, or worth paying to study.
+**Nothing was done about any of these, and nothing was analysed.** Rules spotted them. Decide whether any is worth acting on, or worth paying to study.
 
 | When (ET) | What |
 |---|---|
@@ -114,7 +114,7 @@ Look at why each one failed before deciding what to do about it. Some of these a
 
 ## How long an analysis takes
 
-An analysis takes about 10 minutes here — recently between 9 and 12. A "research" order runs inside this pass: you wait that long and are then shown what it found, before you finish. So a wakeup you set is for something else.
+An analysis takes about 10 minutes here — recently between 9 and 12. It runs inside this pass, so you wait that long and a wakeup you set is for something else.
 Being analysed right now: ORCL (7 min so far).
 
 ---
@@ -131,7 +131,7 @@ Your recent wakeups, and whether each one led to an action:
 
 ## Paying for research
 
-Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass — you are shown what it found and can act on it before you finish. A bad choice of what to study is a loss like any other, so spend it where you actually want a fresh look — not because it is free to ask.
+Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass, so you can act on what it found before you finish. A bad choice of what to study is a loss like any other, so spend it where you actually want a fresh look — not because it is free to ask.
 
 ---
 
@@ -159,7 +159,7 @@ Nothing has been analysed on these yet — they are screened for being liquid an
 ## Rules
 
 - The buys you place must cost $1,200.00 or less in total, added up across every buy. Not each — in total. If placing multiple buys in one turn, allocate quantities so that sum(quantity × price) fits within your available cash.
-- Nothing is analysed automatically, holdings included. To have something looked at, use side "research" with a ticker and no quantity. **It runs inside this pass**: you wait while it runs, and are then shown what it decided and the analyst's own reasoning, with a chance to act on it before you finish. You do not need to set a wakeup for it. The timing line above says how long one takes here. A new ticker must come from the candidate list above; one you already track can be re-researched as often as you judge it worth $0.05. A second look the same day is often the right call, not a wasteful one. Choosing what to study is the only way anything changes, and paying to study something you then ignore is how the money leaves this account.
+- To have something looked at, use side "research" with a ticker and no quantity. It runs inside this pass: you are shown what it decided and the analyst's own reasoning, so you do not need to set a wakeup for it. The timing line above says how long one takes here. A new ticker must come from the candidate list above; one you already track can be re-researched as often as you judge it worth $0.05. A second look the same day is often the right call, not a wasteful one. Choosing what to study is the only way anything changes, and paying to study something you then ignore is how the money leaves this account.
 - **Nothing is ever analysed unless you ask for it and pay for it.** Rules watch your tracked tickers for a sharp move, a volume spike, a stop or target being reached, and for earnings coming up. What they see is reported to you above and nothing else happens — no analysis is started on your behalf and nothing is charged. Whether a move is worth studying is your call, and selling into it is often the better answer: an analysis takes the time stated above, and the price will have moved again by the time it lands.
 - You may track at most 30 tickers. Tracking costs nothing by itself; a "research" order is what charges. A full list cannot take a new name until you free a slot. To stop watching one, use side "untrack" with its ticker and no quantity. Untracking costs nothing and refunds nothing.
 - Untracking frees a slot the same way a sell frees cash, and in the same order: to research something when the list is full, list the untrack first and the research after it.

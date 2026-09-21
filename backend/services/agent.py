@@ -349,9 +349,8 @@ def describe_analysis_timing(
         median = ordered[len(ordered) // 2]
         lines.append(
             f"An analysis takes about {median:.0f} minutes here — recently between "
-            f"{ordered[0]:.0f} and {ordered[-1]:.0f}. A \"research\" order runs inside this "
-            "pass: you wait that long and are then shown what it found, before you finish. "
-            "So a wakeup you set is for something else."
+            f"{ordered[0]:.0f} and {ordered[-1]:.0f}. It runs inside this pass, so you wait "
+            "that long and a wakeup you set is for something else."
         )
     if running:
         here = (now or datetime.datetime.now(datetime.timezone.utc))
@@ -1152,10 +1151,10 @@ def describe_research_price(price: float) -> list[str]:
     """
     return [
         f"Nothing is analysed automatically, holdings included. A \"research\" order "
-        f"costs ${price:,.2f} and runs inside this pass — you are shown what it found "
-        "and can act on it before you finish. A bad choice of what to study is a loss "
-        "like any other, so spend it where you actually want a fresh look — not "
-        "because it is free to ask.",
+        f"costs ${price:,.2f} and runs inside this pass, so you can act on what it "
+        "found before you finish. A bad choice of what to study is a loss like any "
+        "other, so spend it where you actually want a fresh look — not because it is "
+        "free to ask.",
     ]
 
 
@@ -1316,12 +1315,10 @@ def describe_rules(
         # 102.70" reaches the agent as the same word as a flat Hold.
         *(
             [
-                "- Nothing is analysed automatically, holdings included. To have something",
-                "  looked at, use side \"research\" with a ticker and no quantity. **It runs",
-                "  inside this pass**: you wait while it runs, and are then shown what it",
-                "  decided and the analyst\'s own reasoning, with a chance to act on it",
-                "  before you finish. You do not need to set a wakeup for it. The timing",
-                "  line above says how long one takes here. A new ticker must come from the",
+                "- To have something looked at, use side \"research\" with a ticker and no",
+                "  quantity. It runs inside this pass: you are shown what it decided and the",
+                "  analyst\'s own reasoning, so you do not need to set a wakeup for it. The",
+                "  timing line above says how long one takes here. A new ticker must come from the",
                 (
                     "  list that candidates returns; one you already track can be re-researched as"
                     if answer_by_tool
@@ -3045,9 +3042,9 @@ def describe_watchdog(alerts: list[dict], earnings: list[tuple[str, str]]) -> li
     lines: list[str] = []
     if alerts:
         lines += [
-            "**These happened while you were away.** Rules spotted them; nothing was "
-            "done about any of them and nothing was analysed. Decide whether any is "
-            "worth acting on, or worth paying to study.",
+            "**Nothing was done about any of these, and nothing was analysed.** Rules "
+            "spotted them. Decide whether any is worth acting on, or worth paying to "
+            "study.",
             "",
             "| When (ET) | What |",
             "|---|---|",
