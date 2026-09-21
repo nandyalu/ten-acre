@@ -198,14 +198,19 @@ def test_what_the_agent_just_did_sits_above_the_signal_table():
     )
 
     # "What you just did" is one part of "What your last answer did" since
-    # 2026-09-21. The measured constraint is unchanged: both sections stay
-    # above the signals table.
+    # 2026-09-21, and the two sections swapped places the same day when both
+    # moved into the group that is read before anything merely true now.
+    # **The measured constraint is what matters and it is unchanged**: both
+    # stay above the signals table, and are further above it than when the
+    # 0-of-4 / 4-of-4 comparison was made.
     did = prompt.index("**What you just did, a moment ago, in this pass.**")
     noticed = prompt.index("## What was noticed")
     table = prompt.index("## Recent analyst signals")
 
     assert prompt.index("## What your last answer did") < did
-    assert did < noticed < table
+    assert noticed < did < table
+    # And above the account and the holdings too, which they were not before.
+    assert did < prompt.index("## Your account")
 
 
 def test_a_row_the_pass_paid_for_is_marked_as_the_agents_own():

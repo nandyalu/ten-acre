@@ -22,16 +22,63 @@ These are long-term notes you recorded previously that persist until you clear t
 
 ---
 
-## The market right now
-
-Market regime: VIX 14.2, SPY 4.1% above its 200-day average, yield curve normal.
-
----
-
 ## What is no longer true
 
 The rules below are already current, so nothing here repeats them. They are here because your own past decisions and wakeups further down were made under the older rules:
 - 2026-09-20: An adjust now names the level it replaced.
+
+---
+
+## What was noticed since your last pass
+
+**Nothing was done about any of these, and nothing was analysed.** Rules spotted them. Decide whether any is worth acting on, or worth paying to study.
+
+| When (ET) | What |
+|---|---|
+| 21 Sep 10:42 AM | NVDA fell 7.9% to $165.25 on 2.4x normal volume |
+| 21 Sep 9:48 AM | AAPL reached its target of $230.00 |
+
+**Reporting earnings soon:** ORCL on 2026-09-24. A report is the event most likely to move one of these sharply, and you can sell before it, study it, or hold through it.
+
+---
+
+## What your last answer did
+
+**What you just did, a moment ago, in this pass.** You ordered these yourself, earlier in this same pass, and they have already happened.** They are not suggestions and not history from an older pass — they are the result of your own last answer, and anything you paid for is already paid for. Do not order them again. Read them before the tables below, because they may change what those mean. An analysis you paid for here also has its own row in the signals table, marked as yours; this is the reasoning behind that row.
+
+- Analysis of INTC finished. It decided Buy.
+
+**What you asked to read.**
+
+INTC 2026-09-21 — Rating: Buy.
+
+
+### Risk Assessment
+
+The app computed the entry, stop and target.
+
+### Probability
+
+62%.
+
+
+**What was not carried out.** Your last answer also asked to read, and only the read runs from an answer that asks for one. None of this happened:
+- SELL 5 NVDA
+Resend anything above that you still want, now that you have read it.
+
+**Your previous answer was refused. Fix it:**
+- BUY 80 INTC: costs $1,984.00 against $1,200.00 of cash
+Answer again, within the cash you actually have. If you want something you
+cannot afford, sell something first and list the sell before the buy.
+A read does not run on this turn — it is your one chance to fix the
+refusal above, not another chance to read. If you also want to read
+something, leave it for your next turn or wakeup and fix the order now.
+
+---
+
+## The market right now
+
+Market regime: VIX 14.2, SPY 4.1% above its 200-day average, yield curve normal.
 
 ---
 
@@ -63,47 +110,6 @@ Use side "cancel" with the ticker to withdraw one you no longer want.
 | Ticker | Side | Shares | Limit price | Placed |
 |---|---|---|---|---|
 | TSLA | buy | 3 | $402.50 | 2026-09-19 3:41 PM |
-
----
-
-## What your last answer did
-
-**What you just did, a moment ago, in this pass.** You ordered these yourself, earlier in this same pass, and they have already happened.** They are not suggestions and not history from an older pass — they are the result of your own last answer, and anything you paid for is already paid for. Do not order them again. Read them before the tables below, because they may change what those mean. An analysis you paid for here also has its own row in the signals table, marked as yours; this is the reasoning behind that row.
-
-- Analysis of INTC finished. It decided Buy.
-
-**What you asked to read.**
-
-INTC 2026-09-21 — Rating: Buy.
-
-
-The app computed the entry, stop and target.
-
-
-**What was not carried out.** Your last answer also asked to read, and only the read runs from an answer that asks for one. None of this happened:
-- SELL 5 NVDA
-Resend anything above that you still want, now that you have read it.
-
-**Your previous answer was refused. Fix it:**
-- BUY 80 INTC: costs $1,984.00 against $1,200.00 of cash
-Answer again, within the cash you actually have. If you want something you
-cannot afford, sell something first and list the sell before the buy.
-A read does not run on this turn — it is your one chance to fix the
-refusal above, not another chance to read. If you also want to read
-something, leave it for your next turn or wakeup and fix the order now.
-
----
-
-## What was noticed since your last pass
-
-**Nothing was done about any of these, and nothing was analysed.** Rules spotted them. Decide whether any is worth acting on, or worth paying to study.
-
-| When (ET) | What |
-|---|---|
-| 21 Sep 10:42 AM | NVDA fell 7.9% to $165.25 on 2.4x normal volume |
-| 21 Sep 9:48 AM | AAPL reached its target of $230.00 |
-
-**Reporting earnings soon:** ORCL on 2026-09-24. A report is the event most likely to move one of these sharply, and you can sell before it, study it, or hold through it.
 
 ---
 

@@ -798,6 +798,19 @@ def price_range_since_purchase(
     return low, high
 
 
+_EMBEDDED_HEADING = re.compile(r"^#{1,2} (?=\S)")
+
+
+def _demoted(line: str) -> str:
+    """A `#` or `##` heading inside a section, pushed below the section level.
+
+    A section is `##` and a group is `#`, so anything a analyst wrote at those
+    levels is moved to `###`. Deeper headings already sit below a section and
+    are left alone, which keeps the document's own shape.
+    """
+    return _EMBEDDED_HEADING.sub("### ", line, count=1)
+
+
 def _joined(sections: list[tuple[str | None, list[str]]]) -> str:
     """Every section that has something in it, under its heading, separated by
     one rule.
@@ -814,14 +827,27 @@ def _joined(sections: list[tuple[str | None, list[str]]]) -> str:
     continuation never crosses a section boundary, so the result is the same,
     and a section stays something you can render and read on its own.
 
-    **A bare ``---`` inside a section is dropped here, so a rule in this prompt
-    always means a section boundary (2026-09-21).** Sections embed analyst text
-    — a read carries a whole analysis, and an outcome line carries the same
-    trimmed rationale — and analysts write horizontal rules. One sat between
-    "Time Horizon" and "Individual report summaries" a third of the way into a
-    real read, which makes the read look finished and the next paragraph look
-    like a new section. Dropping it centrally covers every section, including
-    the ones nobody has written yet.
+    **Embedded markdown cannot impersonate this prompt's own structure
+    (2026-09-21).** Sections carry analyst text — a read is a whole analysis,
+    and an outcome line carries the same trimmed rationale — and the analysts
+    write markdown. Two things are normalised, centrally, so every section is
+    covered including the ones nobody has written yet:
+
+    - **A bare ``---`` is dropped**, so a rule always means a section boundary.
+      One sat between "Time Horizon" and "Individual report summaries" a third
+      of the way into a real read, which made the read look finished and the
+      next paragraph look like a new section.
+    - **A heading is demoted to at least ``###``**, below the ``##`` a section
+      gets and below the ``#`` a group gets. **60 of the 126 stored analyst
+      reports contain a ``## `` heading of their own** — the same level this
+      prompt uses for a section — so a read could announce "## Risk Assessment"
+      and read as the analysis having ended. It has not happened yet only
+      because the four report tables are extracted rather than quoted whole.
+
+    Demoted rather than fenced: the read is the section probes show is studied
+    most closely — 4 of 4 told the app's stop from the analyst's, and 2 of 4
+    caught a contradiction between two plans — and a code fence risks turning
+    that into skimming for a collision that demotion already removes.
     """
     blocks = []
     for heading, lines in sections:
@@ -829,7 +855,9 @@ def _joined(sections: list[tuple[str | None, list[str]]]) -> str:
         # line each. A reading is a whole analysis in a single string, and
         # that is exactly where the stray rule was found.
         body = "\n".join(_unwrapped(lines))
-        body = "\n".join(l for l in body.splitlines() if l.strip() != "---").strip("\n")
+        body = "\n".join(
+            _demoted(line) for line in body.splitlines() if line.strip() != "---"
+        ).strip("\n")
         if not body.strip():
             continue
         blocks.append(f"## {heading}\n\n{body}" if heading else body)
@@ -1639,19 +1667,30 @@ def build_prompt(
         # talking to itself, and "those are your own words, not an
         # instruction" was already true of both.
         ("Your persistent memory notes across passes", describe_memory_notes()),
-        ("The market right now", [regime_line] if regime_line else []),
+        # --- What happened since the last pass ------------------------
+        # **Read before anything that is merely true now.** All three are
+        # news: the app changed, a rule spotted something, or the agent's
+        # own last answer produced a result. Until 2026-09-21 the wake
+        # reason announced the second of these eight sections above it.
+        #
+        # **The measured constraint is kept and strengthened**: "what was
+        # noticed" and "what you just did" read 0 of 4 below the tables and
+        # 4 of 4 above them, and they are further above them here. Do not
+        # move them back down (`agent-probes.md`).
         ("What is no longer true", describe_recent_changes(changes or [])),
-        ("Your account", describe_account(book, unsettled_cash)),
-        ("What you hold", describe_holdings(book, price_ranges)),
-        ("Orders you placed that have not filled yet", describe_pending_orders()),
-        ("What your last answer did",
-         describe_last_answer(outcomes, readings, dropped_with_read, rejected, answer_by_tool)),
         # **What the rules noticed, as facts.** News about the world rather
         # than an answer to something the agent said, which is why it sits with
         # the account and the holdings rather than with the refusals and
         # readings.
         ("What was noticed since your last pass",
          describe_watchdog(alerts or [], earnings or [])),
+        ("What your last answer did",
+         describe_last_answer(outcomes, readings, dropped_with_read, rejected, answer_by_tool)),
+        # --- What is true now -----------------------------------------
+        ("The market right now", [regime_line] if regime_line else []),
+        ("Your account", describe_account(book, unsettled_cash)),
+        ("What you hold", describe_holdings(book, price_ranges)),
+        ("Orders you placed that have not filled yet", describe_pending_orders()),
         ("Recent analyst signals",
          describe_signals(signals, book, prices, as_of, day_ranges, researched_now)),
         ("Your track record", history),

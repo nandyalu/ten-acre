@@ -61,6 +61,7 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 | Cutting the repeated research explanation | 7 before, 7 after | **No regression.** Every difference is inside the noise floor |
 | Moving the wakeup ask and its fallback to one section at the end | 7 + 7 before, 7 after | **No regression.** The fallback is still read from the bottom, 7 of 7 |
 | A refusal fed back to the model | 5 of 7, then 6 of 7 | **Read.** Where the section sits made no measurable difference |
+| The alerts table, moved above the account and the tables | 1 of 7, then 4 of 7 | **Suggestive, not settled.** The move is in the predicted direction and sits at the floor |
 
 ## Read, and the evidence for it
 
@@ -120,6 +121,12 @@ The refusal read `BUY 500 COIN: costs more than the $8,556.59 you have`, under "
 **What the model does with a refusal is not the same as reading it.** Orders placed went from 3 of 7 to 0 of 7 across the two arms, which is at the floor and not a finding. One sample called holding the fix: *"Holding current COIN position and cash after correcting the previous oversized order attempt."* That is a defensible reading of "fix it" — the refused order was nonsense, and not repeating it is a correction. Watch whether the zero persists rather than assuming either way.
 
 **This entry began as a false alarm, and the correction is the lesson.** The first scan looked for `refus|500|declin` in the `thinking` field alone and reported 1 of 7, which read as the refusal being skipped. The full pass over reasoning and thinking, matching on the refused order rather than on words from the prompt, gave 5 of 7 for the same run. **The skill says not to grep the reasoning for the words you wrote, and this is what happens when you do.**
+
+**Moving "what was noticed" from eight sections below the wake reason to two, 2026-09-21.** A matched `woken` pair, same book, same model, and the prompt is the same length either way because nothing changed but the order. **The alerts table went from 1 of 7 to 4 of 7**, judged on figures that appear nowhere else in the prompt (`+7.5%`, `$85.44`, `$207.38`). Signals went 4 of 7 to 6 of 7; the account and the holdings were 7 of 7 in both.
+
+**Treat this as suggestive and no more.** The measured floor of 3 comes from `turn1`, which carries no alerts, so there is no floor for this metric — a swing of 3 is exactly the size that run-to-run noise produces elsewhere. What can be said is that the move is in the predicted direction and nothing else changed.
+
+**The wake reason itself was quoted by 0 of 7 in both arms**, which matches the 2026-09-13 finding that the ask does the work rather than the reason line. The reason is not what makes the alerts get read; being near them may be.
 
 ## Unconfirmed as read, and kept anyway
 

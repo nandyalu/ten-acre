@@ -260,6 +260,16 @@ Probe with the number test: find a figure that appears only in the alerts table 
 Small, and it follows from the grouping.
 The regime line is a fact about the world right now, not news since the last pass.
 
+**Steps 2.5 and 2.6 done 2026-09-21, in one move.** The three "since you last looked" sections went above everything that is merely true now, which *is* moving the regime line down — so 2.6 had nothing left to do.
+
+The wake reason announced "what was noticed" eight sections above it; that is two now. **The pointer stays**, against what this plan said: it is guarded so it cannot name a section that is absent, it costs eight words, and removing it would be an unmeasurable change against a floor of 3.
+
+Probed as a matched `woken` pair — the first test of the watchdog lead change from 2.1, since `turn1` carries no alerts. **The alerts table went 1 of 7 to 4 of 7.** In the predicted direction, at the floor, and the floor was measured on metrics that did not include alerts, so there is no floor for this one. Suggestive; not settled.
+
+**Two changes made knowingly.** "What was noticed" and "what you just did" swapped relative order, so the world's news is read before the agent's own. The measured constraint was above-versus-between the tables, and both are still above — further above than when that was measured. The test now pins what was actually measured.
+
+**An analyst's markdown can no longer impersonate the prompt's structure.** 60 of the 126 stored analyst reports carry a `## ` heading, the same level a section uses. `_joined` demotes any embedded `#` or `##` to `###`; deeper ones keep their depth. Demoted rather than fenced, because the read is the section probes show is studied most closely and a code block risks turning that into skimming. The invariant test now covers it.
+
 ### Step 2.7 — add the four `#` group headings
 
 Last, because the sections must already sit in their groups for a group heading to be true.
@@ -360,7 +370,7 @@ One opinion once is noise.
 - [x] 2.2 the `next_wakeup` section
 - [x] 2.3 move `memory` into Now
 - [x] 2.4 consolidate `last_answer`
-- [ ] 2.5 move `noticed` beside the wake reason
-- [ ] 2.6 move `regime` into What is true now
+- [x] 2.5 move `noticed` beside the wake reason
+- [x] 2.6 move `regime` into What is true now (subsumed by 2.5)
 - [ ] 2.7 add the `#` group headings
 - [ ] ask the agent what order it wants

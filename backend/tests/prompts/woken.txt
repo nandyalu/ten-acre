@@ -23,16 +23,29 @@ These are long-term notes you recorded previously that persist until you clear t
 
 ---
 
-## The market right now
-
-Market regime: VIX 14.2, SPY 4.1% above its 200-day average, yield curve normal.
-
----
-
 ## What is no longer true
 
 The rules below are already current, so nothing here repeats them. They are here because your own past decisions and wakeups further down were made under the older rules:
 - 2026-09-20: An adjust now names the level it replaced.
+
+---
+
+## What was noticed since your last pass
+
+**Nothing was done about any of these, and nothing was analysed.** Rules spotted them. Decide whether any is worth acting on, or worth paying to study.
+
+| When (ET) | What |
+|---|---|
+| 21 Sep 10:42 AM | NVDA fell 7.9% to $165.25 on 2.4x normal volume |
+| 21 Sep 9:48 AM | AAPL reached its target of $230.00 |
+
+**Reporting earnings soon:** ORCL on 2026-09-24. A report is the event most likely to move one of these sharply, and you can sell before it, study it, or hold through it.
+
+---
+
+## The market right now
+
+Market regime: VIX 14.2, SPY 4.1% above its 200-day average, yield curve normal.
 
 ---
 
@@ -64,19 +77,6 @@ Use side "cancel" with the ticker to withdraw one you no longer want.
 | Ticker | Side | Shares | Limit price | Placed |
 |---|---|---|---|---|
 | TSLA | buy | 3 | $402.50 | 2026-09-19 3:41 PM |
-
----
-
-## What was noticed since your last pass
-
-**Nothing was done about any of these, and nothing was analysed.** Rules spotted them. Decide whether any is worth acting on, or worth paying to study.
-
-| When (ET) | What |
-|---|---|
-| 21 Sep 10:42 AM | NVDA fell 7.9% to $165.25 on 2.4x normal volume |
-| 21 Sep 9:48 AM | AAPL reached its target of $230.00 |
-
-**Reporting earnings soon:** ORCL on 2026-09-24. A report is the event most likely to move one of these sharply, and you can sell before it, study it, or hold through it.
 
 ---
 
