@@ -224,7 +224,10 @@ def _asked_again():
         FULL,
         outcomes=["Analysis of INTC finished. It decided Buy."],
         researched_now={"INTC"},
-        readings=["INTC 2026-09-21 — Rating: Buy. The app computed the entry, stop and target."],
+        # The embedded rule is what `_joined` strips: an analyst wrote one a
+        # third of the way into a real read, and every section is separated
+        # by one now.
+        readings=["INTC 2026-09-21 — Rating: Buy.\n\n---\n\nThe app computed the entry, stop and target."],
         dropped_with_read=[{"ticker": "NVDA", "side": "sell", "quantity": 5}],
         rejected=[
             agent_book.Rejection(
@@ -340,6 +343,25 @@ def test_the_prompt_is_what_it_was(name, pinned):
         f"{name} changed. If that was deliberate, regenerate with REGEN_PROMPTS=1 "
         "and read the diff before committing it."
     )
+
+
+@pytest.mark.parametrize("name", sorted(PROMPTS))
+def test_a_rule_always_means_a_section_boundary(name, pinned):
+    """Sections embed the analysts' own writing, and analysts write horizontal
+    rules. One inside a read made the read look finished and the paragraph
+    after it look like a new section."""
+    fixture = PROMPTS[name]()
+    pinned(**{k: v for k, v in fixture.items() if k != "kwargs"})
+
+    built = agent.build_prompt(**fixture["kwargs"])
+    sections = built.split("\n---\n")
+
+    assert "\n---\n" not in sections[0], "the opening line is not a section"
+    for i, section in enumerate(sections[1:], 1):
+        assert section.lstrip().startswith("## "), (
+            f"{name}: rule {i} is not followed by a heading, so something "
+            f"embedded a rule of its own: {section.lstrip()[:80]!r}"
+        )
 
 
 def test_every_prompt_fixture_has_a_baseline():

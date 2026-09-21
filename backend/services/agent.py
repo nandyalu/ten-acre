@@ -813,10 +813,23 @@ def _joined(sections: list[tuple[str | None, list[str]]]) -> str:
     ``_unwrapped`` runs per section rather than over the whole prompt. A folded
     continuation never crosses a section boundary, so the result is the same,
     and a section stays something you can render and read on its own.
+
+    **A bare ``---`` inside a section is dropped here, so a rule in this prompt
+    always means a section boundary (2026-09-21).** Sections embed analyst text
+    — a read carries a whole analysis, and an outcome line carries the same
+    trimmed rationale — and analysts write horizontal rules. One sat between
+    "Time Horizon" and "Individual report summaries" a third of the way into a
+    real read, which makes the read look finished and the next paragraph look
+    like a new section. Dropping it centrally covers every section, including
+    the ones nobody has written yet.
     """
     blocks = []
     for heading, lines in sections:
-        body = "\n".join(_unwrapped(lines)).strip("\n")
+        # Split after joining, not before: a section's lines are not one
+        # line each. A reading is a whole analysis in a single string, and
+        # that is exactly where the stray rule was found.
+        body = "\n".join(_unwrapped(lines))
+        body = "\n".join(l for l in body.splitlines() if l.strip() != "---").strip("\n")
         if not body.strip():
             continue
         blocks.append(f"## {heading}\n\n{body}" if heading else body)

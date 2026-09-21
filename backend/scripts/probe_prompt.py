@@ -128,7 +128,10 @@ def build_prompts() -> dict:
     held = book.holdings[0].ticker if book.holdings else (sorted(tickers)[0] if tickers else None)
     if held:
         agent.set_research_runner(lambda tickers: None)
-        outcomes = agent._research_and_report([held])
+        # A tuple of (lines, failed) since 2026-09-16. Assigning the tuple
+        # whole rendered the outcomes section as a stringified list and a
+        # bare "- {}" in every turn2 probe run between then and 2026-09-21.
+        outcomes, _failed_research = agent._research_and_report([held])
         out["turn2"] = agent.build_prompt(
             book, signals, prices,
             outcomes=outcomes,
@@ -160,6 +163,27 @@ def build_prompts() -> dict:
             **common,
         )
         out["read_signal"] = f"{reported.ticker} {reported.signal_date}"
+    # "retry": the turn after an answer that was partly carried out, partly
+    # refused, and partly dropped for riding along beside a read. All four
+    # reasons to be asked again in one prompt.
+    #
+    # **No other variant carries a refusal at all**, so nothing here could
+    # measure where the correction sits or whether it is acted on — which is
+    # exactly what a pass has one turn left to get right.
+    if reported and held:
+        out["retry"] = agent.build_prompt(
+            book, signals, prices,
+            outcomes=outcomes,
+            researched_now={held},
+            readings=[analysis_reader.read(reported.ticker, str(reported.signal_date)[:10])],
+            dropped_with_read=[{"ticker": held, "side": "sell", "quantity": 1}],
+            rejected=[agent_book.Rejection(
+                ticker=reported.ticker, side="buy", quantity=500,
+                why=f"costs more than the ${book.cash:,.2f} you have",
+            )],
+            woke_because=_WOKE_BECAUSE["Alarm"],
+            **common,
+        )
     return out
 
 

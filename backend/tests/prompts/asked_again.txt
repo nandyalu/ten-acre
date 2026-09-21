@@ -135,7 +135,10 @@ Your recent wakeups, and whether each one led to an action:
 
 ## What you asked to read
 
-INTC 2026-09-21 — Rating: Buy. The app computed the entry, stop and target.
+INTC 2026-09-21 — Rating: Buy.
+
+
+The app computed the entry, stop and target.
 
 ---
 

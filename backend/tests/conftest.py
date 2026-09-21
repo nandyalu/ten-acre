@@ -68,6 +68,35 @@ def isolated_ticker_status(monkeypatch):
     return store
 
 
+@pytest.fixture(autouse=True)
+def isolated_request_count(monkeypatch):
+    """Keep the day's model-request count in memory for every test.
+
+    **The suite was writing it to the developer's real database, and enough
+    runs in one day made two tests fail.** `llm_throttle` persists the count
+    under `llm_requests_today` so it survives a restart, which is right in the
+    app and wrong here: the count only ever goes up, so on 2026-09-21 it
+    reached 476 of 500 and `_research_and_report` began refusing — correctly —
+    to start an analysis that could not finish inside what was left. Two tests
+    in `test_the_pass_chains_its_own_results.py` then failed for a reason that
+    had nothing to do with either of them, and passing or failing depended on
+    how many times the suite had already been run that day.
+
+    Same reasoning as `isolated_ticker_status` above: a test must not be able
+    to reach the real database at all. Kept in memory rather than stubbed to
+    zero, so a test that means to exercise the counter still can.
+    """
+    from backend.services import llm_throttle
+
+    store: dict[str, int] = {}
+
+    monkeypatch.setattr(llm_throttle, "_load_day_count", lambda day: store.get(day, 0))
+    monkeypatch.setattr(
+        llm_throttle, "_save_day_count", lambda day, count: store.__setitem__(day, count)
+    )
+    return store
+
+
 @pytest.fixture
 def fake_bar_cache(monkeypatch):
     """In-memory stand-in for the ``dailybar`` table. Yields the backing store

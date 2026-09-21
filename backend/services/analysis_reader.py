@@ -259,6 +259,9 @@ def describe(readings: list[str]) -> list[str]:
 
     Headed so the agent does not mistake it for information that arrived on
     its own — it asked for this, and the next answer is the one that counts.
+
+    An analyst's own `---` inside the text is dropped by `agent._joined`,
+    which owns the separator between sections.
     """
     if not readings:
         return []
