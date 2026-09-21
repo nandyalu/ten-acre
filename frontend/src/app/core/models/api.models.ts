@@ -479,6 +479,16 @@ export interface AgentEvent {
   ran_at: string;
   /** When the agent asked to be woken next. Null means it asked for nothing. */
   next_wakeup: string | null;
+  /** What started this pass, in the sentence the agent itself was shown — its
+   * own chosen time, something noticed while it slept, the last call before
+   * the close, a change to the app. It is written in the second person,
+   * because it is a quotation from the prompt and not the page's own words.
+   *
+   * Null on a skipped pass, which never reaches the model, and on every pass
+   * before 2026-09-21, when nothing stored it. Optional for the same reason
+   * as `turns`: a published snapshot written before that date has no such key,
+   * and the static site serves whatever the last export left on disk. */
+  woke_because?: string | null;
   reasoning: string;
   skipped: string | null;
   equity: number | null;

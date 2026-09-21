@@ -613,6 +613,100 @@ describe('DecisionsView', () => {
       expect(turns[1]?.querySelector('.orders')).toBeNull();
     });
 
+    /** Why the pass happened at all, added 2026-09-21. The agent has been
+     * told since 2026-09-12 and the page never was, so a reader could see
+     * what it did and not what asked it. */
+    describe('the wake reason', () => {
+      const WOKE = 'A resting stop or target closed one of your positions on its own.';
+
+      /** `twoTurns` above carries no per-turn `reasoning`, which is what the
+       * card reads to decide it can draw turn blocks at all — without it the
+       * pass falls to the flat layout. These turns carry one. */
+      const twoBlocks = (over: Partial<AgentEvent> = {}) =>
+        event({
+          turns: [
+            {
+              prompt: 'the first prompt',
+              response: '{"orders":[]}',
+              thinking: null,
+              reasoning: 'Reading INTC before deciding.',
+              orders: [],
+            },
+            {
+              prompt: 'the second prompt, carrying the analysis',
+              response: '{"orders":[]}',
+              thinking: null,
+              reasoning: 'Nothing more to do.',
+              orders: [],
+            },
+          ],
+          ...over,
+        });
+
+      it('opens every turn block, because every turn was shown it', async () => {
+        service.eventsByMonth['2026-09'] = [twoBlocks({ woke_because: WOKE })];
+
+        const el = await render();
+
+        const turns = Array.from(el.querySelectorAll('.turn'));
+        expect(turns).toHaveLength(2);
+        for (const turn of turns) {
+          expect(turn.querySelector('.wake-reason')?.textContent).toContain(WOKE);
+        }
+      });
+
+      it('is the first thing under the turn label', async () => {
+        service.eventsByMonth['2026-09'] = [twoBlocks({ woke_because: WOKE })];
+
+        const el = await render();
+
+        const first = el.querySelector('.turn');
+        const children = Array.from(first?.children ?? []);
+        expect(children[0]?.className).toContain('turn-label');
+        expect(children[1]?.className).toContain('wake-reason');
+      });
+
+      it('names the wake as history on a later turn, the way the prompt does', async () => {
+        /** The prompt heads it "Why you are awake" on the first turn and
+         * "Why this pass started" on every later one — by then the wake has
+         * already happened and the turn was asked again, not woken. Each
+         * block shows what that turn was shown. */
+        service.eventsByMonth['2026-09'] = [twoBlocks({ woke_because: WOKE })];
+
+        const el = await render();
+
+        const turns = Array.from(el.querySelectorAll('.turn'));
+        expect(turns[0]?.querySelector('.wake-reason')?.textContent).toContain('Why you are awake');
+        expect(turns[1]?.querySelector('.wake-reason')?.textContent).toContain(
+          'Why this pass started',
+        );
+      });
+
+      it('draws no line at all when no reason is on record', async () => {
+        /** Every pass before 2026-09-21 stored none, and a skipped pass never
+         * reaches the model. An empty label would read as a reason nobody
+         * gave rather than one nobody kept. */
+        service.eventsByMonth['2026-09'] = [twoBlocks()];
+
+        const el = await render();
+
+        expect(el.querySelectorAll('.turn')).toHaveLength(2);
+        expect(el.querySelector('.wake-reason')).toBeNull();
+      });
+
+      it('shows it on the flat layout too, which has no turn blocks', async () => {
+        /** A pass from before 2026-09-15, or a single-turn pass that fetched
+         * nothing, is drawn as one flat body. It still had a wake. */
+        service.eventsByMonth['2026-09'] = [event({ turns: [], woke_because: WOKE })];
+
+        const el = await render();
+
+        expect(el.querySelector('.turn')).toBeNull();
+        expect(el.querySelector('.wake-reason')?.textContent).toContain('Why you are awake');
+        expect(el.querySelector('.wake-reason')?.textContent).toContain(WOKE);
+      });
+    });
+
     it("shows every turn's thinking, not only the last", async () => {
       /** Until 2026-09-13 the thinking panel showed the last turn's alone,
        * so a two-turn pass looked as though it had thought once. */

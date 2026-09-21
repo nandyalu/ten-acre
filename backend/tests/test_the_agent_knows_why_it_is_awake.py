@@ -288,3 +288,101 @@ def test_a_pass_that_writes_several_notes_records_all_of_them(monkeypatch):
     agent.run_once()
 
     assert recorded["wakeup_note"] == agent._encode_wakeup_notes(["first", "second"])
+
+
+# --- the record keeps the wake reason ------------------------------------------
+#
+# The agent has been told why it is awake since 2026-09-12 and the record kept
+# nothing, so the Decisions page could say what the agent did and never why it
+# was asked at all. See the 2026-09-21 JOURNEY.md entry.
+
+
+def _quiet_pass(monkeypatch, decisions):
+    """Everything run_once touches on the way to the model, stubbed out.
+
+    Same set as test_a_pass_that_writes_several_notes_records_all_of_them
+    above, which is the only other test that drives the whole of run_once.
+    Returns the dict record_agent_run was called with.
+    """
+    monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
+    monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
+    monkeypatch.setattr(agent, "is_enabled", lambda: True)
+    monkeypatch.setattr(agent, "settle_pending", lambda: [])
+    monkeypatch.setattr(agent, "_recent_signals", lambda: [])
+    monkeypatch.setattr(agent.db, "get_recent_signals", lambda limit=200: [])
+    monkeypatch.setattr(agent.agent_book, "closed_trades", lambda decisions=None: [])
+    monkeypatch.setattr(agent, "_price_map", lambda _t: {})
+    monkeypatch.setattr(agent.agent_book, "build_book", lambda price_lookup=None: _book())
+    monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [])
+    monkeypatch.setattr(agent.research, "is_charging", lambda: False)
+
+    recorded = {}
+    monkeypatch.setattr(agent.db, "record_agent_run", lambda **kw: recorded.update(kw) or 1)
+    answers = iter(decisions)
+    monkeypatch.setattr(agent, "_decide", lambda *a, **kw: next(answers))
+    return recorded
+
+
+def _answer(reasoning: str, orders=None) -> "agent.Decision":
+    return agent.Decision(
+        reasoning=reasoning, accepted=orders or [], rejected=[], prompt="p",
+        response=json.dumps({"reasoning": reasoning, "orders": []}),
+        turns=[{"prompt": "p", "response": "r"}],
+    )
+
+
+def test_the_reason_run_once_was_given_reaches_the_record(monkeypatch):
+    recorded = _quiet_pass(monkeypatch, [_answer("nothing to do")])
+
+    agent.run_once(scheduler._WOKE_BECAUSE["Stop fill"])
+
+    assert recorded["woke_because"] == scheduler._WOKE_BECAUSE["Stop fill"]
+
+
+def test_a_multi_turn_pass_records_the_one_wake_that_started_it(monkeypatch):
+    """One pass is one row however many turns it ran to, and only the first
+    turn is built with the reason. `_fold_in` must not lose it, and a later
+    turn must not overwrite it with something else — a pass is not woken
+    twice."""
+    recorded = _quiet_pass(monkeypatch, [
+        _answer("turn1", orders=[{"ticker": "ZZZ", "side": "cancel", "quantity": 0}]),
+        _answer("turn2"),
+    ])
+
+    agent.run_once(scheduler._WOKE_BECAUSE["Final"])
+
+    assert recorded["woke_because"] == scheduler._WOKE_BECAUSE["Final"]
+
+
+def test_a_pass_nobody_labelled_records_nothing_rather_than_a_guess(monkeypatch):
+    """NULL says "no reason on record", which is what a pass before 2026-09-21
+    and a skipped pass both are. Inventing "the agent's own time" here would
+    put a fact in the record that nobody observed."""
+    recorded = _quiet_pass(monkeypatch, [_answer("nothing to do")])
+
+    agent.run_once()
+
+    assert recorded["woke_because"] is None
+
+
+def test_the_events_route_hands_the_reason_to_the_page(monkeypatch):
+    """End of the wire. The Decisions page prints this at the top of every
+    turn block, so a field the route drops is a line the page cannot draw."""
+    from fastapi.testclient import TestClient
+
+    from backend.app import app
+    from backend.database import db as database
+    from backend.database.models import AgentRun as AgentRunRow
+
+    monkeypatch.delenv("PUBLIC_MODE", raising=False)
+    row = AgentRunRow(
+        id=1,
+        ran_at=datetime.datetime(2026, 9, 21, 13, 35),
+        woke_because=scheduler._WOKE_BECAUSE["Unguarded position"],
+    )
+    monkeypatch.setattr(database, "get_agent_runs", lambda limit=None: [row])
+
+    response = TestClient(app).get("/api/agent/events", params={"limit": 5})
+
+    assert response.status_code == 200
+    assert response.json()[0]["woke_because"] == scheduler._WOKE_BECAUSE["Unguarded position"]

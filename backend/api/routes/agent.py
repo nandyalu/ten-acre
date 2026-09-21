@@ -156,6 +156,7 @@ def _shape_events(rows: list) -> list[AgentEventOut]:
             id=row.id,
             ran_at=row.ran_at,
             next_wakeup=row.next_wakeup,
+            woke_because=row.woke_because,
             reasoning=row.reasoning or "",
             skipped=row.skipped,
             equity=row.equity,

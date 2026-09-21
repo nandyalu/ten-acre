@@ -3616,6 +3616,12 @@ class AgentRun:
     # What it said it wanted that wakeup *for*, in its own words, shown back to
     # it on the pass the wakeup starts. The agent has no memory between passes.
     wakeup_note: "str | None" = None
+    # What started this pass, in the sentence the prompt showed the agent — the
+    # `woke_because` argument to `run_once`, carried onto the record so the
+    # Decisions page can say why the agent was asked at all. None on a pass
+    # nobody labelled, which in this deployment means a test or a skip: the
+    # scheduler names all eight of its own wakes.
+    woke_because: "str | None" = None
     # Tickers it stopped watching. No money moves either way, but tomorrow's
     # sweep is smaller for it, so this is a decision and not housekeeping.
     untracked: list[str] = field(default_factory=list)
@@ -4811,6 +4817,7 @@ def run_once(woke_because: str | None = None) -> AgentRun:
         # Accepting both is the point of keeping __iter__.
         if run is None:
             run = AgentRun(reasoning=reasoning, rejected=rejected, book=book,
+                           woke_because=woke_because,
                            prompt=getattr(decision, "prompt", ""),
                            response=getattr(decision, "response", ""),
                            thinking=getattr(decision, "thinking", None),
@@ -5108,6 +5115,9 @@ def _record_run(run: "AgentRun") -> None:
                 else None
             ),
             wakeup_note=run.wakeup_note,
+            # Set on the first turn and never folded over, so this is the one
+            # wake that started the pass however many turns it ran to.
+            woke_because=run.woke_because,
         )
     except Exception:
         log.exception("Could not record the agent run")

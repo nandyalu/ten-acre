@@ -219,6 +219,16 @@ class AgentRun(SQLModel, table=True):
     # to check something and arrive with no record of what it meant to check.
     # NULL on a pass that named no reason, and on every row before 2026-09-12.
     wakeup_note: str | None = None
+    # **What started this pass**, in the words the agent itself was shown — one
+    # of the eight sentences in ``scheduler._WOKE_BECAUSE``. Four different
+    # things start a pass and they call for different answers, so "why did it
+    # do that?" cannot be read off the record without this.
+    #
+    # It reached the prompt from 2026-09-12 and was stored nowhere, so it
+    # survived only inside the prompt text. NULL on a pass that named no
+    # reason, on a skipped pass, and on every row before 2026-09-21. Nothing
+    # is backfilled: see the JOURNEY.md entry for that date.
+    woke_because: str | None = None
     reasoning: str = ""
     placed: int = 0
     rejected: int = 0

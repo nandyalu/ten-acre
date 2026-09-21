@@ -1609,6 +1609,17 @@ table {
   color: var(--text);
 }
 
+.wake-reason {
+  /* What the app told the agent at the top of that turn, not what the agent
+     said back — so it is deliberately quieter than `.reasoning` beneath it and
+     carries no quote bar. It repeats on every turn of a pass, which is honest
+     (every turn really was shown it) and is exactly why it must not compete
+     with the agent's own words for attention. */
+  margin: 0 0 var(--sp-3);
+  font-size: var(--t-sm);
+  color: var(--text-muted);
+}
+
 .orders {
   list-style: none;
   margin: var(--sp-4) 0 0;

@@ -511,6 +511,11 @@ class AgentEventOut(Schema):
     # When the agent asked to be woken next. Null means it asked for nothing —
     # the scheduler's fallback is not a decision the agent gets credited with.
     next_wakeup: datetime | None = None
+    # What started this pass, in the sentence the agent was shown — its own
+    # chosen time, something noticed while it slept, the last call before the
+    # close, a change to the app. Null on a skipped pass, which never reaches
+    # the model, and on every pass before 2026-09-21, when nothing stored it.
+    woke_because: str | None = None
     reasoning: str = ""
     skipped: str | None = None
     equity: float | None = None

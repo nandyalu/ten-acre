@@ -58,6 +58,28 @@ export class DecisionCard {
     return readerDateTime(event.next_wakeup);
   }
 
+  /** What started the pass, in the sentence the agent was shown. Empty on a
+   * skipped pass and on every pass before 2026-09-21, when nothing stored it.
+   *
+   * Defaulted rather than read straight off the event, for the same reason as
+   * `failedIn`: a browser holding a cached bundle can outlive the deployment
+   * that served it, and a page that throws in that window is worse than one
+   * missing a line. */
+  wokeBecause(event: AgentEvent): string {
+    return event.woke_because ?? '';
+  }
+
+  /** The heading the prompt itself put over that sentence on this turn.
+   *
+   * The prompt says "Why you are awake" on the first turn and "Why this pass
+   * started" on every later one, because by then the wake is history and the
+   * turn was asked again rather than woken. Each turn block here shows what
+   * that turn was shown, so it uses the same two headings — mirroring
+   * `describe_wakeup`'s own `heading`. */
+  wakeLabel(index: number): string {
+    return index === 0 ? 'Why you are awake' : 'Why this pass started';
+  }
+
   /** The agent's messages to whoever maintains it.
    *
    * They ride in `orders` because that is the record of everything one pass

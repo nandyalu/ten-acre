@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-21
 
+- **The site** — Every turn of a decision pass on the Decisions page now opens with why the agent was awake: its own chosen time, a move it slept through, the last call before the close, a change to the app. It is the sentence the agent itself read, under the heading its own prompt used — "Why you are awake" on the first turn, "Why this pass started" on every later one, because by then the wake is history. The page could say what a pass did and never what asked it, because nothing stored the reason; see [the journey](journey.md). Absent on a pass recorded before today, and on a skipped pass, which never reaches the model.
 - **Order messages** — A refused stop or target now says why. `adjust_exits` names the level, the price and the rule, for example "a stop at $336.00, above the price $335.21: a sell stop above the price triggers at once". Before, it said only "No usable level", and on 2026-09-21 the agent asked for a stop above the price three times in a row (run 73) because nothing told it that this fires at once. A refused leg is also named when the other leg goes through.
 - **Order messages** — The fill line for a buy names the exits that really rest at the broker. It printed the signal's stop and target before, even when `_place` had dropped a level the price had passed or put a volatility stop in its place. It now says which level was not placed and why, and when a volatility stop replaced the signal's stop. `arm_exits_now` is unchanged.
 

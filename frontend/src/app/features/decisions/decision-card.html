@@ -60,6 +60,17 @@
              than their own and read as though they belonged to it. -->
         <section class="turn">
           <p class="turn-label">Turn {{ $index + 1 }} of {{ event().turns?.length }}</p>
+          @if (wokeBecause(event())) {
+            <!-- What started the pass, repeated on every turn because every
+                 turn was shown it — the prompt is rebuilt from scratch each
+                 time and carries this line each time. The heading changes on a
+                 later turn exactly as the prompt's does; see `wakeLabel`.
+                 Quoted, and in the second person, because these are the words
+                 the agent read and not the page speaking. -->
+            <p class="wake-reason">
+              <strong>{{ wakeLabel($index) }}.</strong> {{ wokeBecause(event()) }}
+            </p>
+          }
           @if (turnExchanges(turn).length) {
             <!-- What it fetched before answering, on the tool channel: a read,
                  the candidate screen, a ticker's fundamentals. One row each, in
@@ -225,6 +236,14 @@
         }
       }
     } @else {
+      <!-- The flat layout has no turn blocks to open, so the same line opens
+           the body instead. A pass drawn this way ran one turn, which is the
+           first turn, so it takes the first turn's heading. -->
+      @if (wokeBecause(event())) {
+        <p class="wake-reason">
+          <strong>{{ wakeLabel(0) }}.</strong> {{ wokeBecause(event()) }}
+        </p>
+      }
       @if (exchangesIn(event()).length) {
         <ul class="orders">
           @for (fetched of exchangesIn(event()); track $index) {
