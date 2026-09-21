@@ -227,13 +227,15 @@ def test_a_row_the_pass_paid_for_is_marked_as_the_agents_own():
     assert "YOU paid for this one, in this pass" in prompt
 
 
-def test_a_row_from_an_earlier_pass_keeps_its_own_reason():
+def test_a_row_from_an_earlier_pass_is_not_marked_as_this_passs_own():
+    """The marker is the whole point, so it must not appear on a row the pass
+    did not pay for. `trigger` no longer reaches the prompt at all (see
+    test_research_timing_and_provenance), so this row carries nothing."""
     prompt = agent.build_prompt(
         _book(), [_signal_row(trigger="move")], {"AAA": 10.0}, researched_now={"BBB"},
     )
 
     assert "YOU paid for this one" not in prompt
-    assert "moved unusually" in prompt
 
 
 def _signal_row(trigger=None):

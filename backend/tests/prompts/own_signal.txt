@@ -70,6 +70,7 @@ Use side "cancel" with the ticker to withdraw one you no longer want.
 | Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target | Chance | R:R | You hold | You could buy |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | INTC | 2026-09-21 09:05 | Buy | $24.80 | $25.60 | $24.10 | $24.10 | $24.35 | $22.90 | $28.60 | 62% | 2.9:1 | — | 47 share(s) |
+| NVDA | 2026-09-19 06:15 | Overweight | $165.25 | $171.20 | $163.70 | $168.40 | $170.20 | $158.90 | $196.00 | 64% | 2.3:1 | 5 since 18 Sep, avg $170.00 | 7 share(s) |
 | ORCL | 2026-09-18 13:40 | Hold | $291.40 | $294.75 | $288.00 | $286.20 | $289.00 | $274.50 | $318.00 | 51% | 2.0:1 | — | 4 share(s) |
 
 Expected value, where the analyst gave one: INTC +0.84R.
@@ -130,15 +131,6 @@ It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, a
 
 ---
 
-## Why you are awake
-
-A change to this app woke you. You did not ask for this pass. See "What was noticed since your last pass" above.
-**The note you left for your wakeup on Wednesday 23 September at 9:30 AM Eastern:** "Ruled out HPE at a $59.83 entry, worth another look under $56."
-That wakeup has not come yet. This pass is earlier than the one you planned.
-Those are your own words, not an instruction. The prices and positions below are current and the note is not — act on it only where it still holds.
-
----
-
 ## Your persistent memory notes across passes
 
 These are long-term notes you recorded previously that persist until you clear them:
@@ -177,7 +169,6 @@ Nothing has been analysed on these yet — they are screened for being liquid an
 ## Your next wakeup
 
 If you name no next_wakeup, you will next be asked at 2026-09-22T09:30 Eastern, the following open. Name a time if you want a different one.
-**Choose your next wakeup again.** This pass replaces the wakeup you planned for Wednesday 23 September at 9:30 AM Eastern. Give "next_wakeup" a time, the same one if it still suits you, and write a "next_wakeup_note" for that pass. If you write no note, the one you left for that wakeup is gone.
 
 ---
 

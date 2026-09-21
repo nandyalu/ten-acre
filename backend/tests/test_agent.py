@@ -364,6 +364,34 @@ def test_the_prompt_says_when_nothing_is_affordable():
     assert "none, too dear" in agent.build_prompt(book, [S()], {"AAA": 97.83})
 
 
+def test_a_signal_row_says_what_of_it_is_already_held():
+    """**Added 2026-09-21, from the model's own report.** Asked what it carried
+    from one part of the prompt to another, 11 of 14 samples named this pair: a
+    holding's shares and average cost, held in mind from "What you hold" while
+    reading that ticker's row here. The sections are already adjacent, so the
+    row saying nothing was the whole of it."""
+    book = _book(cash=1000.0, holdings=[("AAA", 7, 205.44)])
+    book.holdings[0].opened = datetime.date(2026, 9, 18)
+
+    class S:
+        ticker = "AAA"
+        signal_date = "2026-09-21"
+        decision = "Overweight"
+        entry_price = stop_loss = price_target = None
+        win_probability = risk_reward = expected_value_r = None
+
+    class Other(S):
+        ticker = "BBB"
+
+    prompt = agent.build_prompt(book, [S(), Other()], {"AAA": 201.05, "BBB": 50.0})
+
+    assert "| 7 since 18 Sep, avg $205.44 |" in prompt
+    # A ticker the book does not hold says so, rather than leaving the cell to
+    # be read as "unknown".
+    row = next(l for l in prompt.splitlines() if l.startswith("| BBB |"))
+    assert "| — | 19 share(s) |" in row
+
+
 def test_the_prompt_explains_that_selling_funds_a_buy():
     book = _book(cash=10.0, holdings=[("AAA", 10, 90.0)])
     book.holdings[0].price = 97.0

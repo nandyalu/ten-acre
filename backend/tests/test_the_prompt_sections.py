@@ -263,6 +263,25 @@ def _closed_session():
                 kwargs=dict(FULL))
 
 
+def _own_signal():
+    """An analysis of something the book already holds.
+
+    **The common case, and no other fixture had it.** FULL holds AAPL and NVDA
+    and carries signals for INTC and ORCL, so the `You hold` column added on
+    2026-09-21 rendered `—` in all eight files and its other branch was never
+    written down. The live book on the day it shipped held COIN and carried a
+    COIN signal.
+    """
+    return dict(kwargs=dict(
+        FULL,
+        signals=[*SIGNALS, _signal(
+            "NVDA", "2026-09-19 10:15:00", "Overweight", price_at_signal=168.40,
+            entry_price=170.20, stop_loss=158.90, price_target=196.00,
+            win_probability=64.0, risk_reward=2.3, trigger="commissioned",
+        )],
+    ))
+
+
 PROMPTS = {
     "quiet": _quiet,
     "full": _full,
@@ -273,6 +292,7 @@ PROMPTS = {
     "tool": _tool,
     "broke": _broke,
     "closed": _closed_session,
+    "own_signal": _own_signal,
 }
 
 
@@ -387,3 +407,30 @@ def test_every_prompt_fixture_has_a_baseline():
     """A fixture with no stored file would pass its own test by skipping."""
     missing = [name for name in PROMPTS if not (GOLDEN / f"{name}.txt").exists()]
     assert not missing, f"no baseline for: {', '.join(missing)}"
+
+
+# `full` is the JSON channel and `tool` is the tool channel, so between them
+# they cover both headings `build_prompt` can give its last section.
+@pytest.mark.parametrize("name", ["full", "tool"])
+def test_the_layout_probe_cuts_the_answer_shape_and_nothing_else(name, pinned):
+    """The `layout` probe asks the agent about the prompt instead of for a
+    decision, so it cuts the last section off and puts its questions there.
+
+    It knows that section by its heading, and the heading lives in
+    `build_prompt`. Rename it and the probe would cut the rules off instead —
+    and still return seven answers that looked like a result. This test is
+    here because a probe measuring the wrong prompt is worse than no probe.
+    """
+    from backend.scripts import probe_prompt
+
+    fixture = PROMPTS[name]()
+    pinned(**{k: v for k, v in fixture.items() if k != "kwargs"})
+    built = agent.build_prompt(**fixture["kwargs"])
+
+    swapped = probe_prompt._layout_prompt(built)
+
+    assert swapped.endswith(probe_prompt._LAYOUT_ASK)
+    # One section left, and it is the one it was meant to be.
+    assert "## Rules" in swapped and "## Your next wakeup" in swapped
+    dropped = built[len(swapped) - len(probe_prompt._LAYOUT_ASK):]
+    assert dropped.startswith(probe_prompt._ANSWER_SHAPE_HEADINGS)

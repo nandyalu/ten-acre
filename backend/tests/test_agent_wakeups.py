@@ -108,18 +108,24 @@ def test_the_feedback_reaches_the_prompt():
 # --- the clock and the cash in the prompt --------------------------------------
 
 
-def test_the_prompt_starts_with_the_time():
-    """It is read against everything below it, and the agent cannot choose a
-    wakeup without it.
+def test_the_clock_is_read_after_the_book_and_before_the_rules():
+    """**It was the first section until 2026-09-21, and this test said so.**
 
-    Asserted by its place among the sections rather than by a line number.
-    The prompt gained a rule between every section on 2026-09-21, and a line
-    index counts separators; the clock being first is the thing that matters.
+    It went first because everything below it is read against it. It sits
+    below "What is true now" now, on the hypothesis that the agent is deciding
+    about a book rather than about a time, and that a note it left itself
+    reads better against an account and a signals table already in hand. See
+    the JOURNEY.md entry and `agent-probes.md`; that is a hypothesis and the
+    probe is what settles it.
+
+    What must stay true either way: the clock is above the rules and the
+    answer, because the closed-market rule and the wakeup it chooses both
+    depend on it.
     """
-    sections = agent.build_prompt(_book(), [], {}).split("\n---\n")
+    prompt = agent.build_prompt(_book(), [], {})
 
-    assert "Decide what to do with it now" in sections[0]
-    assert "Eastern" in sections[1], sections[:2]
+    assert prompt.index("Your account is") < prompt.index("## The time")
+    assert prompt.index("## The time") < prompt.index("## Rules")
 
 
 def test_unsettled_cash_is_explained_when_there_is_some():

@@ -2,21 +2,6 @@ You manage a small account of real money. Decide what to do with it now, if anyt
 
 ---
 
-# Now
-
-## The time
-
-It is Saturday 19 September 2026, 6:05 PM Eastern. The market is closed for the weekend. It opens again Monday 21 September at 9:30 AM.
-
----
-
-## Your persistent memory notes across passes
-
-These are long-term notes you recorded previously that persist until you clear them:
-- Skip INTC — stopped out on it twice this month on the same breakout setup.
-
----
-
 # Since you last looked
 
 ## What is no longer true
@@ -80,14 +65,27 @@ Use side "cancel" with the ticker to withdraw one you no longer want.
 
 ## Recent analyst signals
 
-**Price now** is the price as of 2026-09-19 6:05 PM ET; **Day High** and **Day Low** are today's session range so far; **At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** are computed by the app from the verified close and ATR, so the Stop clears one day's normal range; they are not orders that exist, and a price inside an analyst's text is the analyst's own. Rows are newest first, and **Analysed** carries the time because a ticker can be analysed more than once in a day.
+**Price now** is the price as of 2026-09-19 6:05 PM ET; **Day High** and **Day Low** are today's session range so far; **At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** are computed by the app from the verified close and ATR, so the Stop clears one day's normal range; they are not orders that exist, and a price inside an analyst's text is the analyst's own. **You hold** is the position you already have in that ticker, so a row is about adding to, trimming or leaving alone something you own rather than about opening it. Rows are newest first, and **Analysed** carries the time because a ticker can be analysed more than once in a day.
 
-| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target | Chance | R:R | You could buy | Why it ran |
+| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target | Chance | R:R | You hold | You could buy |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| INTC | 2026-09-21 09:05 | Buy | $24.80 | $25.60 | $24.10 | $24.10 | $24.35 | $22.90 | $28.60 | 62% | 2.9:1 | 47 share(s) | Run today because you asked to see it today. |
-| ORCL | 2026-09-18 13:40 | Hold | $291.40 | $294.75 | $288.00 | $286.20 | $289.00 | $274.50 | $318.00 | 51% | 2.0:1 | 4 share(s) | Run because the stock moved unusually, so this analyst was reacting to a move the price already holds. |
+| INTC | 2026-09-21 09:05 | Buy | $24.80 | $25.60 | $24.10 | $24.10 | $24.35 | $22.90 | $28.60 | 62% | 2.9:1 | — | 47 share(s) |
+| ORCL | 2026-09-18 13:40 | Hold | $291.40 | $294.75 | $288.00 | $286.20 | $289.00 | $274.50 | $318.00 | 51% | 2.0:1 | — | 4 share(s) |
 
 Expected value, where the analyst gave one: INTC +0.84R.
+
+---
+
+## Every ticker you track
+
+You track 4 of at most 30 tickers. **Moved since** is the price as of 2026-09-19 6:05 PM ET against the price at the most recent analysis of that ticker — a large move on a stale analysis is the signal that a fresh look may be worth paying for. Tickers left watched with stale or 'never' analysed status consume watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.
+
+| Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |
+|---|---|---|---|---|---|---|---|---|
+| AAPL | held | $231.10 | $233.05 | $228.90 | never | never | never | never |
+| INTC | watched | $24.80 | $25.60 | $24.10 | 2026-09-21 09:05 | $24.10 | +2.9% | Buy |
+| NVDA | held | $165.25 | $171.20 | $163.70 | never | never | never | never |
+| ORCL | watched | $291.40 | $294.75 | $288.00 | 2026-09-18 13:40 | $286.20 | +1.8% | Hold |
 
 ---
 
@@ -124,24 +122,26 @@ Your recent wakeups, and whether each one led to an action:
 
 ---
 
+# Now
+
+## The time
+
+It is Saturday 19 September 2026, 6:05 PM Eastern. The market is closed for the weekend. It opens again Monday 21 September at 9:30 AM.
+
+---
+
+## Your persistent memory notes across passes
+
+These are long-term notes you recorded previously that persist until you clear them:
+- Skip INTC — stopped out on it twice this month on the same breakout setup.
+
+---
+
 # What you can do
 
 ## Paying for research
 
 Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass, so you can act on what it found before you finish. A bad choice of what to study is a loss like any other, so spend it where you actually want a fresh look — not because it is free to ask.
-
----
-
-## Every ticker you track
-
-You track 4 of at most 30 tickers. **Moved since** is the price as of 2026-09-19 6:05 PM ET against the price at the most recent analysis of that ticker — a large move on a stale analysis is the signal that a fresh look may be worth paying for. Tickers left watched with stale or 'never' analysed status consume watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.
-
-| Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |
-|---|---|---|---|---|---|---|---|---|
-| AAPL | held | $231.10 | $233.05 | $228.90 | never | never | never | never |
-| INTC | watched | $24.80 | $25.60 | $24.10 | 2026-09-21 09:05 | $24.10 | +2.9% | Buy |
-| NVDA | held | $165.25 | $171.20 | $163.70 | never | never | never | never |
-| ORCL | watched | $291.40 | $294.75 | $288.00 | 2026-09-18 13:40 | $286.20 | +1.8% | Hold |
 
 ---
 

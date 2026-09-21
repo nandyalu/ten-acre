@@ -733,15 +733,6 @@ def describe_watchlist(
     return lines
 
 
-_TRIGGER_PHRASE = {
-    "sweep": " Run on the normal morning schedule.",
-    "commissioned": " Run today because you asked to see it today.",
-    "move": " Run because the stock moved unusually, so this analyst was reacting to a move the price already holds.",
-    "earnings": " Run because the company reports earnings soon.",
-    "manual": " Run by hand, outside the schedule.",
-}
-
-
 def day_range_today(
     ticker: str, current_price: float | None = None, today: datetime.date | None = None
 ) -> tuple[float, float] | None:
@@ -1162,21 +1153,32 @@ def describe_signals(
     out which price was which. Named columns say it once, and the header says
     outright what "now" and "at analysis" mean, because those two are the pair
     that was being confused.
+
+    **A row for something already held says so (2026-09-21).** Asked what it
+    had to carry from one part of the prompt to another, 11 of 14 samples named
+    this exact pair: a holding's shares, average cost and resting stop, held in
+    mind from "What you hold" while reading that ticker's row here. The two
+    sections are already adjacent, so the distance was never the problem — the
+    row did not say the position existed. `You hold` sits beside `You could
+    buy`, the other column about the agent rather than about the stock.
     """
     if not signals:
         return ["No new signals today."]
+    held = {h.ticker: h for h in book.holdings}
     lines = [
         f"**Price now** is the price as of {as_of}; "
         "**Day High** and **Day Low** are today's session range so far; "
         "**At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** "
         "are computed by the app from the verified close and ATR, so the Stop clears "
         "one day's normal range; they are not orders that exist, and a price inside "
-        "an analyst's text is the analyst's own. Rows are newest "
+        "an analyst's text is the analyst's own. **You hold** is the position you "
+        "already have in that ticker, so a row is about adding to, trimming or "
+        "leaving alone something you own rather than about opening it. Rows are newest "
         "first, and **Analysed** carries the time because a ticker can be analysed "
         "more than once in a day.",
         "",
         "| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target |"
-        " Chance | R:R | You could buy | Why it ran |",
+        " Chance | R:R | You hold | You could buy |",
         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     # Newest first, and sorted here rather than relied upon: the query orders
@@ -1210,34 +1212,53 @@ def describe_signals(
             afford_text = f"{affordable} share(s)" if affordable > 0 else "none, too dear"
         else:
             afford_text = "no price"
-        # Why this analysis exists. A signal produced because the stock just
-        # moved sharply is the analyst reacting to a move already in the price;
-        # a scheduled one is not reacting to anything. Those deserve different
-        # weight and the agent could not tell them apart. Silent when NULL —
-        # rows written before this was recorded have no honest value, and
-        # inventing one would be a guess in the record. getattr, because
-        # several tests pass signal-shaped stand-ins rather than the model, the
-        # same way the Decision unpacking does.
-        #
-        # **Provenance belongs in the table, not in a prose block above it.** A
+        # **Provenance belongs on the row, not in a prose block above it.** A
         # research result was appearing twice — once as this row and once in
         # "What you just did" — and the model cited the row and called it "the
         # analyst", never registering that it had paid for it moments earlier.
         # It was not ignoring the prose; it was reconciling two copies of one
-        # fact and keeping the canonical one. So the canonical one now carries
-        # the provenance.
+        # fact and keeping the canonical one. So the canonical one carries the
+        # provenance.
+        #
+        # **It rides on `Analysed` since 2026-09-21, where a `Why it ran`
+        # column used to hold it.** That column also named what triggered the
+        # analysis, and nothing but the agent has triggered one since
+        # 2026-09-12: 20 of the 21 signals this database has ever held say
+        # `commissioned`, and the one `move` row is from the day before that
+        # change. So the column had become one sentence repeated on every row.
+        # This half is not repeated and is not decoration — it is what stops
+        # the model reading its own research as somebody else's — so it stays,
+        # beside the time the analysis ran, which is the fact it qualifies.
+        when = _analysed_at(s)
         if researched_now and s.ticker in researched_now:
-            because = "**YOU paid for this one, in this pass, minutes ago.** It is here because you ordered it."
+            when += " — **YOU paid for this one, in this pass, minutes ago**"
+        # The position the agent already has in this ticker. Shares, when it
+        # opened and what it paid: the three figures 11 of 14 probe samples
+        # said they were carrying here from "What you hold" by hand. The
+        # resting stop is deliberately not repeated — the `Stop` column beside
+        # it is the app's computed level, and two stops in one row is the
+        # confusion the `Price now` / `At analysis` header exists to prevent.
+        # `opened` is None on a lot whose purchase date could not be
+        # recovered, the same way the holdings table's `Held` column is, so the
+        # date is dropped rather than guessed.
+        mine = held.get(s.ticker)
+        if mine is None:
+            hold_text = "—"
+        elif mine.opened is None:
+            hold_text = f"{mine.quantity:g}, avg ${mine.avg_cost:,.2f}"
         else:
-            because = _TRIGGER_PHRASE.get(getattr(s, "trigger", None) or "", "").strip() or "—"
+            hold_text = (
+                f"{mine.quantity:g} since {mine.opened.strftime('%-d %b')}, "
+                f"avg ${mine.avg_cost:,.2f}"
+            )
         day_range = (day_ranges or {}).get(s.ticker)
         day_high = f"${day_range[1]:,.2f}" if day_range else "—"
         day_low = f"${day_range[0]:,.2f}" if day_range else "—"
         lines.append(
-            f"| {s.ticker} | {_analysed_at(s)} | {s.decision} | {price_text} | "
+            f"| {s.ticker} | {when} | {s.decision} | {price_text} | "
             f"{day_high} | {day_low} | {_money(getattr(s, 'price_at_signal', None))} | "
             f"{_money(s.entry_price)} | {_money(s.stop_loss)} | {_money(s.price_target)} | "
-            f"{chance} | {rr} | {afford_text} | {because} |"
+            f"{chance} | {rr} | {hold_text} | {afford_text} |"
         )
     # Expected value is the analyst's own derivation from the levels above, so
     # it sits under the table rather than adding a column that is empty for
@@ -1648,10 +1669,21 @@ def build_prompt(
     asked_again = _asked_again(outcomes, readings, dropped_with_read, rejected)
 
     return _joined([
-        # **The four groups are the four questions in order: when is it,
-        # what did I miss, what is true, what may I do (2026-09-21).** A
-        # group is named once, above its first section that has anything in
+        # **The four groups are four questions: what did I miss, what is true,
+        # when is it and what did I tell myself, what may I do (2026-09-21).**
+        # A group is named once, above its first section that has anything in
         # it. The opening line belongs to no group.
+        #
+        # **"Now" sat first until later the same day, and moving it is the
+        # riskiest change made to this prompt.** It was first because
+        # everything below it is read against it. It is third because the
+        # agent is deciding about a book rather than about a time, and a note
+        # it wrote to itself reads better against an account, a holding and a
+        # signals table already in hand than before them. Asked what order it
+        # wanted, 9 of 14 samples put the book first — and 3 of the same 14
+        # said they carried the market being closed down the prompt, which
+        # argues the other way. `agent-probes.md` has both. Judge this one on
+        # whether the clock is still read from here, not on the preference.
         (None, [
 
             # "Decide what to trade today" asked for a trade while a rule far below
@@ -1668,30 +1700,11 @@ def build_prompt(
             (None,
              ["You manage a small account of real money. Decide what to do with it now, if anything."]),
         ]),
-        ("Now", [
-            ("The time", describe_clock()),
-
-            # **Directly under the clock, because it changes how the rest is read.**
-            # Its own chosen time and a move it slept through call for different
-            # answers, and until 2026-09-12 the agent was told neither. **On a later
-            # turn the wake is history, so the heading names it as that.**
-            ("Why this pass started" if asked_again else "Why you are awake",
-             describe_wakeup(
-                 woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
-                 asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
-             )),
-            # Directly under the wake block since 2026-09-21: the note the last
-            # pass left and the notes the agent keeps permanently are both it
-            # talking to itself, and "those are your own words, not an
-            # instruction" was already true of both.
-            ("Your persistent memory notes across passes", describe_memory_notes()),
-        ]),
         ("Since you last looked", [
 
-            # **Read before anything that is merely true now.** All three are
-            # news: the app changed, a rule spotted something, or the agent's
-            # own last answer produced a result. Until 2026-09-21 the wake
-            # reason announced the second of these eight sections above it.
+            # **First since 2026-09-21, and read before anything that is merely
+            # true now.** All three are news: the app changed, a rule spotted
+            # something, or the agent's own last answer produced a result.
             #
             # **The measured constraint is kept and strengthened**: "what was
             # noticed" and "what you just did" read 0 of 4 below the tables and
@@ -1715,16 +1728,44 @@ def build_prompt(
             ("Orders you placed that have not filled yet", describe_pending_orders()),
             ("Recent analyst signals",
              describe_signals(signals, book, prices, as_of, day_ranges, researched_now)),
+            # **Directly under the signals since 2026-09-21, and it moved group
+            # to get here.** It sat in "What you can do" beside the research
+            # price and the candidate menu, six sections below the signals.
+            # Asked what order it wanted, 4 of 7 samples asked for these two
+            # together and called both "actionable intelligence"
+            # (`agent-probes.md`). They are the same kind of fact — what the
+            # analysts have said about the names on the book — and this table's
+            # own job is to say which of them have gone stale, which is a
+            # judgement about the table above it. Tracking is not an action;
+            # researching is, and that stays below.
+            ("Every ticker you track", tracked),
             ("Your track record", history),
             ("Orders the broker would not take", describe_recent_failures(failures or [])),
             ("How long an analysis takes",
              describe_analysis_timing(analysis_minutes or [], running_analyses or {})),
             ("Your recent wakeups", describe_recent_wakeups(wakeups or [], brief=answer_by_tool)),
         ]),
+        ("Now", [
+            ("The time", describe_clock()),
+
+            # **Directly under the clock, because it changes how the rest is read.**
+            # Its own chosen time and a move it slept through call for different
+            # answers, and until 2026-09-12 the agent was told neither. **On a later
+            # turn the wake is history, so the heading names it as that.**
+            ("Why this pass started" if asked_again else "Why you are awake",
+             describe_wakeup(
+                 woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
+                 asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
+             )),
+            # Directly under the wake block since 2026-09-21: the note the last
+            # pass left and the notes the agent keeps permanently are both it
+            # talking to itself, and "those are your own words, not an
+            # instruction" was already true of both.
+            ("Your persistent memory notes across passes", describe_memory_notes()),
+        ]),
         ("What you can do", [
             ("Paying for research", describe_research_price(price) if can_research else []),
 
-            ("Every ticker you track", tracked),
             ("Candidates you could research", candidates),
             ("Rules",
              describe_rules(book, price, watchlist, max_watchlist, menu, horizon_days, answer_by_tool)),
@@ -3349,7 +3390,13 @@ def describe_wakeup(
     if woke_because:
         # The pointer is added here and only here, because this is the only
         # place that knows the section is really in the prompt.
-        pointer = ' See "What was noticed since your last pass" below.' if has_news else ""
+        #
+        # **"above", not "below", since 2026-09-21**: the "Now" group moved
+        # under "What is true now", so every section this block names is now
+        # higher up the prompt. A pointer that names the right heading and the
+        # wrong direction is the same failure as one that names a section that
+        # is not there.
+        pointer = ' See "What was noticed since your last pass" above.' if has_news else ""
         # The heading above this line names the wake as history on a later
         # turn; `build_prompt` picks it, because only it knows this is one.
         lines.append(f"{woke_because}{pointer}")
@@ -3357,7 +3404,7 @@ def describe_wakeup(
         lines.append(
             "**Why you are asked again.** This is the same pass, not a new wake: "
             + "; and ".join(asked_again)
-            + '. All of it is under "What your last answer did" below.'
+            + '. All of it is under "What your last answer did" above.'
         )
     if note and early:
         lines.append(f'**The note you left for your wakeup on {when}:** "{note}"')

@@ -76,14 +76,21 @@ def test_the_note_comes_back_as_the_agents_own_words():
     assert "not an instruction" in prompt
 
 
-def test_both_sit_under_the_clock_and_above_the_account():
-    """It changes how everything below is read, so it goes first. Placement is
-    measured here — see the probe-the-prompt skill."""
+def test_both_sit_under_the_clock_and_below_the_account():
+    """The wake reason stays directly under the clock, and the pair moved below
+    the book on 2026-09-21.
+
+    **This test read `clock < wake < account` until that date.** The clock and
+    the wake reason are still in that order and still adjacent — what changed
+    is that the whole "Now" group is read after "What is true now". Placement
+    is measured here, so see `agent-probes.md` before moving either again.
+    """
     prompt = agent.build_prompt(
         _book(), [], {}, woke_because="You asked to be woken now.", wakeup_note="n",
     )
 
-    assert prompt.index("It is ") < prompt.index("Why you are awake") < prompt.index("Your account is")
+    assert prompt.index("Your account is") < prompt.index("It is ")
+    assert prompt.index("It is ") < prompt.index("Why you are awake")
 
 
 def test_a_pass_with_neither_says_nothing():

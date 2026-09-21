@@ -63,6 +63,10 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 | A refusal fed back to the model | 5 of 7, then 6 of 7 | **Read.** Where the section sits made no measurable difference |
 | The alerts table, moved above the account and the tables | 1 of 7, then 4 of 7 | **Suggestive, not settled.** The move is in the predicted direction and sits at the floor |
 | Fencing the analysis in a read | 7 of 7 both ways | **No difference to whether it is read.** Kept, for the structure it guarantees |
+| Asking the model what order it wants | 14, two prompts | **Question 3 answers; questions 1 and 2 do not.** See "Asking the model about the prompt itself" |
+| The clock moved from section 2 to section 14 | 7 before, 7 after | **No regression.** 6 of 7 both ways opened on the market being closed, 0 of 7 both ways ordered into a shut venue |
+| `You hold` on the signals table | 7 before, 7 after | **Right direction, at the floor.** The reasoning shows it better than the counts |
+| The watchlist moved up beside the signals | 7 before, 7 after | **No difference, and confounded** — probed in the same pair as the two above |
 
 ## Read, and the evidence for it
 
@@ -161,3 +165,108 @@ Each of these is correct, rendered, cheap, and may be read by a different model.
 **Limit orders, announced (2026-09-19).** With a change note announcing them in the prompt, **2 of 4 samples placed a limit buy** at the plan's $107.50, one for the day and one GTC, both writing a note to set the stop on the fill; the other two bought at market. One named the note as the reason: *"the rules have changed recently; I can now use limit orders"*. On 2026-09-17, without the note, 0 of 8 had reached for one.
 
 **The `fundamentals` fetch (2026-09-19, the day it moved to Yahoo Finance).** Four samples on a copy of the live book, the clock pinned to Friday 11:15 AM, a seeded INTC Hold plan, and the change note announcing the fetch: **1 of 4 called it**, for INTC, ORCL and CRWV in one round, and **0 of 4 quoted a figure from the result**. The one caller reasoned on from the read's text and the signals table, and never mentioned a ratio or a quarter. What it saw was complete and correct, from real Yahoo and Webull data inside the container. Nobody bought that day, where 4 of 4 had that morning on the same levels, because the seeded rationale was the 09-17 text that says to wait for a pullback to the 10-day EMA or $100, and every sample cited it.
+
+## Asking the model about the prompt itself (2026-09-21)
+
+**A `layout` variant shows the real prompt, swaps the answer shape for three questions about how the prompt reads, and asks for prose.** It is a probe, out of the app, so it reaches no broker path and adds no second decision-maker to the record. Run it with `--turn layout` (from `turn1`) or `--turn layout_retry` (from `retry`, the fullest prompt the script builds). Fourteen samples, seven per arm, `gemini-3.5-flash-lite`, one copy of the live book, the live tool channel.
+
+**Read this section before running it again. One of the three questions works and two do not, and the reasons are different.**
+
+### Question 3 works, and it is the only one that does
+
+*"Was there anything you had to hold in your head from one part while you read another?"* — **14 of 14 named something**, and they named the same two things.
+
+| What was carried across sections | Samples |
+|---|---|
+| The cash figure `$8,556.59`, held while reading a table below it | 11 of 14 |
+| A holding's own numbers — shares, average cost, resting stop — held while reading that ticker's signal row or its analysis | 11 of 14 |
+| The market being closed, held while reading the tables | 3 of 14 |
+
+**The second one is a lead worth following, and the reorder cannot fix it.** "What you hold" and "Recent analyst signals" are already two sections apart. What the samples describe is not distance — it is that COIN appears in both tables and the signals row never says it is held. Five of them spelled out the reconciliation: *"I had to hold COIN's current price ($201.05), its average cost ($205.44), and its resting stop-loss ($182.29) in my head from the holdings table while scrolling down to the analyst signals table to compare them against the analyst's stated entry ($207.65), stop ($182.29), and target ($253.31)."* **Marking a held ticker in the signals table is a content change, not an order change**, and it has precedent: the same fix stopped the model reconciling a research result that appeared as a row and again as prose. Probe it before building it.
+
+**Question 3 works because it asks about something the model can observe.** Questions 1 and 2 ask about attention and preference, which it cannot. That split was predicted before the probe ran, and the two failures below are what it looks like.
+
+### Question 2 gives a different answer depending on how long the prompt is
+
+*"If you could put these parts in any order, what order would you want?"*
+
+| Where the account and the holdings should go | `turn1`, 7,151 chars | `retry`, 24,818 chars |
+|---|---|---|
+| At the very top, above the clock | 2 of 7 | **7 of 7** |
+| After the clock and the market line | 5 of 7 | 0 of 7 |
+
+**Same model, same book, same day, same question, opposite answers.** The only difference is that the longer prompt carries a whole analysis. A preference that flips on prompt length is not a fact about what helps the model decide, and it must not be treated as one. **This is the strongest reason in this file not to act on a stated preference.**
+
+**What the two arms agree on is the order the prompt already has.** Every sample that named the rules put them last, and they are last but for the wakeup and the answer shape. The one consistent ask that is not already true: **4 of 7 on `turn1` want "Every ticker you track" beside "Recent analyst signals"**, calling both "actionable intelligence". Those two sit six sections apart, across the boundary between "What is true now" and "What you can do". That is a move worth probing behaviourally; it is not evidence on its own.
+
+**The preference and the working-memory report pull opposite ways.** Nine samples wanted the account and the holdings above the clock, and three said they had to carry the closed-market fact down the prompt while reading the rules or the signals. The second is an argument for the clock staying first, from the same fourteen replies as the first.
+
+### Question 1 cannot be answered by this variant at all
+
+*"Which parts did you use, and which did you not open?"*
+
+**13 of 14 named the candidate list as unopened and 11 of 14 named the track record.** Those are the two sections that are a pointer to a fetch, **and this variant declares no functions**, so the model could not have opened either. The answer is true and says nothing. Behaviourally those two fetches are called 5 to 7 of 7 in a real pass.
+
+**Self-report on attention also disagreed with itself inside one arm.** One sample said it ignored the tracked-ticker moves for INTC and CRWV; four others in the same seven quoted INTC's `+14.0%`, which appears only in that section.
+
+**To make question 1 answerable, hand the variant the fetch functions and compare what it says it did not open against what it called.** Until then, read question 1 as noise.
+
+### Two null results, both worth writing down
+
+**Nobody asked for anything they were not given.** Fourteen samples, and no "I cannot see X", no missing number, no missing tool. The `note` action exists for exactly that, and pointing the same mechanism at the prompt produced none. That is not proof the prompt is complete; it is evidence that asking this way does not find a gap.
+
+**Nobody mentioned the four `#` group headings.** Not one sample referred to "Now", "Since you last looked", "What is true now" or "What you can do", although several named `## ` section headings word for word — "Your account", "What you hold", "The time", "The market right now". **Sections are used as handles; groups are not, or not visibly.** It stops nobody trying the group headings again, so it is recorded rather than acted on.
+
+### The caveat that belongs on every use of this variant
+
+**A stated preference is a hypothesis, not evidence.** The holdings price-range column was probed nine times across three placements and read zero times, yet a model asked "would a price range help?" would say yes every time. Use the answers to generate moves, and let the behavioural probe decide each one.
+
+**The book was thin.** The market was closed, one position was held, and every one of the fourteen samples decided to hold it. Question 1 is answered against a decision with almost nothing in it. Rebuild an open-market scenario with a real choice before reading anything into which parts produced a decision.
+
+## Three changes from the layout answers, probed together (2026-09-21)
+
+**A matched `turn1` pair, seven samples an arm, one `sqlite3` copy of the live book, `gemini-3.5-flash-lite`, the real tool channel with fetches.** The three changes: a `You hold` column on the signals table replacing `Why it ran`, "Every ticker you track" moved up beside "Recent analyst signals", and the whole "Now" group moved from the top of the prompt to below "What is true now". The prompt grew 103 characters, 1.5%, because the removed column paid for most of the new one.
+
+**All three were probed in one pair, against this project's own rule that each move gets its own probe.** The rule exists so a gain can be attributed. Nothing here exceeded the noise floor, so there is nothing to attribute — but the watchlist number below cannot be separated from the signals change pulling attention to the held ticker, and that is a real cost of bundling.
+
+| | Before | After |
+|---|---|---|
+| Said the market is closed | 6 of 7 | 6 of 7 |
+| Placed an order the closed market would refuse | 0 of 7 | 0 of 7 |
+| Named a `next_wakeup` | 7 of 7 | 6 of 7 |
+| Framed the COIN signal as adding to a position already held | 1 of 7 | 4 of 7 |
+| Quoted INTC's `+14.0%`, which appears only in the watchlist line | 3 of 7 | 1 of 7 |
+| Ordered research | 2 of 7 | 1 of 7 |
+| `read`, `watchlist`, `track_record` called | 7 of 7 each | 7 of 7 each |
+| `candidates` called | 0 of 7 | 3 of 7 |
+
+**Every difference is 3 or less, so by the floor at the top of this file every one of them means nothing.** Read the table as "nothing broke".
+
+### The clock still reads from the bottom of the prompt, and that is the result that mattered
+
+**"The time" went from section 2 of 21 to section 14 of 21**, below the account, the holdings and both tables. It was the first section from the beginning, on the reasoning that everything below is read against it, so this was the change most likely to break something.
+
+**It did not.** 6 of 7 samples in both arms opened their reasoning with the market being closed, and no sample in either arm placed an order the venue would refuse. One after-sample restated the closed-market rule with its `adjust` exemption intact and unprompted: *"adjustments to stops or targets using the `adjust` command will work, since those commands simply update the broker's resting orders, rather than trying to place a trade right now."* That rule sits beside the order rules, and the clock it depends on is now two thousand words above it rather than at the top.
+
+**This does not license moving anything else down.** What it says is that this model finds the clock wherever it is in a 6,800-character prompt. Re-probe on a longer one before assuming the same.
+
+### The `You hold` column: the right direction, at the floor, with better evidence in the reasoning than in the counts
+
+1 of 7 to 4 of 7 on framing the COIN Overweight as adding to a position rather than as a position to manage is a difference of 3 and settles nothing. **The reasoning is where this one shows.**
+
+Both arms reconciled the holding with its signal — the two sections were already adjacent, which is why no reorder could have helped. What changed is the work it took:
+
+- **Before, sample 6 asked a question the prompt did not answer:** *"It appears that COIN was analyzed today, at 09:32, with an 'Overweight' rating and those same entry, stop, and target prices. **I need to figure out if we just bought it today, or if it was already in the portfolio.**"* The `since 21 Sep` half of the new cell answers exactly that.
+- **Before, sample 2 found it by accident:** *"I'm holding 7 shares of COIN... **Wait**, the system analyzed it today (9:32 AM) as Overweight!"*
+- **Before, sample 7 named the carrying:** *"I **remember** that COIN was analyzed earlier today."*
+- **After, samples 3 and 4 read it off the row, flat, in their opening assessment, before any fetch:** *"the prices align with my current entry/stop/target"*, *"the analyst signal from this morning, at 9:32 AM, is Overweight on COIN, with the same entry, stop, and target as my current plan."*
+
+**That is a reading of four passages, not a count, and it should be treated as such.** What makes it worth recording is that it is the same defect the samples described when asked — a question held open across two tables — and it is the half the counts cannot see.
+
+### The watchlist move shows nothing, and may have cost something
+
+`+14.0%` appears only in the brief watchlist line, and it went 3 of 7 to 1 of 7 with that line moved up beside the signals table. Research orders went 2 of 7 to 1 of 7. Both are inside the floor.
+
+**The likely confound is the other change in the same pair.** The after arm spent its attention on COIN, which is what a signals table that now says "you own this" invites. `watchlist` was fetched 7 of 7 in both arms, so the pointer is acted on either way — on this channel the prompt carries one line and the table is a fetch, which limits how much this move could ever have changed.
+
+**If the watchlist stops being read on the live book, this is the first thing to put back.**

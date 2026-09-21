@@ -88,29 +88,27 @@ def _line(trigger):
     return next(l for l in prompt.splitlines() if l.startswith("| AAA |"))
 
 
-def test_a_move_triggered_signal_says_so():
-    """The one that matters most: the analyst was reacting to a move the price
-    already holds, which is not the same as a scheduled opinion."""
-    assert "moved unusually" in _line("move")
-    assert "already holds" in _line("move")
+@pytest.mark.parametrize("trigger", ["move", "sweep", "commissioned", "earnings", "manual"])
+def test_no_trigger_reaches_the_prompt_any_more(trigger):
+    """**Removed 2026-09-21, because it had become one sentence on every row.**
 
+    A `Why it ran` column told the agent whether the analyst was reacting to a
+    move the price already held or answering a request. Nothing but the agent
+    has triggered an analysis since 2026-09-12: 20 of the 21 signals this
+    database has ever held say `commissioned`, and the one `move` row is dated
+    the day before that change, so no other value can appear again.
 
-@pytest.mark.parametrize(
-    "trigger,phrase",
-    [
-        ("sweep", "normal morning schedule"),
-        ("commissioned", "you asked to see it today"),
-        ("earnings", "reports earnings soon"),
-        ("manual", "Run by hand"),
-    ],
-)
-def test_each_trigger_reads_as_plain_words(trigger, phrase):
-    assert phrase in _line(trigger)
+    `Signal.trigger` is still recorded and the research page still shows it —
+    this is about what the prompt spends a column on, not about the record.
+    """
+    line = _line(trigger)
 
-
-def test_an_unrecorded_trigger_says_nothing():
-    """Rows written before the column existed have no honest value. Inventing
-    one would put a guess in the record the agent reads as fact."""
-    line = _line(None)
     assert "Run " not in line
-    assert line.startswith("| AAA | 2026-09-03 | Buy |")
+    for phrase in ("moved unusually", "morning schedule", "reports earnings", "by hand"):
+        assert phrase not in line
+
+
+def test_a_row_still_says_when_it_was_analysed():
+    """The `Analysed` cell carries the in-pass marker now, so it must stay
+    readable as a time first."""
+    assert _line(None).startswith("| AAA | 2026-09-03 | Buy |")

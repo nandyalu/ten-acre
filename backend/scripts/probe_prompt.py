@@ -13,6 +13,12 @@ run_once, screen, or any broker path.
     python -m backend.scripts.probe_prompt --turn turn1
     python -m backend.scripts.probe_prompt --turn turn2 --parallel
 
+**One variant asks about the prompt rather than answering it.** ``--turn
+layout`` shows the real turn-1 prompt, swaps the answer shape for three
+questions about how the prompt reads, and asks for prose. Use it to generate
+moves worth probing, never to settle one: a stated preference is a hypothesis,
+and the behavioural probe is what decides.
+
 **On Gemini this makes the same call the app makes**: one forced ``decide``
 through Google's SDK (see llm_gemini), so the probe tests the channel
 production uses and not a text version of it. ``--parallel`` then means
@@ -34,6 +40,48 @@ from backend.services import (
 )
 
 _OUT = paths.data_dir() / "probe"
+
+# The prefix of every turn that asks for prose instead of a decision. Such a
+# turn goes out as a plain text call, not the forced `decide` the app makes,
+# and it carries no fetches.
+_PROSE_PREFIX = "layout"
+
+# The two headings `build_prompt` can give its last section, one per channel.
+# The `layout` variant cuts that section off and puts its own questions there,
+# so it checks the heading first and stops rather than cut the wrong one.
+_ANSWER_SHAPE_HEADINGS = ("## How to answer", "## Answer in this shape")
+
+# What the `layout` variant asks instead of a decision.
+#
+# **Question 3 is the one that matters.** It asks about something the model can
+# observe — what it had to carry from one part of the prompt to another — and
+# that is the defect the section restructure exists to fix. Questions 1 and 2
+# ask about attention, which the model cannot observe, and a stated preference
+# is a hypothesis rather than evidence: the holdings price-range column was
+# probed nine times across three placements and read zero times, yet a model
+# asked "would a price range help?" would say yes every time.
+#
+# The decision comes first because question 1 asks which parts produced it. A
+# model that never decided has nothing to report on.
+_LAYOUT_ASK = """## Answer a different question this time
+
+This pass is not a trading pass. Nobody will act on what you write here, and
+nothing below reaches the broker. Call no function. Write prose.
+
+First, in one sentence: what would you do with this account now?
+
+Then answer these three questions.
+
+1. Which parts of what you were given above did you use to get to that answer,
+   and which parts did you not open at all?
+2. If you could put those parts in any order, what order would you want, and why?
+3. Was there anything you had to hold in your head from one part while you read
+   another?"""
+
+# The one sentence of the system message the `layout` variant replaces. Every
+# rule below it stays word for word, because the rules are part of what is
+# under test. Only the channel changes.
+_LAYOUT_ANSWERS = "You answer in prose this time. You call no function."
 
 
 def build_prompts() -> dict:
@@ -184,7 +232,47 @@ def build_prompts() -> dict:
             woke_because=_WOKE_BECAUSE["Alarm"],
             **common,
         )
+    # "layout": the agent asked about the prompt itself. `CLAUDE.md` already
+    # treats "I cannot see X" as evidence, and this points the same mechanism
+    # at a different target. It is a probe, out of the app, so it reaches no
+    # broker path and adds no second decision-maker to the record.
+    #
+    # **Two arms, because how many sections are present is the whole point.**
+    # `turn1` is the prompt the agent sees most often, and on a quiet day a
+    # whole group of it is missing. `retry` is the fullest prompt this script
+    # can build — every one of the four groups has something in it. Asking
+    # about an order on a prompt that is missing a third of its sections would
+    # answer a question nobody asked.
+    out["layout"] = _layout_prompt(out["turn1"])
+    if "retry" in out:
+        out["layout_retry"] = _layout_prompt(out["retry"])
+    out["system_layout"] = _layout_system(out["system"])
     return out
+
+
+def _layout_prompt(prompt: str) -> str:
+    """A real prompt, with the answer shape swapped for the questions.
+
+    `_joined` separates every section with one rule, so the last section is
+    whatever follows the last rule. It must be the answer shape, and this stops
+    rather than cut a different one: a probe that quietly measures the wrong
+    prompt tells you nothing and looks like it worked.
+    """
+    body, rule, last = prompt.rpartition("\n\n---\n\n")
+    if not last.startswith(_ANSWER_SHAPE_HEADINGS):
+        raise SystemExit(
+            f"The last section is {last.splitlines()[0]!r}, not the answer shape. "
+            f"`build_prompt` renamed it or moved it — update _ANSWER_SHAPE_HEADINGS."
+        )
+    return body + rule + _LAYOUT_ASK
+
+
+def _layout_system(system: str) -> str:
+    """The real system message, saying prose where it said to call `decide`."""
+    said = agent._HOW_TO_ANSWER[agent.answers_by_tool()]
+    if said not in system:
+        raise SystemExit(f"The system message no longer says {said!r}.")
+    return system.replace(said, _LAYOUT_ANSWERS)
 
 
 def _signal_with_reports():
@@ -235,16 +323,18 @@ def _backends() -> dict[str, str]:
     return found
 
 
-def ask(base_url: str, system: str, user: str, tools=None) -> dict:
+def ask(base_url: str, system: str, user: str, tools=None, prose: bool = False) -> dict:
     """One call, with the message shape the app uses.
 
     ``agent._invoke`` prepends SYSTEM_PROMPT itself, so a probe that hands it
     system+user concatenated sends the system prompt twice. This sends the two
     as the two messages they are. ``tools`` is a fetch context for a Gemini
-    probe, so the fetch loop runs as it does in a pass.
+    probe, so the fetch loop runs as it does in a pass. ``prose`` asks for text
+    rather than a decision, which only the ``layout`` variant wants; a local
+    model answers in text anyway, so it changes nothing off Gemini.
     """
     if agent.answers_by_tool():
-        return _ask_gemini(system, user, tools)
+        return _ask_gemini_text(system, user) if prose else _ask_gemini(system, user, tools)
     from openai import OpenAI
 
     client = OpenAI(base_url=base_url, api_key="ollama", timeout=900)
@@ -292,6 +382,41 @@ def _ask_gemini(system: str, user: str, tools=None) -> dict:
     }
 
 
+def _ask_gemini_text(system: str, user: str) -> dict:
+    """One Gemini call that answers in text, for a variant asking about itself.
+
+    ``llm_gemini.decide`` forces a ``decide`` call with ``mode ANY``, which is
+    the right channel for a decision and the wrong one for a question about the
+    prompt. This declares no function at all.
+
+    It still goes through ``llm_gemini.client()``, so the call counts against
+    the same per-minute and per-day limits an analysis does. A probe that
+    skipped the throttle would spend the day's requests without saying so.
+    """
+    from google.genai import types
+
+    started = time.monotonic()
+    response = llm_gemini.client().models.generate_content(
+        model=analysis.get_model(),
+        contents=[types.Content(role="user", parts=[types.Part(text=user)])],
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            thinking_config=llm_gemini.thinking_config(),
+        ),
+    )
+    parts, _content = llm_gemini._parts(response)
+    used = getattr(response, "usage_metadata", None)
+    said = [p for p in parts if getattr(p, "text", None)]
+    return {
+        "seconds": round(time.monotonic() - started, 1),
+        "prompt_tokens": int(getattr(used, "prompt_token_count", 0) or 0),
+        "completion_tokens": int(getattr(used, "candidates_token_count", 0) or 0)
+        + int(getattr(used, "thoughts_token_count", 0) or 0),
+        "thinking": "\n\n".join(p.text for p in said if getattr(p, "thought", False)),
+        "answer": "\n".join(p.text for p in said if not getattr(p, "thought", False)),
+    }
+
+
 def _tools(prompts: dict):
     """A fresh fetch context per sample on Gemini, None elsewhere."""
     if not agent.answers_by_tool():
@@ -301,7 +426,7 @@ def _tools(prompts: dict):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--turn", default="turn1", help="turn1, turn2, read, or one of the other variants build_prompts() names")
+    parser.add_argument("--turn", default="turn1", help="turn1, turn2, read, layout, or one of the other variants build_prompts() names")
     parser.add_argument("--samples", type=int, default=2, help="serial samples; ignored with --parallel")
     parser.add_argument("--parallel", action="store_true", help="one sample per GPU, all at once")
     parser.add_argument("--base-url", default="http://localhost:11435/v1", help="serial endpoint")
@@ -312,7 +437,14 @@ def main() -> int:
         print(f"No {args.turn} prompt to build (the book may hold nothing).")
         return 1
     user = prompts[args.turn]
+    # A prose turn carries its own system message and no fetches: the questions
+    # are about the prompt in front of the model, not about anything it could
+    # go and look up.
+    prose = args.turn.startswith(_PROSE_PREFIX)
+    system = prompts["system_layout"] if prose else prompts["system"]
     print(f"{args.turn}: {len(user):,} characters")
+    if prose:
+        print("asking for prose, so no decide call and no fetches")
 
     if args.parallel:
         cards = _backends()
@@ -330,7 +462,9 @@ def main() -> int:
         def one(item):
             card, ip = item
             url = f"http://{ip}:11434/v1" if ip else args.base_url
-            row = ask(url, prompts["system"], user, _tools(prompts)) | {"card": card, "turn": args.turn}
+            row = ask(url, system, user, None if prose else _tools(prompts), prose) | {
+                "card": card, "turn": args.turn,
+            }
             print(f"  card {card}: {row['seconds']:>5}s  completion {row['completion_tokens']:>5}"
                   f"  thinking {len(row['thinking']):>5}  fetched {len(row.get('exchanges', []))}",
                   flush=True)
@@ -343,7 +477,7 @@ def main() -> int:
     else:
         results = []
         for sample in range(1, args.samples + 1):
-            row = ask(args.base_url, prompts["system"], user, _tools(prompts)) | {
+            row = ask(args.base_url, system, user, None if prose else _tools(prompts), prose) | {
                 "card": "-", "turn": args.turn, "sample": sample,
             }
             print(f"  #{sample}: {row['seconds']}s  completion {row['completion_tokens']}"

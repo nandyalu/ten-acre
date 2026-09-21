@@ -184,16 +184,23 @@ def test_the_planned_time_is_read_as_utc_from_the_database(monkeypatch):
 
 def test_the_early_wake_is_named_at_the_top_and_asked_at_the_end():
     """Two halves, deliberately apart since 2026-09-21. Why the pass is
-    happening is read against everything below it, so it stays under the
-    clock. The ask sits beside the field it fills, at the end."""
+    happening stays under the clock. The ask sits beside the field it fills,
+    at the end.
+
+    **The pair moved below the book later the same day**, when the "Now" group
+    went under "What is true now", so the account now comes first. The gap
+    between the two halves is what this test is for, and it is wider than
+    ever.
+    """
     far = datetime.datetime.now(ET) + datetime.timedelta(days=3)
     prompt = agent.build_prompt(
         _book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Change"],
         wakeup_note="a note", planned_wakeup=far,
     )
 
-    assert prompt.index("It is ") < prompt.index("This pass is earlier") < prompt.index("Your account is")
-    assert prompt.index("Your account is") < prompt.index("Choose your next wakeup again")
+    assert prompt.index("Your account is") < prompt.index("It is ")
+    assert prompt.index("It is ") < prompt.index("This pass is earlier")
+    assert prompt.index("This pass is earlier") < prompt.index("Choose your next wakeup again")
     assert prompt.index("## Rules") < prompt.index("## Your next wakeup")
 
 
@@ -214,7 +221,7 @@ def test_a_later_turn_names_the_wake_as_history():
     assert "**Why you are asked again.** This is the same pass, not a new wake" in prompt
     # One pointer since 2026-09-21, because the four sections it used to name
     # individually are one section now.
-    assert 'All of it is under "What your last answer did" below.' in prompt
+    assert 'All of it is under "What your last answer did" above.' in prompt
     assert "## What your last answer did" in prompt
     assert "**What you just did, a moment ago, in this pass.**" in prompt
 
@@ -233,7 +240,7 @@ def test_each_reason_names_a_section_that_is_really_there():
     refused = agent_book.Rejection(side="buy", ticker="INTC", quantity=5, why="not enough cash")
     prompt = agent.build_prompt(_book(), [], {}, rejected=[refused], readings=["the case for INTC"])
 
-    assert 'All of it is under "What your last answer did" below.' in prompt
+    assert 'All of it is under "What your last answer did" above.' in prompt
     assert "**What you asked to read.**" in prompt
     assert "**Your previous answer was refused. Fix it:**" in prompt
     assert "What you just did, a moment ago" not in prompt

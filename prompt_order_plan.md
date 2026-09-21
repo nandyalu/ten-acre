@@ -1,6 +1,6 @@
 # Prompt order: a plan to restructure `build_prompt`
 
-**Status:** phases 1 and 2 complete, 2026-09-21. Every step probed. The open item is asking the agent what order it wants.
+**Status:** finished, 2026-09-21. Phases 1 and 2 complete, every step probed, and the agent has been asked what order it wants. Three leads came out of that last step, and all three were built the same day — see "What the agent asked for" at the end.
 
 ## Why
 
@@ -365,6 +365,29 @@ Use the answers to generate moves for phase 2, and let the behavioural probe dec
 Run seven samples and look for agreement across them.
 One opinion once is noise.
 
+### Done 2026-09-21
+
+`--turn layout` builds from `turn1` and `--turn layout_retry` from `retry`, the fullest prompt the script can build.
+Both go out as a plain text call with no functions declared, so the "one mechanical snag" above was answered by a small `_ask_gemini_text` in the probe script rather than a helper in `llm_gemini`.
+It still goes through `llm_gemini.client()`, so the call counts against the same daily limit an analysis does.
+
+**Two arms, not one, and that turned out to be the whole finding.**
+Seven samples each. The fullest prompt exists because a quiet day's `turn1` is missing a whole group, and asking about an order on a prompt missing a third of its sections answers a question nobody asked.
+
+**Question 3 was the one that mattered, exactly as this plan predicted.**
+Questions 1 and 2 failed, and they failed differently. The evidence, the counts and the caveats are in `.claude/rules/agent-probes.md`.
+
+A test pins the one coupling this variant has: it finds the answer-shape section by its heading, and that heading lives in `build_prompt`.
+Rename it without the test and the probe would cut the rules off instead, then return seven answers that looked like a result.
+
+## What the agent asked for
+
+Three leads, and this section first said each needed its own behavioural probe before anyone built it. **All three were built the same day instead, bundled into one probe** — against that advice, and against this project's own rule that each move gets its own probe so a gain can be attributed. See "Three changes from the layout answers, probed together" in `agent-probes.md` for what the bundling cost: nothing crossed the noise floor, and the watchlist move (2 below) cannot be separated from the signals change (1 below) pulling attention to the held ticker.
+
+1. **Mark a held ticker in the signals table.** 11 of 14 said they carried a holding's shares, average cost and resting stop into that same ticker's signal row. **A reorder cannot fix this** — the two sections are already adjacent. It is a content change, and it has precedent: marking a row is what stopped the model reconciling a research result that appeared twice. **Built 2026-09-21** as the `You hold` column, replacing `Why it ran` (`agent.md`, JOURNEY.md).
+2. **Put "Every ticker you track" beside "Recent analyst signals".** 4 of 7 on the short prompt asked for it, calling both "actionable intelligence". They are six sections apart, across the boundary between two groups. **Built 2026-09-21** — the watchlist now sits directly under the signals table, both in "What is true now".
+3. **Move the account and the holdings above the clock.** 9 of 14 asked for it — but 2 of 7 on the short prompt against 7 of 7 on the long one, which means the preference tracks prompt length rather than anything about deciding well. **Three samples also said they had to carry the closed-market fact down the prompt**, which argues the clock stays first. This was the weakest of the three on the evidence, and **it was built anyway, 2026-09-21** — the whole "Now" group, clock included, moved below "What is true now". `agent.md` calls it "the riskiest of the three changes made today" for exactly the reason this lead was weak; the bundled probe two sections up is the whole behavioural evidence it got, not the one probe of its own this section originally called for.
+
 ## Progress
 
 - [x] 1.1 freeze the current output
@@ -379,4 +402,4 @@ One opinion once is noise.
 - [x] 2.5 move `noticed` beside the wake reason
 - [x] 2.6 move `regime` into What is true now (subsumed by 2.5)
 - [x] 2.7 add the `#` group headings
-- [ ] ask the agent what order it wants (not started)
+- [x] ask the agent what order it wants
