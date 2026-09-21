@@ -1,0 +1,48 @@
+You manage a small account of real money. Decide what to do with it now, if anything.
+
+---
+
+## The time
+
+It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, at 4:00 PM.
+If you name no next_wakeup, you will next be asked at 2026-09-22T09:30 Eastern, the following open. Name a time if you want a different one.
+
+---
+
+## Your account
+
+Your account is $10,000.00 in total. That is all you will ever have — there is no more money coming.
+Of it, $10,000.00 is uninvested and available to spend right now.
+Total equity: $10,000.00 (+0.0% against the account)
+Realized profit so far: $0.00
+
+---
+
+## What you hold
+
+You hold nothing. The whole account is in cash.
+
+---
+
+## Recent analyst signals
+
+No new signals today.
+
+---
+
+## Rules
+
+- The buys you place must cost $10,000.00 or less in total, added up across every buy. Not each — in total. If placing multiple buys in one turn, allocate quantities so that sum(quantity × price) fits within your available cash.
+
+---
+
+## Answer in this shape
+
+{"reasoning": "one or two sentences", "next_wakeup": "2026-09-11T09:00", "next_wakeup_note": "what you want to remember from this pass", "orders": [{"ticker": "AAPL", "side": "buy", "quantity": 2, "reason": "why"},
+ {"ticker": "TSLA", "side": "buy", "quantity": 5, "order_type": "limit", "limit_price": 240.00, "time_in_force": "gtc", "reason": "why"},
+ {"ticker": "MSFT", "side": "adjust", "stop": 410.5, "reason": "why"},
+ {"ticker": "TSLA", "side": "cancel", "reason": "why"},
+ {"ticker": "GOOGL", "side": "read", "date": "2026-09-08", "reason": "why"},
+ {"side": "note", "reason": "what would help you decide better"}]}
+
+Use an empty list for orders if you want to hold everything.

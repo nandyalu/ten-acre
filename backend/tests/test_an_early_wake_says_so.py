@@ -121,7 +121,7 @@ def test_an_early_pass_names_the_time_the_note_was_for():
         planned=PLANNED, now=NOW,
     ))
 
-    assert "**Why you are awake.** A change to this app woke you." in lines
+    assert "A change to this app woke you." in lines
     assert (
         '**The note you left for your wakeup on Monday 14 September at 9:25 AM Eastern:** '
         '"Review tracked tickers at the open."'
@@ -187,8 +187,9 @@ def test_a_later_turn_names_the_wake_as_history():
         outcomes=["INTC: the analysis finished."],
     )
 
-    assert "**Why this pass started.** A change to this app woke you." in prompt
-    assert "**Why you are awake.**" not in prompt
+    assert "## Why this pass started" in prompt
+    assert "A change to this app woke you." in prompt
+    assert "## Why you are awake" not in prompt
     assert "**Why you are asked again.** This is the same pass, not a new wake" in prompt
     assert '"What you just did, a moment ago, in this pass" below' in prompt
 
@@ -196,7 +197,8 @@ def test_a_later_turn_names_the_wake_as_history():
 def test_the_first_turn_is_unchanged():
     prompt = agent.build_prompt(_book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Change"])
 
-    assert "**Why you are awake.** A change to this app woke you." in prompt
+    assert "## Why you are awake" in prompt
+    assert "A change to this app woke you." in prompt
     assert "asked again" not in prompt
 
 
@@ -206,6 +208,9 @@ def test_each_reason_names_a_section_that_is_really_there():
     refused = agent_book.Rejection(side="buy", ticker="INTC", quantity=5, why="not enough cash")
     prompt = agent.build_prompt(_book(), [], {}, rejected=[refused], readings=["the case for INTC"])
 
-    assert '"What you asked to read" below' in prompt and "**What you asked to read**" in prompt
-    assert '"Your previous answer was refused" below' in prompt and "Your previous answer was refused." in prompt
+    assert '"What you asked to read" below' in prompt and "## What you asked to read" in prompt
+    assert (
+        '"Your previous answer was refused" below' in prompt
+        and "## Your previous answer was refused" in prompt
+    )
     assert "What you just did, a moment ago" not in prompt

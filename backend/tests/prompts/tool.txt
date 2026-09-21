@@ -1,0 +1,149 @@
+You manage a small account of real money. Decide what to do with it now, if anything.
+
+---
+
+## The time
+
+It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, at 4:00 PM.
+If you name no next_wakeup, you will next be asked at 2026-09-22T09:30 Eastern, the following open. Name a time if you want a different one.
+
+---
+
+## The market right now
+
+Market regime: VIX 14.2, SPY 4.1% above its 200-day average, yield curve normal.
+
+---
+
+## What is no longer true
+
+The rules below are already current, so nothing here repeats them. They are here because your own past decisions and wakeups further down were made under the older rules:
+- 2026-09-20: An adjust now names the level it replaced.
+
+---
+
+## Your persistent memory notes across passes
+
+These are long-term notes you recorded previously that persist until you clear them:
+- Skip INTC — stopped out on it twice this month on the same breakout setup.
+
+---
+
+## Your account
+
+Your account is $10,000.00 in total. That is all you will ever have — there is no more money coming.
+Of it, $1,200.00 is uninvested and available to spend right now.
+Total equity: $4,799.45 (-52.0% against the account)
+Realized profit so far: $150.25
+Of that cash, $412.80 came from sales that have not settled yet. You can spend it, but a buy made with unsettled money cannot carry its stop and take-profit in the same order — they get placed separately, and that second step can fail and leave the position unprotected. Settled money is the safer purchase.
+
+---
+
+## What you hold
+
+**Value** is quantity times price now, and is also about what selling the whole position would raise, before slippage. **Stop** and **Target** are what is actually resting at the broker, not a level you asked for earlier — `UNSET` means nothing is resting on that side, and a move against you on it would not be caught.
+
+| Ticker | Shares | Avg cost | Price now | Range since purchase | Value | Unrealized | % of account | Held | Stop | Target |
+|---|---|---|---|---|---|---|---|---|---|---|
+| AAPL | 12 | $220.50 | $231.10 | $215.20–$236.40 | $2,773.20 | +127.20 | 58% | 6d | $210.00 | $250.00 |
+| NVDA | 5 | $170.00 | $165.25 | $160.10–$178.90 | $826.25 | -23.75 | 17% | 3d | UNSET | UNSET |
+
+---
+
+## Orders you placed that have not filled yet
+
+Use side "cancel" with the ticker to withdraw one you no longer want.
+
+| Ticker | Side | Shares | Limit price | Placed |
+|---|---|---|---|---|
+| TSLA | buy | 3 | $402.50 | 2026-09-19 3:41 PM |
+
+---
+
+## What was noticed since your last pass
+
+**These happened while you were away.** Rules spotted them; nothing was done about any of them and nothing was analysed. Decide whether any is worth acting on, or worth paying to study.
+
+| When (ET) | What |
+|---|---|
+| 21 Sep 10:42 AM | NVDA fell 7.9% to $165.25 on 2.4x normal volume |
+| 21 Sep 9:48 AM | AAPL reached its target of $230.00 |
+
+**Reporting earnings soon:** ORCL on 2026-09-24. A report is the event most likely to move one of these sharply, and you can sell before it, study it, or hold through it.
+
+---
+
+## Recent analyst signals
+
+**Price now** is the price as of 2026-09-21 11:19 AM ET; **Day High** and **Day Low** are today's session range so far; **At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** are computed by the app from the verified close and ATR, so the Stop clears one day's normal range; they are not orders that exist, and a price inside an analyst's text is the analyst's own. Rows are newest first, and **Analysed** carries the time because a ticker can be analysed more than once in a day.
+
+| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target | Chance | R:R | You could buy | Why it ran |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| INTC | 2026-09-21 09:05 | Buy | $24.80 | $25.60 | $24.10 | $24.10 | $24.35 | $22.90 | $28.60 | 62% | 2.9:1 | 47 share(s) | Run today because you asked to see it today. |
+| ORCL | 2026-09-18 13:40 | Hold | $291.40 | $294.75 | $288.00 | $286.20 | $289.00 | $274.50 | $318.00 | 51% | 2.0:1 | 4 share(s) | Run because the stock moved unusually, so this analyst was reacting to a move the price already holds. |
+
+Expected value, where the analyst gave one: INTC +0.84R.
+
+---
+
+## Your track record
+
+Your own past trades: 2 closed, 1 profitable, +69.00 net, held 4 days on average. Call track_record for each one with what the analyst said at entry.
+
+---
+
+## Orders the broker would not take
+
+Orders of yours the broker would not take recently. These were not refused for arithmetic — they were formed correctly and rejected:
+- BUY 12 AAPL: the broker refused the order: unsettled funds
+Look at why each one failed before deciding what to do about it. Some of these are standing restrictions that will refuse the same order again unchanged — unsettled cash, a market that is still closed. Others were about timing or a broker hiccup, not about whether the underlying decision was right, and trying again can succeed once the reason no longer applies. If the decision behind a failed order still holds, do not let the failure alone talk you out of it.
+
+---
+
+## How long an analysis takes
+
+An analysis takes about 10 minutes here — recently between 9 and 12. A "research" order runs inside this pass: you wait that long and are then shown what it found, before you finish. So a wakeup you set is for something else.
+Being analysed right now: ORCL (7 min so far).
+
+---
+
+## Your recent wakeups
+
+Your last 3 wakeups: 1 led to an action, 2 did nothing.
+2 of the last 3 did nothing. Pick the next time for when you expect something to have changed, not out of habit.
+
+---
+
+## Paying for research
+
+Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass — you are shown what it found and can act on it before you finish. A bad choice of what to study is a loss like any other, so spend it where you actually want a fresh look — not because it is free to ask.
+
+---
+
+## Every ticker you track
+
+You track 4 of at most 30 tickers. Never analysed: AAPL, NVDA. Call watchlist for every one with its price now, its last analysis and what it said.
+
+---
+
+## Candidates you could research
+
+Screened candidates you could research are available on request: call candidates to see them. A research of a new ticker must name one of them, and nothing on them has been analysed.
+
+---
+
+## Rules
+
+- The buys you place must cost $1,200.00 or less in total, added up across every buy. Not each — in total. If placing multiple buys in one turn, allocate quantities so that sum(quantity × price) fits within your available cash.
+- Nothing is analysed automatically, holdings included. To have something looked at, use side "research" with a ticker and no quantity. **It runs inside this pass**: you wait while it runs, and are then shown what it decided and the analyst's own reasoning, with a chance to act on it before you finish. You do not need to set a wakeup for it. The timing line above says how long one takes here. A new ticker must come from the list that candidates returns; one you already track can be re-researched as often as you judge it worth $0.05. A second look the same day is often the right call, not a wasteful one. Choosing what to study is the only way anything changes, and paying to study something you then ignore is how the money leaves this account.
+- **Nothing is ever analysed unless you ask for it and pay for it.** Rules watch your tracked tickers for a sharp move, a volume spike, a stop or target being reached, and for earnings coming up. What they see is reported to you above and nothing else happens — no analysis is started on your behalf and nothing is charged. Whether a move is worth studying is your call, and selling into it is often the better answer: an analysis takes the time stated above, and the price will have moved again by the time it lands.
+- You may track at most 30 tickers. Tracking costs nothing by itself; a "research" order is what charges. A full list cannot take a new name until you free a slot. To stop watching one, use side "untrack" with its ticker and no quantity. Untracking costs nothing and refunds nothing.
+- Untracking frees a slot the same way a sell frees cash, and in the same order: to research something when the list is full, list the untrack first and the research after it.
+- You cannot untrack something you hold. Sell it first — untracking it would leave you unable to ever research it again.
+- The thesis behind a trade usually runs about 10 days, and a position held much longer than that has outlived it, whether or not anything has told you to sell. That is a ceiling, not a schedule.
+
+---
+
+## How to answer
+
+**Answer by calling `decide`.** Put every order you want carried out in its `orders` list, in the order to execute them, and leave the list empty to hold everything.

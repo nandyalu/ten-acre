@@ -110,9 +110,16 @@ def test_the_feedback_reaches_the_prompt():
 
 def test_the_prompt_starts_with_the_time():
     """It is read against everything below it, and the agent cannot choose a
-    wakeup without it."""
-    prompt = agent.build_prompt(_book(), [], {})
-    assert "Eastern" in prompt.splitlines()[2]
+    wakeup without it.
+
+    Asserted by its place among the sections rather than by a line number.
+    The prompt gained a rule between every section on 2026-09-21, and a line
+    index counts separators; the clock being first is the thing that matters.
+    """
+    sections = agent.build_prompt(_book(), [], {}).split("\n---\n")
+
+    assert "Decide what to do with it now" in sections[0]
+    assert "Eastern" in sections[1], sections[:2]
 
 
 def test_unsettled_cash_is_explained_when_there_is_some():

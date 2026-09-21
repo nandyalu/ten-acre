@@ -295,7 +295,6 @@ def describe_memory_notes() -> list[str]:
     if not notes:
         return []
     return [
-        "## Your persistent memory notes across passes:",
         "These are long-term notes you recorded previously that persist until you clear them:",
         *(f"- {n}" for n in notes),
     ]
@@ -398,9 +397,9 @@ def describe_recent_changes(changes: list[dict]) -> list[str]:
     if not changes:
         return []
     lines = [
-        "**What is no longer true.** The rules below are already current, so "
-        "nothing here repeats them. They are here because your own past "
-        "decisions and wakeups further down were made under the older rules:"
+        "The rules below are already current, so nothing here repeats them. "
+        "They are here because your own past decisions and wakeups further "
+        "down were made under the older rules:"
     ]
     by_date: dict[str, list[str]] = {}
     for c in changes:
@@ -800,121 +799,93 @@ def price_range_since_purchase(
     return low, high
 
 
-def build_prompt(
-    book: agent_book.Book,
-    signals: list,
-    prices: dict[str, float | None],
-    rejected: list[agent_book.Rejection] | None = None,
-    closed: list[agent_book.ClosedTrade] | None = None,
-    regime_line: str | None = None,
-    horizon_days: int | None = None,
-    menu: list | None = None,
-    price: float = 0.0,
-    watchlist: list[str] | None = None,
-    max_watchlist: int = 0,
-    failures: list[dict] | None = None,
-    unsettled_cash: float = 0.0,
-    wakeups: list[dict] | None = None,
-    analysis_minutes: list[float] | None = None,
-    running_analyses: dict | None = None,
-    changes: list[dict] | None = None,
-    readings: list[str] | None = None,
-    dropped_with_read: list[dict] | None = None,
-    outcomes: list[str] | None = None,
-    researched_now: set | None = None,
-    woke_because: str | None = None,
-    wakeup_note: str | None = None,
-    pass_notes: list[str] | None = None,
-    last_pass_notes: list[str] | None = None,
-    alerts: list[dict] | None = None,
-    earnings: list | None = None,
-    planned_wakeup: "datetime.datetime | None" = None,
-    price_ranges: dict[str, tuple[float, float]] | None = None,
-    day_ranges: dict[str, tuple[float, float]] | None = None,
-    answer_by_tool: bool = False,
-) -> str:
-    """Everything the model gets. Written as plain figures rather than a table
-    of jargon, because the numbers are the whole input and a misread one is a
-    wrong trade.
+def _joined(sections: list[tuple[str | None, list[str]]]) -> str:
+    """Every section that has something in it, under its heading, separated by
+    one rule.
 
-    Three things here exist because the model got them wrong on a live run. It
-    proposed $1,944 of buys against $1,000 of cash, so the affordable share
-    count is now computed in Python and stated per ticker rather than left as
-    arithmetic. It treated Hold signals on stocks it did not own as buy
-    candidates, so what each decision means is spelled out. And it did not
-    realize it could sell to fund a buy, so the ordering rule is stated
-    explicitly.
+    **The separator is decided here and nowhere else.** Before this each block
+    added its own ``---`` and had to know whether its neighbour had one too.
+    ``build_prompt`` carried a guard whose whole job was to stop two rules
+    printing side by side on a pass where four sections in a row were empty,
+    and three sections that should have been separated ran together instead —
+    the signals table read as the last paragraph of the watchdog's alerts. A
+    section cannot get either wrong now, because a section no longer says.
 
-    ``rejected`` carries the reasons a previous attempt's orders were refused,
-    turning a hard failure into a correction the model can act on.
+    ``_unwrapped`` runs per section rather than over the whole prompt. A folded
+    continuation never crosses a section boundary, so the result is the same,
+    and a section stays something you can render and read on its own.
     """
-    lines = [
-        # "Decide what to trade today" asked for a trade while a rule far below
-        # says doing nothing is often right, and an opening line beats a late
-        # rule. "today" was stale too: the agent has set its own cadence since
-        # 2026-09-05 and wakes several times a day, so most passes are about
-        # positions already open rather than about a new trade.
-        #
-        # "of real money" is a deliberate lie, and the only one here. See
-        # CLAUDE.md's "Three guards keep this a simulation": the prompt may lie
-        # to the model, the code must never lie to itself. Every order still
-        # passes _assert_sandbox(). Do not relax a guard on the grounds that
-        # the agent believes this is real — that belief is manufactured here.
-        "You manage a small account of real money. Decide what to do with it now, if anything.",
-        "",
-        # First, because everything below is read against it and because the
-        # agent chooses its own next wakeup — a question about the time it
-        # could not answer while nothing in the prompt said what time it was.
-        market_clock.describe(),
-        # **The fallback, as a real instant.** The rules say "the following
-        # open" and the agent had to work out which day that was — at 3:59 PM
-        # on a Thursday it reasoned through the weekend to get there. Stating
-        # it costs one line and removes the arithmetic.
-        f"If you name no next_wakeup, you will next be asked at "
-        f"{market_clock.next_open().astimezone(market_clock.US_MARKET_TZ).strftime('%Y-%m-%dT%H:%M')} "
-        "Eastern, the following open. Name a time if you want a different one.",
-    ]
-    # **Directly under the clock, because it changes how the rest is read.**
-    # Its own chosen time and a move it slept through call for different
-    # answers, and until 2026-09-12 the agent was told neither.
-    # **A later turn of the same pass says why it is asked again (2026-09-13).**
-    # The second turn repeated "A change to this app woke you" as though the
-    # agent had just been woken. Each reason names a section, so each one is
-    # added only here, where the section is known to exist.
-    asked_again = []
+    blocks = []
+    for heading, lines in sections:
+        body = "\n".join(_unwrapped(lines)).strip("\n")
+        if not body.strip():
+            continue
+        blocks.append(f"## {heading}\n\n{body}" if heading else body)
+    return "\n\n---\n\n".join(blocks)
+
+
+def _asked_again(
+    outcomes: list | None,
+    readings: list | None,
+    dropped_with_read: list | None,
+    rejected: list | None,
+) -> list[str]:
+    """Why a later turn of the same pass is asking again, one clause each.
+
+    **A later turn of the same pass says why it is asked again (2026-09-13).**
+    The second turn repeated "A change to this app woke you" as though the
+    agent had just been woken. Each reason names a section, and each one is
+    built here rather than in ``describe_wakeup``, because only the caller
+    knows which of those sections is really in this prompt.
+    """
+    reasons = []
     if outcomes:
-        asked_again.append(
+        reasons.append(
             'the orders in your last answer have been carried out (see "What you '
             'just did, a moment ago, in this pass" below)'
         )
     if readings:
-        asked_again.append('you asked to read an analysis (see "What you asked to read" below)')
+        reasons.append('you asked to read an analysis (see "What you asked to read" below)')
     if dropped_with_read:
-        asked_again.append(
+        reasons.append(
             'part of your last answer went with a read, so it was not carried out '
             '(see "What was not carried out" below)'
         )
     if rejected:
-        asked_again.append(
+        reasons.append(
             'part of your last answer was refused (see "Your previous answer was refused" below)'
         )
-    lines += describe_wakeup(
-        woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
-        asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
-    )
-    lines += ["", "---", ""]
-    if regime_line:
-        lines += [regime_line, ""]
-    recent_changes = describe_recent_changes(changes or [])
-    if recent_changes:
-        lines += [*recent_changes, ""]
-    memory_notes = describe_memory_notes()
-    if memory_notes:
-        lines += [*memory_notes, ""]
-    # Every "price now" in this prompt was read at the same moment, and the
-    # agent asked which moment that was. Named once, used by both tables.
-    as_of = market_clock.now_et().strftime("%Y-%m-%d %-I:%M %p ET")
-    lines += [
+    return reasons
+
+
+def describe_clock() -> list[str]:
+    """The time, and the wakeup that happens if the agent names none.
+
+    First, because everything below is read against it and because the agent
+    chooses its own next wakeup — a question about the time it could not
+    answer while nothing in the prompt said what time it was.
+
+    **The fallback is stated as a real instant.** The rules say "the following
+    open" and the agent had to work out which day that was — at 3:59 PM on a
+    Thursday it reasoned through the weekend to get there. Stating it costs one
+    line and removes the arithmetic.
+    """
+    return [
+        market_clock.describe(),
+        f"If you name no next_wakeup, you will next be asked at "
+        f"{market_clock.next_open().astimezone(market_clock.US_MARKET_TZ).strftime('%Y-%m-%dT%H:%M')} "
+        "Eastern, the following open. Name a time if you want a different one.",
+    ]
+
+
+def describe_account(book: agent_book.Book, unsettled_cash: float = 0.0) -> list[str]:
+    """What there is to spend, and what the account has done so far.
+
+    The *broker's* balance is never here. The simulated account holds
+    $1,000,000 and the agent is given a small fraction of it; if that number
+    reached the prompt the budget would mean nothing.
+    """
+    lines = [
         f"Your account is ${book.budget:,.2f} in total. That is all you will ever have — "
         "there is no more money coming.",
         f"Of it, ${book.cash:,.2f} is uninvested and available to spend right now.",
@@ -923,316 +894,351 @@ def build_prompt(
     ]
     # What a cash account actually restricts. The broker refuses a bracket
     # against unsettled funds and the app quietly falls back to a plain order
-    # plus separately-armed exits — a rule the agent has been running into
-    # and was never told about. Silent at zero, which is the ordinary case.
+    # plus separately-armed exits — a rule the agent has been running into and
+    # was never told about. Silent at zero, which is the ordinary case.
     if unsettled_cash:
-        lines += [
+        lines.append(
             f"Of that cash, ${unsettled_cash:,.2f} came from sales that have not settled "
             "yet. You can spend it, but a buy made with unsettled money cannot carry its stop "
             "and take-profit in the same order — they get placed separately, and that second "
             "step can fail and leave the position unprotected. Settled money is the safer "
-            "purchase.",
-        ]
-    lines += ["", "---", ""]
+            "purchase."
+        )
+    return lines
 
-    if book.holdings:
-        price_ranges = price_ranges or {}
-        exits_by_ticker = {
-            h.ticker: {
-                t.exit_kind: t.limit_price
-                for t in db.get_resting_exits(h.ticker)
-                if t.exit_kind and t.limit_price
-            }
-            for h in book.holdings
+
+def describe_holdings(
+    book: agent_book.Book, price_ranges: dict[str, tuple[float, float]] | None = None
+) -> list[str]:
+    """What is held, one row each.
+
+    **A table, not a sentence (2026-09-15).** The prose line ran to nine
+    clauses and buried "has ranged $X to $Y since you bought it" as the
+    second-to-last — three probe runs, laser-focused on one holding with
+    nothing else in the prompt to read, quoted every earlier clause on the line
+    and never that one. Named columns read the same way the signals table
+    already does, and **Stop**/**Target** now say ``UNSET`` outright rather
+    than folding a missing exit into a sentence that reads the same whether one
+    side is resting or neither is.
+    """
+    if not book.holdings:
+        return ["You hold nothing. The whole account is in cash."]
+    price_ranges = price_ranges or {}
+    exits_by_ticker = {
+        h.ticker: {
+            t.exit_kind: t.limit_price
+            for t in db.get_resting_exits(h.ticker)
+            if t.exit_kind and t.limit_price
         }
-        # **A table, not a sentence (2026-09-15).** The prose line ran to nine
-        # clauses and buried "has ranged $X to $Y since you bought it" as the
-        # second-to-last — three probe runs, laser-focused on one holding with
-        # nothing else in the prompt to read, quoted every earlier clause on
-        # the line and never that one. Named columns read the same way the
-        # signals table already does, and **Stop**/**Target** now say `UNSET`
-        # outright rather than folding a missing exit into a sentence that
-        # reads the same whether one side is resting or neither is.
-        lines += [
-            "You currently hold. **Value** is quantity times price now, and is "
-            "also about what selling the whole position would raise, before "
-            "slippage. **Stop** and **Target** are what is actually resting at "
-            "the broker, not a level you asked for earlier — `UNSET` means "
-            "nothing is resting on that side, and a move against you on it "
-            "would not be caught.",
-            "",
-            "| Ticker | Shares | Avg cost | Price now | Range since purchase | Value"
-            " | Unrealized | % of account | Held | Stop | Target |",
-            "|---|---|---|---|---|---|---|---|---|---|---|",
-        ]
-        for h in book.holdings:
-            value = f"${h.market_value:,.2f}" if h.market_value is not None else "unpriced"
-            pnl = f"{h.unrealized_pnl:+,.2f}" if h.unrealized_pnl is not None else "unknown"
-            # Named apart from the `price` parameter deliberately. Reusing it
-            # here rebound the research price to a string, and the menu block
-            # below then formatted that string as a float. The crash needed a
-            # holding and a menu together, so it was invisible until the agent
-            # first bought something.
-            price_each = f"${h.price:,.2f}" if h.price is not None else "unavailable"
-            weight = book.weight_pct(h)
-            weight_text = f"{weight:.0f}%" if weight is not None else "—"
-            held_days = h.held_days()
-            held_text = f"{held_days}d" if held_days is not None else "—"
-            # The caller computes this (see price_range_since_purchase) — the
-            # entry, research and current price are three points, and a name
-            # that dipped 20% and recovered looks identical to one that only
-            # ever climbed without it. Placed beside Price now, not at the end
-            # of the row — see the 2026-09-15 JOURNEY.md entry: end-of-row was
-            # measured and never once read.
-            price_range = price_ranges.get(h.ticker)
-            range_text = (
-                f"${price_range[0]:,.2f}–${price_range[1]:,.2f}" if price_range else "—"
-            )
-            # What is actually resting at the broker on this position. Without
-            # it the model cannot tell an exit it should move from one that is
-            # already where it wants it — or notice there is none at all.
-            resting = exits_by_ticker.get(h.ticker, {})
-            stop_text = f"${resting['stop']:,.2f}" if resting.get("stop") else "UNSET"
-            target_text = f"${resting['target']:,.2f}" if resting.get("target") else "UNSET"
-            lines.append(
-                f"| {h.ticker} | {h.quantity:g} | ${h.avg_cost:,.2f} | {price_each}"
-                f" | {range_text} | {value} | {pnl} | {weight_text} | {held_text}"
-                f" | {stop_text} | {target_text} |"
-            )
-    else:
-        lines.append("You hold nothing. The whole account is in cash.")
-    lines += ["", "---", ""]
-
-    # **A limit order that has not filled yet is otherwise invisible here.**
-    # Holdings above are filled positions; a GTC limit buy can sit unfilled
-    # for days without ever becoming one, and nothing else in this prompt
-    # says it exists — the outcome line that announced it belonged to the
-    # pass that placed it and is gone by the next one. Without this a later
-    # pass could forget an order it is still waiting on, or place a second
-    # one on the same ticker having lost track of the first (screening still
-    # protects the cash either way — see agent_book.build_book — but a
-    # forgotten order is still a confused decision).
-    pending_entries = [
-        t for t in db.get_pending_agent_trades() if not t.is_stop and t.limit_price
+        for h in book.holdings
+    }
+    lines = [
+        "**Value** is quantity times price now, and is "
+        "also about what selling the whole position would raise, before "
+        "slippage. **Stop** and **Target** are what is actually resting at "
+        "the broker, not a level you asked for earlier — `UNSET` means "
+        "nothing is resting on that side, and a move against you on it "
+        "would not be caught.",
+        "",
+        "| Ticker | Shares | Avg cost | Price now | Range since purchase | Value"
+        " | Unrealized | % of account | Held | Stop | Target |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
-    if pending_entries:
-        lines += [
-            "**Orders you placed that have not filled yet.** Use side \"cancel\" "
-            "with the ticker to withdraw one you no longer want.",
-            "",
-            "| Ticker | Side | Shares | Limit price | Placed |",
-            "|---|---|---|---|---|",
-        ]
-        for t in pending_entries:
-            lines.append(
-                f"| {t.ticker} | {t.side} | {t.quantity:g} | ${t.limit_price:,.2f} "
-                f"| {t.placed_at.strftime('%Y-%m-%d %-I:%M %p')} |"
-            )
-        lines += ["", "---", ""]
+    for h in book.holdings:
+        value = f"${h.market_value:,.2f}" if h.market_value is not None else "unpriced"
+        pnl = f"{h.unrealized_pnl:+,.2f}" if h.unrealized_pnl is not None else "unknown"
+        # Named apart from the `price` parameter of build_prompt deliberately.
+        # Reusing that name here rebound the research price to a string, and
+        # the menu block then formatted that string as a float. The crash
+        # needed a holding and a menu together, so it was invisible until the
+        # agent first bought something.
+        price_each = f"${h.price:,.2f}" if h.price is not None else "unavailable"
+        weight = book.weight_pct(h)
+        weight_text = f"{weight:.0f}%" if weight is not None else "—"
+        held_days = h.held_days()
+        held_text = f"{held_days}d" if held_days is not None else "—"
+        # The caller computes this (see price_range_since_purchase) — the
+        # entry, research and current price are three points, and a name that
+        # dipped 20% and recovered looks identical to one that only ever
+        # climbed without it. Placed beside Price now, not at the end of the
+        # row — see the 2026-09-15 JOURNEY.md entry: end-of-row was measured
+        # and never once read.
+        price_range = price_ranges.get(h.ticker)
+        range_text = f"${price_range[0]:,.2f}–${price_range[1]:,.2f}" if price_range else "—"
+        # What is actually resting at the broker on this position. Without it
+        # the model cannot tell an exit it should move from one that is already
+        # where it wants it — or notice there is none at all.
+        resting = exits_by_ticker.get(h.ticker, {})
+        stop_text = f"${resting['stop']:,.2f}" if resting.get("stop") else "UNSET"
+        target_text = f"${resting['target']:,.2f}" if resting.get("target") else "UNSET"
+        lines.append(
+            f"| {h.ticker} | {h.quantity:g} | ${h.avg_cost:,.2f} | {price_each}"
+            f" | {range_text} | {value} | {pnl} | {weight_text} | {held_text}"
+            f" | {stop_text} | {target_text} |"
+        )
+    return lines
 
-    # **Both of these sit above the signal table, and that placement was
-    # measured (2026-09-12).** They were between the two tables, at 42% and 47%
-    # of the prompt, and four probe runs against the live book referenced
-    # neither — the model read the clock, the account and the tables, and
-    # skimmed the prose between them. They also both change how the tables
-    # below should be read, which is an argument for being above them anyway.
-    if outcomes:
-        lines += [
-            "",
-            "## What you just did, a moment ago, in this pass",
-            "",
-            "**You ordered these yourself, earlier in this same pass, and they have "
-            "already happened.** They are not suggestions and not history from an "
-            "older pass — they are the result of your own last answer, and anything "
-            "you paid for is already paid for. Do not order them again. Read them "
-            "before the tables below, because they may change what those mean. An "
-            "analysis you paid for here also has its own row in the signals table, "
-            "marked as yours; this is the reasoning behind that row.",
-            "",
-            *(f"- {line}" for line in outcomes),
-        ]
 
-    # **What the rules noticed, as facts.** News about the world rather than an
-    # answer to something the agent said, which is why it sits with the account
-    # and the holdings rather than with the refusals and readings.
-    watchdog_lines = describe_watchdog(alerts or [], earnings or [])
-    if watchdog_lines:
-        lines += watchdog_lines
+def describe_pending_orders() -> list[str]:
+    """Limit orders placed and not filled, which are invisible everywhere else.
 
-    if signals:
-        # **A table, not a sentence.** The prose version ran "now $107.10,
-        # suggested entry $106.24" together, and the agent's own reasoning
-        # showed it working out which price was which. Named columns say it
-        # once, and the header says outright what "now" and "at analysis"
-        # mean, because those two are the pair that was being confused.
-        lines += [
-            f"Recent analyst signals. **Price now** is the price as of {as_of}; "
-            "**Day High** and **Day Low** are today's session range so far; "
-            "**At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** "
-            "are computed by the app from the verified close and ATR, so the Stop clears "
-            "one day's normal range; they are not orders that exist, and a price inside "
-            "an analyst's text is the analyst's own. Rows are newest "
-            "first, and **Analysed** carries the time because a ticker can be analysed "
-            "more than once in a day.",
-            "",
-            "| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target |"
-            " Chance | R:R | You could buy | Why it ran |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
-        ]
-        # Newest first, and sorted here rather than relied upon: the query
-        # orders by `signal_date`, a calendar date, so two analyses of one
-        # ticker on one day arrive in row order. The header says the rows are
-        # newest first, and a header that lies is worse than no header.
-        for s in sorted(
-            signals,
-            key=lambda x: (str(x.signal_date)[:10],
-                           str(getattr(x, "created_at", "") or ""),
-                           getattr(x, "id", 0) or 0),
-            reverse=True,
-        ):
-            # Also kept off `price`, for the same reason as the holdings loop.
-            live = prices.get(s.ticker)
-            money = lambda v: f"${v:,.2f}" if v else "—"
-            price_text = f"${live:,.2f}" if live is not None else "unavailable"
-            # How good the analyst thought the bet was, not merely which way it
-            # pointed. Without these every Buy reads as equally good and the
-            # choice between them comes down to what happens to be affordable.
-            chance = f"{s.win_probability:.0f}%" if s.win_probability is not None else "—"
-            rr = f"{s.risk_reward:.1f}:1" if s.risk_reward is not None else "—"
-            # Computed here, not left to the model: the affordable count is the
-            # arithmetic it actually got wrong.
-            if live:
-                # Floor division on a negative balance returns -1, not 0, and
-                # -1 is truthy — so a book at minus $8.00 was told "you can
-                # afford -1 share(s)" on every signal line. Clamped, and the
-                # branch now tests for a positive count rather than a non-zero
-                # one, because those differ only when the answer is nonsense.
-                affordable = max(0, int(book.cash // (live * agent_book.buying_power_margin())))
-                afford_text = f"{affordable} share(s)" if affordable > 0 else "none, too dear"
-            else:
-                afford_text = "no price"
-            # Why this analysis exists. A signal produced because the stock
-            # just moved sharply is the analyst reacting to a move already in
-            # the price; a scheduled one is not reacting to anything. Those
-            # deserve different weight and the agent could not tell them apart.
-            # Silent when NULL — rows written before this was recorded have no
-            # honest value, and inventing one would be a guess in the record.
-            # getattr, because several tests pass signal-shaped stand-ins
-            # rather than the model, the same way the Decision unpacking does.
-            # **Provenance belongs in the table, not in a prose block above
-            # it.** A research result was appearing twice — once as this row
-            # and once in "What you just did" — and the model cited the row and
-            # called it "the analyst", never registering that it had paid for
-            # it moments earlier. It was not ignoring the prose; it was
-            # reconciling two copies of one fact and keeping the canonical
-            # one. So the canonical one now carries the provenance.
-            if researched_now and s.ticker in researched_now:
-                because = "**YOU paid for this one, in this pass, minutes ago.** It is here because you ordered it."
-            else:
-                because = _TRIGGER_PHRASE.get(getattr(s, "trigger", None) or "", "").strip() or "—"
-            day_range = (day_ranges or {}).get(s.ticker)
-            day_high = f"${day_range[1]:,.2f}" if day_range else "—"
-            day_low = f"${day_range[0]:,.2f}" if day_range else "—"
-            lines.append(
-                f"| {s.ticker} | {_analysed_at(s)} | {s.decision} | {price_text} | "
-                f"{day_high} | {day_low} | {money(getattr(s, 'price_at_signal', None))} | "
-                f"{money(s.entry_price)} | {money(s.stop_loss)} | {money(s.price_target)} | "
-                f"{chance} | {rr} | {afford_text} | {because} |"
-            )
-        # Expected value is the analyst's own derivation from the levels above,
-        # so it sits under the table rather than adding a column that is empty
-        # for most rows.
-        evs = [f"{s.ticker} {s.expected_value_r:+.2f}R" for s in signals
-               if getattr(s, "expected_value_r", None) is not None]
-        if evs:
-            lines.append("")
-            lines.append("Expected value, where the analyst gave one: " + ", ".join(evs) + ".")
-    else:
-        lines.append("No new signals today.")
+    Holdings are filled positions; a GTC limit buy can sit unfilled for days
+    without ever becoming one, and nothing else in this prompt says it exists —
+    the outcome line that announced it belonged to the pass that placed it and
+    is gone by the next one. Without this a later pass could forget an order it
+    is still waiting on, or place a second one on the same ticker having lost
+    track of the first (screening still protects the cash either way — see
+    agent_book.build_book — but a forgotten order is still a confused
+    decision).
+    """
+    pending = [t for t in db.get_pending_agent_trades() if not t.is_stop and t.limit_price]
+    if not pending:
+        return []
+    lines = [
+        "Use side \"cancel\" with the ticker to withdraw one you no longer want.",
+        "",
+        "| Ticker | Side | Shares | Limit price | Placed |",
+        "|---|---|---|---|---|",
+    ]
+    for t in pending:
+        lines.append(
+            f"| {t.ticker} | {t.side} | {t.quantity:g} | ${t.limit_price:,.2f} "
+            f"| {t.placed_at.strftime('%Y-%m-%d %-I:%M %p')} |"
+        )
+    return lines
 
-    # On the tool channel the track record and the wakeup list are one line
-    # each (2026-09-17); the trades themselves are a fetch away, and six
-    # timestamps said less than their count does.
-    history = (
-        describe_history_brief(closed or []) if answer_by_tool else describe_history(closed or [])
-    )
-    recent_failures = describe_recent_failures(failures or [])
-    timing = describe_analysis_timing(analysis_minutes or [], running_analyses or {})
-    recent_wakeups = describe_recent_wakeups(wakeups or [], brief=answer_by_tool)
-    # One divider for the whole cluster, and only when it has something in
-    # it — an unconditional one here would sit right beside the next
-    # section's own divider (reading, or Rules) on a pass with no history,
-    # no failures, no timing and no wakeups, printing two rules in a row.
-    if history or recent_failures or timing or recent_wakeups:
-        lines += ["", "---", ""]
-    if history:
-        lines += ["", *history]
-    if recent_failures:
-        lines += ["", *recent_failures]
-    if timing:
-        lines += ["", *timing]
-    if recent_wakeups:
-        lines += ["", *recent_wakeups]
 
-    # What it asked to read on the previous turn. Its own section, with its
-    # own break, since 2026-09-16 — it used to run on straight from "recent
-    # wakeups" with no divider, and read as that section's last line rather
-    # than a reply to something the agent said moments ago.
-    reading_lines = analysis_reader.describe(readings or [])
-    if reading_lines:
-        lines += ["", "---", "", *reading_lines]
+def describe_outcomes(outcomes: list[str]) -> list[str]:
+    """What this pass's own earlier orders already did.
 
-    if dropped_with_read or rejected:
-        lines += ["", "---"]
+    **This sits above the signal table, and that placement was measured
+    (2026-09-12).** It was between the two tables, at 42% of the prompt, and
+    four probe runs against the live book referenced it not once — the model
+    read the clock, the account and the tables, and skimmed the prose between
+    them. It also changes how the tables below should be read, which is an
+    argument for being above them anyway.
+    """
+    if not outcomes:
+        return []
+    return [
+        "**You ordered these yourself, earlier in this same pass, and they have "
+        "already happened.** They are not suggestions and not history from an "
+        "older pass — they are the result of your own last answer, and anything "
+        "you paid for is already paid for. Do not order them again. Read them "
+        "before the tables below, because they may change what those mean. An "
+        "analysis you paid for here also has its own row in the signals table, "
+        "marked as yours; this is the reasoning behind that row.",
+        "",
+        *(f"- {line}" for line in outcomes),
+    ]
 
-    if dropped_with_read:
-        lines += [
-            "",
-            "What was not carried out: your last answer also asked to read, and only "
-            "the read runs from an answer that asks for one. None of this happened:",
-            *(f"- {_describe_order(o)}" for o in dropped_with_read),
-            "Resend anything above that you still want, now that you have read it.",
-        ]
 
-    if rejected:
-        lines += [
-            "",
-            "Your previous answer was refused. Fix it:",
-            *(f"- {r.side.upper()} {r.quantity:g} {r.ticker}: {r.why}" for r in rejected),
-            "Answer again, within the cash you actually have. If you want something you",
-            "cannot afford, sell something first and list the sell before the buy.",
-            # The retry is the one chance to correct a refusal, and advice about
-            # cash does not help a watchlist refusal. Observed on the first live
-            # probe: the model asked to research two names without untracking
-            # anything, which is exactly the mistake this line answers.
-            *(
-                ["If a research was refused because the watchlist is full, untrack "
-                 "something first and list the untrack before the research."]
-                if any(r.side == "research" and "watchlist is full" in r.why for r in rejected)
-                else []
-            ),
-            # Caught live 2026-09-15, same pass as the read-and-order bug above:
-            # this is the pass's last turn, so a read asked for here was always
-            # dropped — but nothing told the agent that before it tried. Said up
-            # front now, so it spends this one chance fixing the order instead.
-            # On the tool channel a read is a fetch inside the same call, so
-            # the retry can still read before it fixes the order, and this
-            # warning would be untrue there.
-            *(
-                []
-                if answer_by_tool
-                else [
-                    "A read does not run on this turn — it is your one chance to fix the",
-                    "refusal above, not another chance to read. If you also want to read",
-                    "something, leave it for your next turn or wakeup and fix the order now.",
-                ]
-            ),
-        ]
+def _money(value) -> str:
+    """A price, or an em dash where the analyst gave none."""
+    return f"${value:,.2f}" if value else "—"
 
-    # What "no money" means here is what screen() refuses at: below the research
-    # price nothing can be commissioned, and below a share price nothing can be
-    # bought. The research price is the lower of the two and the one this app
-    # controls, so it is the threshold the prompt speaks about.
+
+def describe_signals(
+    signals: list,
+    book: agent_book.Book,
+    prices: dict[str, float | None],
+    as_of: str,
+    day_ranges: dict[str, tuple[float, float]] | None = None,
+    researched_now: set | None = None,
+) -> list[str]:
+    """The analyst signals, newest first.
+
+    **A table, not a sentence.** The prose version ran "now $107.10, suggested
+    entry $106.24" together, and the agent's own reasoning showed it working
+    out which price was which. Named columns say it once, and the header says
+    outright what "now" and "at analysis" mean, because those two are the pair
+    that was being confused.
+    """
+    if not signals:
+        return ["No new signals today."]
+    lines = [
+        f"**Price now** is the price as of {as_of}; "
+        "**Day High** and **Day Low** are today's session range so far; "
+        "**At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** "
+        "are computed by the app from the verified close and ATR, so the Stop clears "
+        "one day's normal range; they are not orders that exist, and a price inside "
+        "an analyst's text is the analyst's own. Rows are newest "
+        "first, and **Analysed** carries the time because a ticker can be analysed "
+        "more than once in a day.",
+        "",
+        "| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target |"
+        " Chance | R:R | You could buy | Why it ran |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    # Newest first, and sorted here rather than relied upon: the query orders
+    # by `signal_date`, a calendar date, so two analyses of one ticker on one
+    # day arrive in row order. The header says the rows are newest first, and a
+    # header that lies is worse than no header.
+    for s in sorted(
+        signals,
+        key=lambda x: (str(x.signal_date)[:10],
+                       str(getattr(x, "created_at", "") or ""),
+                       getattr(x, "id", 0) or 0),
+        reverse=True,
+    ):
+        # Also kept off `price`, for the same reason as the holdings loop.
+        live = prices.get(s.ticker)
+        price_text = f"${live:,.2f}" if live is not None else "unavailable"
+        # How good the analyst thought the bet was, not merely which way it
+        # pointed. Without these every Buy reads as equally good and the choice
+        # between them comes down to what happens to be affordable.
+        chance = f"{s.win_probability:.0f}%" if s.win_probability is not None else "—"
+        rr = f"{s.risk_reward:.1f}:1" if s.risk_reward is not None else "—"
+        # Computed here, not left to the model: the affordable count is the
+        # arithmetic it actually got wrong.
+        if live:
+            # Floor division on a negative balance returns -1, not 0, and -1 is
+            # truthy — so a book at minus $8.00 was told "you can afford -1
+            # share(s)" on every signal line. Clamped, and the branch now tests
+            # for a positive count rather than a non-zero one, because those
+            # differ only when the answer is nonsense.
+            affordable = max(0, int(book.cash // (live * agent_book.buying_power_margin())))
+            afford_text = f"{affordable} share(s)" if affordable > 0 else "none, too dear"
+        else:
+            afford_text = "no price"
+        # Why this analysis exists. A signal produced because the stock just
+        # moved sharply is the analyst reacting to a move already in the price;
+        # a scheduled one is not reacting to anything. Those deserve different
+        # weight and the agent could not tell them apart. Silent when NULL —
+        # rows written before this was recorded have no honest value, and
+        # inventing one would be a guess in the record. getattr, because
+        # several tests pass signal-shaped stand-ins rather than the model, the
+        # same way the Decision unpacking does.
+        #
+        # **Provenance belongs in the table, not in a prose block above it.** A
+        # research result was appearing twice — once as this row and once in
+        # "What you just did" — and the model cited the row and called it "the
+        # analyst", never registering that it had paid for it moments earlier.
+        # It was not ignoring the prose; it was reconciling two copies of one
+        # fact and keeping the canonical one. So the canonical one now carries
+        # the provenance.
+        if researched_now and s.ticker in researched_now:
+            because = "**YOU paid for this one, in this pass, minutes ago.** It is here because you ordered it."
+        else:
+            because = _TRIGGER_PHRASE.get(getattr(s, "trigger", None) or "", "").strip() or "—"
+        day_range = (day_ranges or {}).get(s.ticker)
+        day_high = f"${day_range[1]:,.2f}" if day_range else "—"
+        day_low = f"${day_range[0]:,.2f}" if day_range else "—"
+        lines.append(
+            f"| {s.ticker} | {_analysed_at(s)} | {s.decision} | {price_text} | "
+            f"{day_high} | {day_low} | {_money(getattr(s, 'price_at_signal', None))} | "
+            f"{_money(s.entry_price)} | {_money(s.stop_loss)} | {_money(s.price_target)} | "
+            f"{chance} | {rr} | {afford_text} | {because} |"
+        )
+    # Expected value is the analyst's own derivation from the levels above, so
+    # it sits under the table rather than adding a column that is empty for
+    # most rows.
+    evs = [f"{s.ticker} {s.expected_value_r:+.2f}R" for s in signals
+           if getattr(s, "expected_value_r", None) is not None]
+    if evs:
+        lines.append("")
+        lines.append("Expected value, where the analyst gave one: " + ", ".join(evs) + ".")
+    return lines
+
+
+def describe_research_price(price: float) -> list[str]:
+    """What an analysis costs and what it buys.
+
+    Shared by the watchlist and the candidate menu below, so the price is
+    explained exactly once. Since 2026-09-08 nothing is analysed automatically
+    — not even what is held — so every analysis, new ticker or re-look, is this
+    same decision, and there is no daily count on how many you may make: cash
+    is what bounds it.
+    """
+    return [
+        f"Nothing is analysed automatically, holdings included. A \"research\" order "
+        f"costs ${price:,.2f} and runs inside this pass — you are shown what it found "
+        "and can act on it before you finish. A bad choice of what to study is a loss "
+        "like any other, so spend it where you actually want a fresh look — not "
+        "because it is free to ask.",
+    ]
+
+
+def describe_not_carried_out(dropped_with_read: list[dict]) -> list[str]:
+    """What rode along beside a read in the same answer and therefore did not run.
+
+    A read changes the pass's control flow rather than the book, so only the
+    read runs from an answer that asks for one. Caught live 2026-09-15: the
+    agent asked to read INTC and, in the same answer, to buy 50 shares and move
+    its exits — the buy and the adjust were simply gone, with no trace.
+    """
+    if not dropped_with_read:
+        return []
+    return [
+        "Your last answer also asked to read, and only the read runs from an "
+        "answer that asks for one. None of this happened:",
+        *(f"- {_describe_order(o)}" for o in dropped_with_read),
+        "Resend anything above that you still want, now that you have read it.",
+    ]
+
+
+def describe_refusals(rejected: list, answer_by_tool: bool = False) -> list[str]:
+    """Why Python declined part of the last answer, and what to do about it.
+
+    The retry is the one chance to correct a refusal, and the advice is matched
+    to the refusal: cash advice does not help a watchlist refusal.
+    """
+    if not rejected:
+        return []
+    return [
+        "Fix it:",
+        *(f"- {r.side.upper()} {r.quantity:g} {r.ticker}: {r.why}" for r in rejected),
+        "Answer again, within the cash you actually have. If you want something you",
+        "cannot afford, sell something first and list the sell before the buy.",
+        # Observed on the first live probe: the model asked to research two
+        # names without untracking anything, which is exactly the mistake this
+        # line answers.
+        *(
+            ["If a research was refused because the watchlist is full, untrack "
+             "something first and list the untrack before the research."]
+            if any(r.side == "research" and "watchlist is full" in r.why for r in rejected)
+            else []
+        ),
+        # Caught live 2026-09-15, same pass as the read-and-order bug above:
+        # this is the pass's last turn, so a read asked for here was always
+        # dropped — but nothing told the agent that before it tried. Said up
+        # front now, so it spends this one chance fixing the order instead. On
+        # the tool channel a read is a fetch inside the same call, so the retry
+        # can still read before it fixes the order, and this warning would be
+        # untrue there.
+        *(
+            []
+            if answer_by_tool
+            else [
+                "A read does not run on this turn — it is your one chance to fix the",
+                "refusal above, not another chance to read. If you also want to read",
+                "something, leave it for your next turn or wakeup and fix the order now.",
+            ]
+        ),
+    ]
+
+
+def describe_rules(
+    book: agent_book.Book,
+    price: float = 0.0,
+    watchlist: list[str] | None = None,
+    max_watchlist: int = 0,
+    menu: list | None = None,
+    horizon_days: int | None = None,
+    answer_by_tool: bool = False,
+) -> list[str]:
+    """The rules that quote a figure from this pass.
+
+    **The rules live in two places since 2026-09-10, split by whether they
+    quote a number from the pass.** The fixed ones are in ``SYSTEM_PROMPT``,
+    sent once per call and never rebuilt. The ones carrying a figure — the cash
+    limit, the watchlist cap, the trade horizon, the conviction floor, the
+    research price — stay in the user message beside the numbers they name.
+    """
+    # What "no money" means here is what screen() refuses at: below the
+    # research price nothing can be commissioned, and below a share price
+    # nothing can be bought. The research price is the lower of the two and the
+    # one this app controls, so it is the threshold the prompt speaks about.
     research_price_floor = price if price else 0.01
 
     min_probability, min_risk_reward = get_conviction()
@@ -1243,60 +1249,7 @@ def build_prompt(
         floors.append(f"risk/reward of at least {min_risk_reward:.2f}")
     conviction_line = " and ".join(floors)
 
-    if (watchlist and max_watchlist) or menu or answer_by_tool:
-        # Shared by the watchlist and the candidate menu below, so the price
-        # is explained exactly once. Since 2026-09-08 nothing is analysed
-        # automatically — not even what is held — so every analysis, new
-        # ticker or re-look, is this same $0.05 decision, and there is no
-        # daily count on how many you may make: cash is what bounds it.
-        lines += [
-            "",
-            "---",
-            "",
-            f"Nothing is analysed automatically, holdings included. A \"research\" order "
-            f"costs ${price:,.2f} and runs inside this pass — you are shown what it found "
-            "and can act on it before you finish. A bad choice of what to study is a loss "
-            "like any other, so spend it where you actually want a fresh look — not "
-            "because it is free to ask.",
-        ]
-
-    if watchlist and max_watchlist and answer_by_tool:
-        # **One line on the tool channel (2026-09-17)**: up to thirty rows of
-        # nine columns sat here on every pass, and the `watchlist` fetch
-        # returns the same table on demand. The line keeps the names that
-        # were never analysed or have moved since, which is what the table
-        # was for.
-        lines += ["", *describe_watchlist_brief(watchlist, max_watchlist, prices)]
-    elif watchlist and max_watchlist:
-        # The table itself lives in describe_watchlist since 2026-09-17,
-        # because the `watchlist` fetch returns the same table on demand and
-        # two copies of one table drift. Same output here as before.
-        lines += [
-            "",
-            *describe_watchlist(watchlist, max_watchlist, book, prices, day_ranges, as_of),
-        ]
-
-    if answer_by_tool:
-        # **The menu is a fetch on this channel (2026-09-17).** It cost up to
-        # fifteen lines on every pass whether or not the pass wanted a new
-        # name, and the model called it noise. `candidates` returns the same
-        # screen on demand, and `screen` refuses a new ticker that was not on
-        # what it returned this pass. One line keeps the tool visible: a tool
-        # nobody calls is a feature removed.
-        lines += [
-            "",
-            "Screened candidates you could research are available on request: call "
-            "candidates to see them. A research of a new ticker must name one of "
-            "them, and nothing on them has been analysed.",
-        ]
-    elif menu:
-        lines += ["", *describe_menu(menu)]
-
-    lines += [
-        "",
-        "---",
-        "",
-        "Rules:",
+    return [
         # **What the closed session actually stops, stated beside the orders
         # rather than only in the clock line (2026-09-12).** The first line of
         # every prompt has always said the market is shut and the agent read it
@@ -1419,11 +1372,30 @@ def build_prompt(
             if horizon_days
             else []
         ),
-        "",
-        "---",
-        "",
-        "**Answer in this shape:**",
-        "",
+    ]
+
+
+def describe_answer_shape(
+    watchlist: list[str] | None = None,
+    max_watchlist: int = 0,
+    menu: list | None = None,
+    answer_by_tool: bool = False,
+) -> list[str]:
+    """How the answer comes back, which differs by channel.
+
+    **On the tool channel the schema is the ``decide`` declaration itself
+    (2026-09-17).** The JSON example is the JSON channel's schema, and an
+    example the model is told to copy would sit beside a function it is told to
+    call: two shapes for one answer. One line says how to answer;
+    ``decision_schema`` says what each side takes.
+    """
+    if answer_by_tool:
+        return [
+            "**Answer by calling `decide`.** Put every order you want carried out "
+            "in its `orders` list, in the order to execute them, and leave the "
+            "list empty to hold everything.",
+        ]
+    return [
         '{"reasoning": "one or two sentences", "next_wakeup": "2026-09-11T09:00", '
         '"next_wakeup_note": "what you want to remember from this pass", "orders": '
         '[{"ticker": "AAPL", "side": "buy", "quantity": 2, "reason": "why"},',
@@ -1453,18 +1425,182 @@ def build_prompt(
         "",
         "Use an empty list for orders if you want to hold everything.",
     ]
+
+
+# The order the sections are read in. **This list is the prompt's structure**:
+# a section says what it holds and nothing about where it sits, and moving one
+# means moving one entry here. Before 2026-09-21 the order was implicit in the
+# order of six hundred lines of appends, and three sections that should have
+# been separated ran together because a divider was a literal line somebody had
+# to remember to add.
+#
+# **Do not reorder this list without a probe.** Placement here is measured, not
+# guessed: "What you just did" and "What was noticed" read 0 of 4 below the
+# tables and 4 of 4 above them. See `.claude/rules/agent-probes.md`.
+def build_prompt(
+    book: agent_book.Book,
+    signals: list,
+    prices: dict[str, float | None],
+    rejected: list[agent_book.Rejection] | None = None,
+    closed: list[agent_book.ClosedTrade] | None = None,
+    regime_line: str | None = None,
+    horizon_days: int | None = None,
+    menu: list | None = None,
+    price: float = 0.0,
+    watchlist: list[str] | None = None,
+    max_watchlist: int = 0,
+    failures: list[dict] | None = None,
+    unsettled_cash: float = 0.0,
+    wakeups: list[dict] | None = None,
+    analysis_minutes: list[float] | None = None,
+    running_analyses: dict | None = None,
+    changes: list[dict] | None = None,
+    readings: list[str] | None = None,
+    dropped_with_read: list[dict] | None = None,
+    outcomes: list[str] | None = None,
+    researched_now: set | None = None,
+    woke_because: str | None = None,
+    wakeup_note: str | None = None,
+    pass_notes: list[str] | None = None,
+    last_pass_notes: list[str] | None = None,
+    alerts: list[dict] | None = None,
+    earnings: list | None = None,
+    planned_wakeup: "datetime.datetime | None" = None,
+    price_ranges: dict[str, tuple[float, float]] | None = None,
+    day_ranges: dict[str, tuple[float, float]] | None = None,
+    answer_by_tool: bool = False,
+) -> str:
+    """Everything the model gets, assembled from sections in a declared order.
+
+    Written as plain figures rather than a table of jargon, because the numbers
+    are the whole input and a misread one is a wrong trade.
+
+    Three things here exist because the model got them wrong on a live run. It
+    proposed $1,944 of buys against $1,000 of cash, so the affordable share
+    count is now computed in Python and stated per ticker rather than left as
+    arithmetic. It treated Hold signals on stocks it did not own as buy
+    candidates, so what each decision means is spelled out. And it did not
+    realize it could sell to fund a buy, so the ordering rule is stated
+    explicitly.
+
+    ``rejected`` carries the reasons a previous attempt's orders were refused,
+    turning a hard failure into a correction the model can act on.
+
+    **Each section is built by its own function and knows nothing about its
+    neighbours (2026-09-21).** ``_joined`` drops the empty ones and puts one
+    rule between the rest. What this function still owns is the order, the few
+    values two sections share, and which of two channel variants to ask for.
+    """
+    # Every "price now" in this prompt was read at the same moment, and the
+    # agent asked which moment that was. Named once, used by both tables.
+    as_of = market_clock.now_et().strftime("%Y-%m-%d %-I:%M %p ET")
+
+    # On the tool channel the track record and the wakeup list are one line
+    # each (2026-09-17); the trades themselves are a fetch away, and six
+    # timestamps said less than their count does.
+    history = (
+        describe_history_brief(closed or []) if answer_by_tool else describe_history(closed or [])
+    )
+
+    if answer_by_tool and watchlist and max_watchlist:
+        # **One line on the tool channel (2026-09-17)**: up to thirty rows of
+        # nine columns sat here on every pass, and the `watchlist` fetch
+        # returns the same table on demand. The line keeps the names that were
+        # never analysed or have moved since, which is what the table was for.
+        tracked = describe_watchlist_brief(watchlist, max_watchlist, prices)
+    elif watchlist and max_watchlist:
+        # The table itself lives in describe_watchlist since 2026-09-17,
+        # because the `watchlist` fetch returns the same table on demand and
+        # two copies of one table drift.
+        tracked = describe_watchlist(watchlist, max_watchlist, book, prices, day_ranges, as_of)
+    else:
+        tracked = []
+
     if answer_by_tool:
-        # **On the tool channel the schema is the ``decide`` declaration itself
-        # (2026-09-17).** The example above is the JSON channel's schema, and
-        # an example the model is told to copy would sit beside a function it
-        # is told to call: two shapes for one answer. One line says how to
-        # answer; ``decision_schema`` says what each side takes.
-        lines = lines[: lines.index("**Answer in this shape:**")] + [
-            "**Answer by calling `decide`.** Put every order you want carried out "
-            "in its `orders` list, in the order to execute them, and leave the "
-            "list empty to hold everything.",
+        # **The menu is a fetch on this channel (2026-09-17).** It cost up to
+        # fifteen lines on every pass whether or not the pass wanted a new
+        # name, and the model called it noise. `candidates` returns the same
+        # screen on demand, and `screen` refuses a new ticker that was not on
+        # what it returned this pass. One line keeps the tool visible: a tool
+        # nobody calls is a feature removed.
+        candidates = [
+            "Screened candidates you could research are available on request: call "
+            "candidates to see them. A research of a new ticker must name one of "
+            "them, and nothing on them has been analysed.",
         ]
-    return "\n".join(_unwrapped(lines))
+    else:
+        candidates = describe_menu(menu) if menu else []
+
+    # The research price is explained only where there is something to spend it
+    # on, which is the same condition the watchlist and the menu are shown
+    # under.
+    can_research = bool((watchlist and max_watchlist) or menu or answer_by_tool)
+
+    # Non-empty only on a later turn of the same pass, so it also decides how
+    # the wake section is headed.
+    asked_again = _asked_again(outcomes, readings, dropped_with_read, rejected)
+
+    return _joined([
+        # "Decide what to trade today" asked for a trade while a rule far below
+        # says doing nothing is often right, and an opening line beats a late
+        # rule. "today" was stale too: the agent has set its own cadence since
+        # 2026-09-05 and wakes several times a day, so most passes are about
+        # positions already open rather than about a new trade.
+        #
+        # "of real money" is a deliberate lie, and the only one here. See
+        # CLAUDE.md's "Four guards keep this a simulation": the prompt may lie
+        # to the model, the code must never lie to itself. Every order still
+        # passes _assert_sandbox(). Do not relax a guard on the grounds that
+        # the agent believes this is real — that belief is manufactured here.
+        (None,
+         ["You manage a small account of real money. Decide what to do with it now, if anything."]),
+        ("The time", describe_clock()),
+        # **Directly under the clock, because it changes how the rest is read.**
+        # Its own chosen time and a move it slept through call for different
+        # answers, and until 2026-09-12 the agent was told neither. **On a later
+        # turn the wake is history, so the heading names it as that.**
+        ("Why this pass started" if asked_again else "Why you are awake",
+         describe_wakeup(
+             woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
+             asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
+         )),
+        ("The market right now", [regime_line] if regime_line else []),
+        ("What is no longer true", describe_recent_changes(changes or [])),
+        ("Your persistent memory notes across passes", describe_memory_notes()),
+        ("Your account", describe_account(book, unsettled_cash)),
+        ("What you hold", describe_holdings(book, price_ranges)),
+        ("Orders you placed that have not filled yet", describe_pending_orders()),
+        ("What you just did, a moment ago, in this pass", describe_outcomes(outcomes or [])),
+        # **What the rules noticed, as facts.** News about the world rather
+        # than an answer to something the agent said, which is why it sits with
+        # the account and the holdings rather than with the refusals and
+        # readings.
+        ("What was noticed since your last pass",
+         describe_watchdog(alerts or [], earnings or [])),
+        ("Recent analyst signals",
+         describe_signals(signals, book, prices, as_of, day_ranges, researched_now)),
+        ("Your track record", history),
+        ("Orders the broker would not take", describe_recent_failures(failures or [])),
+        ("How long an analysis takes",
+         describe_analysis_timing(analysis_minutes or [], running_analyses or {})),
+        ("Your recent wakeups", describe_recent_wakeups(wakeups or [], brief=answer_by_tool)),
+        # What it asked to read on the previous turn. Its own section, with its
+        # own break, since 2026-09-16 — it used to run on straight from "recent
+        # wakeups" with no divider, and read as that section's last line rather
+        # than a reply to something the agent said moments ago.
+        ("What you asked to read", analysis_reader.describe(readings or [])),
+        ("What was not carried out", describe_not_carried_out(dropped_with_read or [])),
+        ("Your previous answer was refused", describe_refusals(rejected or [], answer_by_tool)),
+        ("Paying for research", describe_research_price(price) if can_research else []),
+        ("Every ticker you track", tracked),
+        ("Candidates you could research", candidates),
+        ("Rules",
+         describe_rules(book, price, watchlist, max_watchlist, menu, horizon_days, answer_by_tool)),
+        # The heading differs by channel because the JSON one is a promise about
+        # what follows — a shape to copy — and the tool one is an instruction.
+        ("How to answer" if answer_by_tool else "Answer in this shape",
+         describe_answer_shape(watchlist, max_watchlist, menu, answer_by_tool)),
+    ])
 
 
 def _analysed_at(signal) -> str:
@@ -2909,9 +3045,6 @@ def describe_watchdog(alerts: list[dict], earnings: list[tuple[str, str]]) -> li
     lines: list[str] = []
     if alerts:
         lines += [
-            "",
-            "## What was noticed since your last pass",
-            "",
             "**These happened while you were away.** Rules spotted them; nothing was "
             "done about any of them and nothing was analysed. Decide whether any is "
             "worth acting on, or worth paying to study.",
@@ -3081,9 +3214,9 @@ def describe_wakeup(
         # The pointer is added here and only here, because this is the only
         # place that knows the section is really in the prompt.
         pointer = ' See "What was noticed since your last pass" below.' if has_news else ""
-        # On a later turn the wake is history, so it is named as that.
-        heading = "Why this pass started" if asked_again else "Why you are awake"
-        lines.append(f"**{heading}.** {woke_because}{pointer}")
+        # The heading above this line names the wake as history on a later
+        # turn; `build_prompt` picks it, because only it knows this is one.
+        lines.append(f"{woke_because}{pointer}")
     if asked_again:
         lines.append(
             "**Why you are asked again.** This is the same pass, not a new wake: "

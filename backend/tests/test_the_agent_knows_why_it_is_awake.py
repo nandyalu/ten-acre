@@ -62,7 +62,8 @@ def test_the_prompt_says_why_the_agent_is_awake():
         _book(), [], {}, woke_because="Something was noticed while you were away.",
     )
 
-    assert "**Why you are awake.** Something was noticed while you were away." in prompt
+    assert "## Why you are awake" in prompt
+    assert "Something was noticed while you were away." in prompt
 
 
 def test_the_note_comes_back_as_the_agents_own_words():

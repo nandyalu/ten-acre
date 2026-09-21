@@ -43,7 +43,7 @@ def test_describe_memory_notes():
 
     agent.add_memory_note("Watch VIX above 25")
     lines = agent.describe_memory_notes()
-    assert any("Your persistent memory notes across passes" in l for l in lines)
+    assert any("long-term notes you recorded previously" in l for l in lines)
     assert any("- Watch VIX above 25" in l for l in lines)
 
 
@@ -89,5 +89,5 @@ def test_build_prompt_includes_memory_notes():
     book = agent_book.Book(budget=1000.0, cash=1000.0, realized_pnl=0.0)
     agent.add_memory_note("Keep cash buffer at 10%")
     prompt = agent.build_prompt(book, [], {})
-    assert "Your persistent memory notes across passes:" in prompt
+    assert "## Your persistent memory notes across passes" in prompt
     assert "- Keep cash buffer at 10%" in prompt

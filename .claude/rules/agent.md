@@ -26,7 +26,42 @@ paths:
 
 ### What the agent is shown
 
-One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
+One prompt per decision pass, assembled by `agent.build_prompt()`.
+
+**Since 2026-09-21 the order is a declared list at the end of `build_prompt`, and every section carries a `##` heading and a `---` rule above it.** Each section is built by its own function that knows nothing about its neighbours; `_joined` drops the empty ones, adds the heading and puts one rule between the rest. A section that needs to move is one entry moved in that list. **Do not reorder it without a probe** — placement here is measured, not guessed (`agent-probes.md`).
+
+The table is the order. The numbered notes under it are keyed to sections, not to positions, and the numbers are stable references that other parts of this file point at; **they are not the order and never were**. Until 2026-09-21 this section claimed they were, and it had been wrong about eight of them since the watchdog and outcome blocks moved above the tables on 2026-09-12.
+
+| # | Heading in the prompt | Note |
+|---|---|---|
+| — | *(no heading — the opening line)* | — |
+| 1 | `## The time` | 1 |
+| 2 | `## Why you are awake`, or `## Why this pass started` on a later turn | 1b |
+| 3 | `## The market right now` | 2 |
+| 4 | `## What is no longer true` | 3 |
+| 5 | `## Your persistent memory notes across passes` | 3b |
+| 6 | `## Your account` | 4 |
+| 7 | `## What you hold` | 5 |
+| 8 | `## Orders you placed that have not filled yet` | 5b |
+| 9 | `## What you just did, a moment ago, in this pass` | 13 |
+| 10 | `## What was noticed since your last pass` | 12 |
+| 11 | `## Recent analyst signals` | 6 |
+| 12 | `## Your track record` | 8 |
+| 13 | `## Orders the broker would not take` | "What Python enforces" below |
+| 14 | `## How long an analysis takes` | 9 |
+| 15 | `## Your recent wakeups` | 10 |
+| 16 | `## What you asked to read` | 11 |
+| 17 | `## What was not carried out` | 11 |
+| 18 | `## Your previous answer was refused` | 11 |
+| 19 | `## Paying for research` | 7 |
+| 20 | `## Every ticker you track` | 7 |
+| 21 | `## Candidates you could research` | 7 |
+| 22 | `## Rules` | 14 |
+| 23 | `## Answer in this shape`, or `## How to answer` on the tool channel | 14 |
+
+**A heading is load-bearing where a wake reason points at it.** `describe_wakeup` and `_asked_again` name four of these headings in so many words — "What was noticed since your last pass", "What you just did, a moment ago, in this pass", "What you asked to read", "What was not carried out", "Your previous answer was refused". Rename a heading and the pointer points at nothing, which is the exact failure the "no wake reason may promise a section" rule was written for.
+
+The notes:
 
 1. **The clock** — the Eastern time, the date, and how long until the close. First, because everything below is read against it and because the agent chooses its own next wakeup, which is a question about the time.
 1b. **Why it is awake, and the note the last pass left for this one.** Four things start a pass — its own chosen time, something noticed while it slept, the last call before the close, a change to the app — and it was told none of them until 2026-09-12; the labels were log lines. `next_wakeup_note` is the other half: the agent has no memory between passes, and the prompt carries prices and positions but never conclusions, so this is the one place it can hand something to its own future self. **No wake reason may promise a section** — one said "see what it was, below" and the earnings path reaches the same pass with no alerts, so the prompt pointed at nothing and seven probe runs read straight past it. `build_prompt` adds the pointer, because only it knows whether the section is there.
@@ -55,7 +90,7 @@ One prompt per decision pass, assembled by `agent.build_prompt()`. In order:
 8. **Its own track record**: closed trades, how many were profitable, the net result, the average holding period, and the last six individually with what the analyst had said at entry. Once it has bought on a Hold signal twice, it is told how that worked out specifically — that being the pattern it actually falls into. On the tool channel (since 2026-09-17) it is the totals and the Hold line only, from `describe_history_brief`, and the `track_record` fetch returns the trades.
 9. **How long an analysis takes**, from its own recent runs, and what is being analysed right now with how long it has been running. It cannot plan a wakeup around research it ordered without both.
 10. **Its recent wakeups**, and whether each led to an action. Feedback rather than a limit: waking costs nothing, so pricing it would be an invented cost, and whether the agent learns to space them is a result worth having. On the tool channel (since 2026-09-17) the six timestamps are one count line, `describe_recent_wakeups(brief=True)`, and the advice under it is the same.
-11. **What it asked to read**, when the previous turn asked for an analysis, headed **What you asked to read** in bold, its own section since 2026-09-16 — before that it ran on directly from "recent wakeups" with no divider between them. **Since 2026-09-15, also what was not carried out because it rode along beside a read in the same answer** — a buy, a sell, an adjust, an untrack, a note. A read changes the pass's control flow rather than the book, so only the read runs from an answer that asks for one; anything bundled beside it used to vanish with no trace. Caught live: the agent asked to read INTC and, in the same answer, to buy 50 shares and move its exits — the buy and the adjust were simply gone. The next prompt now names exactly what was dropped and says to resend it.
+11. **What it asked to read**, when the previous turn asked for an analysis, under the heading `## What you asked to read` (a bold line until 2026-09-21), its own section since 2026-09-16 — before that it ran on directly from "recent wakeups" with no divider between them. **Since 2026-09-15, also what was not carried out because it rode along beside a read in the same answer** — a buy, a sell, an adjust, an untrack, a note. A read changes the pass's control flow rather than the book, so only the read runs from an answer that asks for one; anything bundled beside it used to vanish with no trace. Caught live: the agent asked to read INTC and, in the same answer, to buy 50 shares and move its exits — the buy and the adjust were simply gone. The next prompt now names exactly what was dropped and says to resend it.
 12. **What the rules noticed since the last pass** — the watchdog's own alerts, bounded by the previous pass rather than by a count, and which tracked tickers report earnings soon. Facts, with nothing done about them.
 13. **What its own orders did, earlier in this same pass** — the fill and what is resting under it, the analysis it commissioned and what that analysis concluded, the untrack, the refusal. Same placement and the same reason. **Since 2026-09-20, moving a stop or a target names the level it replaced** — "moved stop from $330.00 to $334.16", not only the level it moved to — so this line can tell a stop being raised from one being loosened. See the 2026-09-20 JOURNEY.md entry.
 14. **The rules** (below), then how to answer: the JSON shape on the JSON channel, or one line saying to call `decide` on the tool channel. See "How the answer comes back" below.
