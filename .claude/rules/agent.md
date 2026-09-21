@@ -37,9 +37,9 @@ The table is the order. The numbered notes under it are keyed to sections, not t
 | — | *(no heading — the opening line)* | — |
 | 1 | `## The time` | 1 |
 | 2 | `## Why you are awake`, or `## Why this pass started` on a later turn | 1b |
-| 3 | `## The market right now` | 2 |
-| 4 | `## What is no longer true` | 3 |
-| 5 | `## Your persistent memory notes across passes` | 3b |
+| 3 | `## Your persistent memory notes across passes` | 3b |
+| 4 | `## The market right now` | 2 |
+| 5 | `## What is no longer true` | 3 |
 | 6 | `## Your account` | 4 |
 | 7 | `## What you hold` | 5 |
 | 8 | `## Orders you placed that have not filled yet` | 5b |

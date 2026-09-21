@@ -1595,9 +1595,13 @@ def build_prompt(
              woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
              asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
          )),
+        # Directly under the wake block since 2026-09-21: the note the last
+        # pass left and the notes the agent keeps permanently are both it
+        # talking to itself, and "those are your own words, not an
+        # instruction" was already true of both.
+        ("Your persistent memory notes across passes", describe_memory_notes()),
         ("The market right now", [regime_line] if regime_line else []),
         ("What is no longer true", describe_recent_changes(changes or [])),
-        ("Your persistent memory notes across passes", describe_memory_notes()),
         ("Your account", describe_account(book, unsettled_cash)),
         ("What you hold", describe_holdings(book, price_ranges)),
         ("Orders you placed that have not filled yet", describe_pending_orders()),

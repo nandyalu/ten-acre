@@ -41,7 +41,7 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 |---|---|---|
 | Early wake, and the ask for a new note | 4 of 4 | **Read** |
 | A worked example of a good wakeup note | 4 of 7 | **Read**, and it raised the floor |
-| Persistent memory notes | 3 of 4, conditional | **Read when the note bears on the decision in front of it** |
+| Persistent memory notes | 3 of 4, then 7 of 7 | **Read**, and acted on, when the note bears on the decision in front of it |
 | The holdings price-range column | 0 of 9, three placements | **Unconfirmed.** Kept |
 | The levels line on a read | 4 of 4 | **Read** |
 | The four analyst-report tables | 0 of 4 | **Unconfirmed.** Kept |
@@ -64,6 +64,12 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 ## Read, and the evidence for it
 
 **Early wake (2026-09-13).** 4 of 4 samples kept 9:25 AM, a time that appears only in that block, and 4 of 4 wrote a new note. Only one of the four mentioned what woke it, so **the ask is what does the work, not the reason line**.
+
+**The same scenario rebuilt on 2026-09-21, after the section-heading restructure: 7 of 7, and this time the evidence is behavioural.** Same shape as the run below — clock pinned to a mid-session Monday, $2,000 cash, nothing held, the same INTC note — but built in a copy of the live database from the analyst's own 2026-09-15 INTC Overweight, re-dated into the three-day window with its real levels and rationale, and INTC's shown price pinned near its $98.46 entry. The COIN and CRWV signals were left in place, so the model had a real alternative rather than a single option to refuse.
+
+**INTC was the better signal on every number** — 65% against 62%, 2.0:1 against 1.8:1, +0.95R against +0.74R, and 19 affordable shares against 9. **All seven samples bought COIN instead and none touched INTC**, two saying why in as many words: *"Skipping INTC per persistent memory note."* Passing on the better setup is a choice nothing else in that prompt argues for, which is what makes this stronger than a quotation. **It also answers a question the restructure opened**: the section kept its heading but gained a rule above and below and lost its inline title, and it still reads.
+
+**Do not read 3 of 4 to 7 of 7 as an improvement.** Different sample sizes, a different book, and a floor of 3 of 7. What it establishes is that the section still works, not that it works better.
 
 **A worked example beats a prohibition.** The rule told the agent not to spend the note on prices the next prompt already carries, and two of seven runs wrote "my cash is critically low" anyway. Two examples of a good note — *"ruled out HPE at a $59.83 entry, worth another look under $56"* — moved notes naming a concrete price level from **0 of 7 to 4 of 7**, and notes stating a condition from 3 to 5. It did not stop the balance-restating (still 2 of 7); it raised the floor of everything else.
 

@@ -8,6 +8,13 @@ It is Saturday 19 September 2026, 6:05 PM Eastern. The market is closed for the 
 
 ---
 
+## Your persistent memory notes across passes
+
+These are long-term notes you recorded previously that persist until you clear them:
+- Skip INTC — stopped out on it twice this month on the same breakout setup.
+
+---
+
 ## The market right now
 
 Market regime: VIX 14.2, SPY 4.1% above its 200-day average, yield curve normal.
@@ -18,13 +25,6 @@ Market regime: VIX 14.2, SPY 4.1% above its 200-day average, yield curve normal.
 
 The rules below are already current, so nothing here repeats them. They are here because your own past decisions and wakeups further down were made under the older rules:
 - 2026-09-20: An adjust now names the level it replaced.
-
----
-
-## Your persistent memory notes across passes
-
-These are long-term notes you recorded previously that persist until you clear them:
-- Skip INTC — stopped out on it twice this month on the same breakout setup.
 
 ---
 

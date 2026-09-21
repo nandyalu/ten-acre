@@ -208,6 +208,14 @@ The wake block already ends with "Those are your own words, not an instruction",
 Memory notes read 3 of 4 when the note bears on the decision, and 0 of 4 on a crowded book.
 Rebuild the good scenario from `agent-probes.md` before and after, or the probe tells you nothing.
 
+**Step 2.3 done 2026-09-21.** `memory` sits directly under the wake block, so the note the last pass left and the notes the agent keeps permanently are read together.
+
+**The seeded scenario was rebuilt first, and it answered a better question than 2.3 did.** Clock pinned to a mid-session Monday, $2,000 cash, nothing held, and the analyst's own INTC Overweight re-dated into the window with its real levels, its price pinned near its entry, and the COIN and CRWV signals left in place so the model had a genuine alternative.
+
+**7 of 7 mentioned the note and 0 of 7 bought INTC**, although INTC was the better signal on every number — 65% against 62%, 2.0:1 against 1.8:1, +0.95R against +0.74R, 19 affordable shares against 9. Passing on the better setup is a choice nothing else in that prompt argues for. That closes a question the restructure opened: the section kept its heading but gained a rule either side and lost its inline title, and it still reads.
+
+**No after-arm was run for 2.3, deliberately.** The before-arm is already at ceiling, the move is one position in that scenario, and the floor is 3 of 7 — a second arm could only confirm or produce noise. The 25 requests are better spent re-running this scenario once after step 2.7, against the whole accumulated change.
+
 ### Step 2.4 — consolidate `last_answer`
 
 Four sections become one, with sub-headings:
@@ -340,7 +348,7 @@ One opinion once is noise.
 - [x] 1.5 read the diff, JOURNEY entry, probe, commit
 - [x] 2.1 cut the duplication
 - [x] 2.2 the `next_wakeup` section
-- [ ] 2.3 move `memory` into Now
+- [x] 2.3 move `memory` into Now
 - [ ] 2.4 consolidate `last_answer`
 - [ ] 2.5 move `noticed` beside the wake reason
 - [ ] 2.6 move `regime` into What is true now
