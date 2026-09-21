@@ -43,24 +43,21 @@ The table is the order. The numbered notes under it are keyed to sections, not t
 | 6 | `## Your account` | 4 |
 | 7 | `## What you hold` | 5 |
 | 8 | `## Orders you placed that have not filled yet` | 5b |
-| 9 | `## What you just did, a moment ago, in this pass` | 13 |
+| 9 | `## What your last answer did` — four bold sub-headings inside it: **What you just did, a moment ago, in this pass**, **What you asked to read**, **What was not carried out**, **Your previous answer was refused. Fix it** | 11, 13 |
 | 10 | `## What was noticed since your last pass` | 12 |
 | 11 | `## Recent analyst signals` | 6 |
 | 12 | `## Your track record` | 8 |
 | 13 | `## Orders the broker would not take` | "What Python enforces" below |
 | 14 | `## How long an analysis takes` | 9 |
 | 15 | `## Your recent wakeups` | 10 |
-| 16 | `## What you asked to read` | 11 |
-| 17 | `## What was not carried out` | 11 |
-| 18 | `## Your previous answer was refused` | 11 |
-| 19 | `## Paying for research` | 7 |
-| 20 | `## Every ticker you track` | 7 |
-| 21 | `## Candidates you could research` | 7 |
-| 22 | `## Rules` | 14 |
-| 23 | `## Your next wakeup` | 1b |
-| 24 | `## Answer in this shape`, or `## How to answer` on the tool channel | 14 |
+| 16 | `## Paying for research` | 7 |
+| 17 | `## Every ticker you track` | 7 |
+| 18 | `## Candidates you could research` | 7 |
+| 19 | `## Rules` | 14 |
+| 20 | `## Your next wakeup` | 1b |
+| 21 | `## Answer in this shape`, or `## How to answer` on the tool channel | 14 |
 
-**A heading is load-bearing where a wake reason points at it.** `describe_wakeup` and `_asked_again` name four of these headings in so many words — "What was noticed since your last pass", "What you just did, a moment ago, in this pass", "What you asked to read", "What was not carried out", "Your previous answer was refused". Rename a heading and the pointer points at nothing, which is the exact failure the "no wake reason may promise a section" rule was written for.
+**A heading is load-bearing where a wake reason points at it.** `describe_wakeup` names "What was noticed since your last pass", and `_asked_again` names "What your last answer did". Rename either and the pointer points at nothing, which is the exact failure the "no wake reason may promise a section" rule was written for. **It named four headings until 2026-09-21**, one per section; those four are one section now and the pointer is one sentence.
 
 The notes:
 

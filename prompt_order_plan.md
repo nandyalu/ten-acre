@@ -231,6 +231,16 @@ The `asked_again` pointer list at the top then collapses from four pointers to o
 The outcomes block was measured at 4 of 4 above the tables and 0 of 4 below, so it must stay above `signals`; the target order keeps it there.
 The refusal block carries a time-critical warning — a read does not run on that turn — so check the model still acts on it from the new position.
 
+**Step 2.4 done 2026-09-21.** One `## What your last answer did` section, four bold sub-headings inside it, in the order a turn is experienced: carried out, read, not carried out, refused. The pointer at the top went from four names to one sentence. The refusal moved furthest — second-to-last before the rules, to above the signals table.
+
+**A probe variant had to be written first.** No variant carried a refusal, so nothing had ever measured whether the one thing a pass has a single turn left to get right is acted on. `retry` now builds that turn.
+
+**Result: no measurable difference.** The refusal was recalled by 5 of 7 before and 6 of 7 after. Where the block sits does not change whether it is read. One after-sample also read the dropped order, which had never been seen before.
+
+**Watch, do not conclude:** orders placed went 3 of 7 to 0 of 7. That is at the floor. One sample called holding the fix — *"after correcting the previous oversized order attempt"* — which is a defensible reading of "fix it".
+
+**A false alarm, recorded because the lesson is the point.** The first scan looked for `refus|500|declin` in the `thinking` field alone, reported 1 of 7, and I told the user the refusal was being read past. The full pass over both fields gave 5 of 7 for the same run. The skill says not to grep the reasoning for the words you wrote. Match on the fact, not on the phrasing, and print the match with its context rather than the start of the paragraph that contains it.
+
 ### Step 2.5 — move `noticed` up beside the wake reason
 
 Once the section sits next to the claim, delete the pointer in `describe_wakeup`.
@@ -349,7 +359,7 @@ One opinion once is noise.
 - [x] 2.1 cut the duplication
 - [x] 2.2 the `next_wakeup` section
 - [x] 2.3 move `memory` into Now
-- [ ] 2.4 consolidate `last_answer`
+- [x] 2.4 consolidate `last_answer`
 - [ ] 2.5 move `noticed` beside the wake reason
 - [ ] 2.6 move `regime` into What is true now
 - [ ] 2.7 add the `#` group headings

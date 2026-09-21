@@ -265,7 +265,7 @@ def describe(readings: list[str]) -> list[str]:
     """
     if not readings:
         return []
-    lines = []
+    lines = ["**What you asked to read.**", ""]
     for text in readings:
         lines += [text, ""]
     return lines

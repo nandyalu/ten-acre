@@ -212,7 +212,11 @@ def test_a_later_turn_names_the_wake_as_history():
     assert "A change to this app woke you." in prompt
     assert "## Why you are awake" not in prompt
     assert "**Why you are asked again.** This is the same pass, not a new wake" in prompt
-    assert '"What you just did, a moment ago, in this pass" below' in prompt
+    # One pointer since 2026-09-21, because the four sections it used to name
+    # individually are one section now.
+    assert 'All of it is under "What your last answer did" below.' in prompt
+    assert "## What your last answer did" in prompt
+    assert "**What you just did, a moment ago, in this pass.**" in prompt
 
 
 def test_the_first_turn_is_unchanged():
@@ -229,9 +233,7 @@ def test_each_reason_names_a_section_that_is_really_there():
     refused = agent_book.Rejection(side="buy", ticker="INTC", quantity=5, why="not enough cash")
     prompt = agent.build_prompt(_book(), [], {}, rejected=[refused], readings=["the case for INTC"])
 
-    assert '"What you asked to read" below' in prompt and "## What you asked to read" in prompt
-    assert (
-        '"Your previous answer was refused" below' in prompt
-        and "## Your previous answer was refused" in prompt
-    )
+    assert 'All of it is under "What your last answer did" below.' in prompt
+    assert "**What you asked to read.**" in prompt
+    assert "**Your previous answer was refused. Fix it:**" in prompt
     assert "What you just did, a moment ago" not in prompt

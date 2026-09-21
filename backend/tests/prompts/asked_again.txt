@@ -11,7 +11,7 @@ It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, a
 ## Why this pass started
 
 You asked to be woken now. See "What was noticed since your last pass" below.
-**Why you are asked again.** This is the same pass, not a new wake: the orders in your last answer have been carried out (see "What you just did, a moment ago, in this pass" below); and you asked to read an analysis (see "What you asked to read" below); and part of your last answer went with a read, so it was not carried out (see "What was not carried out" below); and part of your last answer was refused (see "Your previous answer was refused" below).
+**Why you are asked again.** This is the same pass, not a new wake: the orders in your last answer have been carried out; and you asked to read an analysis; and part of your last answer went with a read, so it was not carried out; and part of your last answer was refused. All of it is under "What your last answer did" below.
 
 ---
 
@@ -66,11 +66,31 @@ Use side "cancel" with the ticker to withdraw one you no longer want.
 
 ---
 
-## What you just did, a moment ago, in this pass
+## What your last answer did
 
-**You ordered these yourself, earlier in this same pass, and they have already happened.** They are not suggestions and not history from an older pass — they are the result of your own last answer, and anything you paid for is already paid for. Do not order them again. Read them before the tables below, because they may change what those mean. An analysis you paid for here also has its own row in the signals table, marked as yours; this is the reasoning behind that row.
+**What you just did, a moment ago, in this pass.** You ordered these yourself, earlier in this same pass, and they have already happened.** They are not suggestions and not history from an older pass — they are the result of your own last answer, and anything you paid for is already paid for. Do not order them again. Read them before the tables below, because they may change what those mean. An analysis you paid for here also has its own row in the signals table, marked as yours; this is the reasoning behind that row.
 
 - Analysis of INTC finished. It decided Buy.
+
+**What you asked to read.**
+
+INTC 2026-09-21 — Rating: Buy.
+
+
+The app computed the entry, stop and target.
+
+
+**What was not carried out.** Your last answer also asked to read, and only the read runs from an answer that asks for one. None of this happened:
+- SELL 5 NVDA
+Resend anything above that you still want, now that you have read it.
+
+**Your previous answer was refused. Fix it:**
+- BUY 80 INTC: costs $1,984.00 against $1,200.00 of cash
+Answer again, within the cash you actually have. If you want something you
+cannot afford, sell something first and list the sell before the buy.
+A read does not run on this turn — it is your one chance to fix the
+refusal above, not another chance to read. If you also want to read
+something, leave it for your next turn or wakeup and fix the order now.
 
 ---
 
@@ -130,35 +150,6 @@ Your recent wakeups, and whether each one led to an action:
 - 21 Sep 10:15 AM: did nothing
 - 21 Sep 11:00 AM: did nothing
 2 of the last 3 did nothing. Pick the next time for when you expect something to have changed, not out of habit.
-
----
-
-## What you asked to read
-
-INTC 2026-09-21 — Rating: Buy.
-
-
-The app computed the entry, stop and target.
-
----
-
-## What was not carried out
-
-Your last answer also asked to read, and only the read runs from an answer that asks for one. None of this happened:
-- SELL 5 NVDA
-Resend anything above that you still want, now that you have read it.
-
----
-
-## Your previous answer was refused
-
-Fix it:
-- BUY 80 INTC: costs $1,984.00 against $1,200.00 of cash
-Answer again, within the cash you actually have. If you want something you
-cannot afford, sell something first and list the sell before the buy.
-A read does not run on this turn — it is your one chance to fix the
-refusal above, not another chance to read. If you also want to read
-something, leave it for your next turn or wakeup and fix the order now.
 
 ---
 

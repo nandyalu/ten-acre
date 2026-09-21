@@ -60,6 +60,7 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 | Every section under a `##` heading, with a rule between | 7 before, 7 after | **No regression.** Every difference is inside the noise floor |
 | Cutting the repeated research explanation | 7 before, 7 after | **No regression.** Every difference is inside the noise floor |
 | Moving the wakeup ask and its fallback to one section at the end | 7 + 7 before, 7 after | **No regression.** The fallback is still read from the bottom, 7 of 7 |
+| A refusal fed back to the model | 5 of 7, then 6 of 7 | **Read.** Where the section sits made no measurable difference |
 
 ## Read, and the evidence for it
 
@@ -109,6 +110,16 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 **A zero here does not mean a section was skipped, and this probe is the reason to say so.** "Your track record" scored 0 of 7 on quoting its net figure, and 5 of 7 samples called `track_record`. That section is one line and a pointer to a fetch, so its content never appears in the prompt to be quoted — the fetch is the evidence it was read. The same holds for "Every ticker you track": its `+14.0%` on INTC is what sent three after-samples to research INTC. **Before scoring a one-line pointer section as unread, check whether the model called the tool it points at.**
 
 **"How long an analysis takes" is untested rather than ignored.** No sample needed it: research runs inside the pass, so nobody had to plan a wakeup around one. Rebuild a scenario where a pass must wait before judging it.
+
+**A refusal is read, and it took a new probe variant to find out (2026-09-21).** No variant carried a refusal until this date, so nothing had ever measured whether the one thing a pass has a single turn left to get right is acted on. A `retry` variant now builds the turn after an answer that was partly carried out, partly refused, and partly dropped for riding along beside a read — all four reasons to be asked again in one prompt.
+
+The refusal read `BUY 500 COIN: costs more than the $8,556.59 you have`, under "Fix it:". **5 of 7 samples recalled it with the four sections spread across the prompt, and 6 of 7 with them consolidated into one** — *"I remember I tried to buy 500 shares of COIN last time, but that was rejected"*, *"that earlier attempt to buy a massive 500 shares which was, obviously, nonsensical"*. A difference of one, inside the floor: **where the block sits makes no measurable difference to whether it is read.**
+
+**One sample in the consolidated arm also read the dropped order** — *"We tried (but failed) to sell 1 share"* — which had never been observed before, because no variant had carried one.
+
+**What the model does with a refusal is not the same as reading it.** Orders placed went from 3 of 7 to 0 of 7 across the two arms, which is at the floor and not a finding. One sample called holding the fix: *"Holding current COIN position and cash after correcting the previous oversized order attempt."* That is a defensible reading of "fix it" — the refused order was nonsense, and not repeating it is a correction. Watch whether the zero persists rather than assuming either way.
+
+**This entry began as a false alarm, and the correction is the lesson.** The first scan looked for `refus|500|declin` in the `thinking` field alone and reported 1 of 7, which read as the refusal being skipped. The full pass over reasoning and thinking, matching on the refused order rather than on words from the prompt, gave 5 of 7 for the same run. **The skill says not to grep the reasoning for the words you wrote, and this is what happens when you do.**
 
 ## Unconfirmed as read, and kept anyway
 

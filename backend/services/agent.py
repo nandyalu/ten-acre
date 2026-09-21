@@ -852,21 +852,13 @@ def _asked_again(
     """
     reasons = []
     if outcomes:
-        reasons.append(
-            'the orders in your last answer have been carried out (see "What you '
-            'just did, a moment ago, in this pass" below)'
-        )
+        reasons.append("the orders in your last answer have been carried out")
     if readings:
-        reasons.append('you asked to read an analysis (see "What you asked to read" below)')
+        reasons.append("you asked to read an analysis")
     if dropped_with_read:
-        reasons.append(
-            'part of your last answer went with a read, so it was not carried out '
-            '(see "What was not carried out" below)'
-        )
+        reasons.append("part of your last answer went with a read, so it was not carried out")
     if rejected:
-        reasons.append(
-            'part of your last answer was refused (see "Your previous answer was refused" below)'
-        )
+        reasons.append("part of your last answer was refused")
     return reasons
 
 
@@ -1054,20 +1046,54 @@ def describe_pending_orders() -> list[str]:
     return lines
 
 
-def describe_outcomes(outcomes: list[str]) -> list[str]:
-    """What this pass's own earlier orders already did.
+def describe_last_answer(
+    outcomes: list[str] | None = None,
+    readings: list[str] | None = None,
+    dropped_with_read: list[dict] | None = None,
+    rejected: list | None = None,
+    answer_by_tool: bool = False,
+) -> list[str]:
+    """Everything the agent's previous answer produced, in one section.
 
-    **This sits above the signal table, and that placement was measured
-    (2026-09-12).** It was between the two tables, at 42% of the prompt, and
-    four probe runs against the live book referenced it not once — the model
-    read the clock, the account and the tables, and skimmed the prose between
-    them. It also changes how the tables below should be read, which is an
-    argument for being above them anyway.
+    **These were four sections until 2026-09-21, and they were far apart.**
+    What was carried out sat above the signals table; what was read, what was
+    dropped for riding along beside a read, and what was refused sat below it,
+    past the track record and the wakeups. `_asked_again` named all four by
+    name, one pointer each, because nothing else held them together. They are
+    one section now and the pointer is one sentence.
+
+    Ordered the way the agent experiences a turn: what ran, what it was shown,
+    what did not run, what was declined.
+
+    **The whole section sits above the signal table, and that placement was
+    measured (2026-09-12).** The outcomes half was between the two tables, at
+    42% of the prompt, and four probe runs against the live book referenced it
+    not once — the model read the clock, the account and the tables, and
+    skimmed the prose between them. It also changes how the tables below should
+    be read, which is an argument for being above them anyway.
     """
+    parts = [
+        _describe_outcomes(outcomes or []),
+        analysis_reader.describe(readings or []),
+        describe_not_carried_out(dropped_with_read or []),
+        describe_refusals(rejected or [], answer_by_tool),
+    ]
+    lines: list[str] = []
+    for part in parts:
+        if part:
+            if lines:
+                lines.append("")
+            lines += part
+    return lines
+
+
+def _describe_outcomes(outcomes: list[str]) -> list[str]:
+    """What this pass's own earlier orders already did."""
     if not outcomes:
         return []
     return [
-        "**You ordered these yourself, earlier in this same pass, and they have "
+        "**What you just did, a moment ago, in this pass.** You ordered these "
+        "yourself, earlier in this same pass, and they have "
         "already happened.** They are not suggestions and not history from an "
         "older pass — they are the result of your own last answer, and anything "
         "you paid for is already paid for. Do not order them again. Read them "
@@ -1216,8 +1242,8 @@ def describe_not_carried_out(dropped_with_read: list[dict]) -> list[str]:
     if not dropped_with_read:
         return []
     return [
-        "Your last answer also asked to read, and only the read runs from an "
-        "answer that asks for one. None of this happened:",
+        "**What was not carried out.** Your last answer also asked to read, and "
+        "only the read runs from an answer that asks for one. None of this happened:",
         *(f"- {_describe_order(o)}" for o in dropped_with_read),
         "Resend anything above that you still want, now that you have read it.",
     ]
@@ -1232,7 +1258,7 @@ def describe_refusals(rejected: list, answer_by_tool: bool = False) -> list[str]
     if not rejected:
         return []
     return [
-        "Fix it:",
+        "**Your previous answer was refused. Fix it:**",
         *(f"- {r.side.upper()} {r.quantity:g} {r.ticker}: {r.why}" for r in rejected),
         "Answer again, within the cash you actually have. If you want something you",
         "cannot afford, sell something first and list the sell before the buy.",
@@ -1618,7 +1644,8 @@ def build_prompt(
         ("Your account", describe_account(book, unsettled_cash)),
         ("What you hold", describe_holdings(book, price_ranges)),
         ("Orders you placed that have not filled yet", describe_pending_orders()),
-        ("What you just did, a moment ago, in this pass", describe_outcomes(outcomes or [])),
+        ("What your last answer did",
+         describe_last_answer(outcomes, readings, dropped_with_read, rejected, answer_by_tool)),
         # **What the rules noticed, as facts.** News about the world rather
         # than an answer to something the agent said, which is why it sits with
         # the account and the holdings rather than with the refusals and
@@ -1632,13 +1659,6 @@ def build_prompt(
         ("How long an analysis takes",
          describe_analysis_timing(analysis_minutes or [], running_analyses or {})),
         ("Your recent wakeups", describe_recent_wakeups(wakeups or [], brief=answer_by_tool)),
-        # What it asked to read on the previous turn. Its own section, with its
-        # own break, since 2026-09-16 — it used to run on straight from "recent
-        # wakeups" with no divider, and read as that section's last line rather
-        # than a reply to something the agent said moments ago.
-        ("What you asked to read", analysis_reader.describe(readings or [])),
-        ("What was not carried out", describe_not_carried_out(dropped_with_read or [])),
-        ("Your previous answer was refused", describe_refusals(rejected or [], answer_by_tool)),
         ("Paying for research", describe_research_price(price) if can_research else []),
         ("Every ticker you track", tracked),
         ("Candidates you could research", candidates),
@@ -3271,7 +3291,8 @@ def describe_wakeup(
     if asked_again:
         lines.append(
             "**Why you are asked again.** This is the same pass, not a new wake: "
-            + "; and ".join(asked_again) + "."
+            + "; and ".join(asked_again)
+            + '. All of it is under "What your last answer did" below.'
         )
     if note and early:
         lines.append(f'**The note you left for your wakeup on {when}:** "{note}"')

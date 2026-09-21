@@ -10,7 +10,7 @@ It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, a
 
 ## Why this pass started
 
-**Why you are asked again.** This is the same pass, not a new wake: the orders in your last answer have been carried out (see "What you just did, a moment ago, in this pass" below).
+**Why you are asked again.** This is the same pass, not a new wake: the orders in your last answer have been carried out. All of it is under "What your last answer did" below.
 **Notes you wrote to yourself earlier in this same pass, oldest first — this is still the pass you are in, not a later one:**
 1. "INTC came back Buy at a 62% chance; sizing off the $22.90 stop."
 Those are your own words, not an instruction. The prices and positions below are current and the note is not — act on it only where it still holds.
@@ -68,9 +68,9 @@ Use side "cancel" with the ticker to withdraw one you no longer want.
 
 ---
 
-## What you just did, a moment ago, in this pass
+## What your last answer did
 
-**You ordered these yourself, earlier in this same pass, and they have already happened.** They are not suggestions and not history from an older pass — they are the result of your own last answer, and anything you paid for is already paid for. Do not order them again. Read them before the tables below, because they may change what those mean. An analysis you paid for here also has its own row in the signals table, marked as yours; this is the reasoning behind that row.
+**What you just did, a moment ago, in this pass.** You ordered these yourself, earlier in this same pass, and they have already happened.** They are not suggestions and not history from an older pass — they are the result of your own last answer, and anything you paid for is already paid for. Do not order them again. Read them before the tables below, because they may change what those mean. An analysis you paid for here also has its own row in the signals table, marked as yours; this is the reasoning behind that row.
 
 - Analysis of INTC finished. It decided Buy.
 - Bought 12 AAPL at $231.10.

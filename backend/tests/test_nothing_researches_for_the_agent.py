@@ -197,10 +197,14 @@ def test_what_the_agent_just_did_sits_above_the_signal_table():
         alerts=[{"at": "12 Sep 9:31 AM", "text": "AAA moved -6% today."}],
     )
 
-    did = prompt.index("## What you just did")
+    # "What you just did" is one part of "What your last answer did" since
+    # 2026-09-21. The measured constraint is unchanged: both sections stay
+    # above the signals table.
+    did = prompt.index("**What you just did, a moment ago, in this pass.**")
     noticed = prompt.index("## What was noticed")
-    table = prompt.index("Recent analyst signals")
+    table = prompt.index("## Recent analyst signals")
 
+    assert prompt.index("## What your last answer did") < did
     assert did < noticed < table
 
 
