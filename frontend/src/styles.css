@@ -1657,6 +1657,53 @@ table {
   background: var(--warn-soft);
 }
 
+/* What an order asked for beyond its size: the price a limit named, the
+   levels an adjust moves the exits to. Set apart from the reason beside it —
+   these are the agent's own numbers, and the reason is its prose. */
+.order-detail {
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The reason, and the "why" under a refusal.
+
+   `max-content` is the whole point of this rule: the row is a flex line, so
+   an item wraps to a line of its own when its unwrapped width will not fit in
+   what is left. A short reason therefore sits beside its order, and a long
+   one moves down whole rather than starting beside the ticker and dangling
+   under it with a ragged first line. `min-width: 0` lets it then shrink to
+   the row and wrap inside itself. */
+.orders .order-why {
+  flex: 1 1 max-content;
+  min-width: 0;
+}
+
+/* One turn of a multi-turn pass. The turns used to be a flat run of labels
+   and lists with nothing around them, so `.orders`' own top margin left a
+   turn's orders sitting nearer the NEXT turn's label than their own — they
+   read as though they belonged to the turn below. */
+.turn {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.turn:first-of-type {
+  margin-top: 0;
+}
+
+.turn > .turn-label:first-child {
+  margin-top: 0;
+}
+
+.turn .orders {
+  margin-top: var(--sp-3);
+}
+
 .transcript {
   display: flex;
   flex-wrap: wrap;

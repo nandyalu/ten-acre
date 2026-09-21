@@ -38,72 +38,118 @@
         log has the reason.
       </p>
     }
-    <!-- A pass with more than one turn asked more than once — a refusal
-         earned a correction, or the agent read an analysis before deciding.
-         Each turn gets its own reasoning and its own list of what it asked
-         for, always visible: 2026-09-15 fixed a pass whose reasoning showed
-         only its last turn, hiding the two decisions it actually made. Turns
-         recorded before that date carry no `reasoning`/`orders` of their
-         own, so this falls back to the single summary below. -->
-    @if ((event().turns?.length ?? 0) > 1 && turnReasoning(event().turns![0])) {
+    <!-- Every turn the pass kept gets its own block: its own reasoning and
+         its own list of what it asked for, always visible. 2026-09-15 fixed a
+         pass whose reasoning showed only its last turn, hiding the two
+         decisions it actually made.
+
+         One turn counts as a turn (2026-09-20). It was `> 1` until then, so a
+         pass that fetched an analysis and then bought on it showed the buy
+         with no sign of the fetch that produced it, and the same pass drawn
+         two ways depending on a count the reader could not see.
+
+         The `@else` below is for a pass with no turn on record at all — one
+         from before 2026-09-10, or a single-turn pass that fetched nothing,
+         which `_turns_worth_keeping` does not store — and for a turn recorded
+         before 2026-09-15, which carries no `reasoning` or `orders` of its
+         own. Those fall back to the pass's single summary. -->
+    @if ((event().turns?.length ?? 0) > 0 && turnReasoning(event().turns![0])) {
       @for (turn of event().turns ?? []; track $index) {
-        <p class="turn-label">Turn {{ $index + 1 }} of {{ event().turns?.length }}</p>
-        @if (turnExchanges(turn).length) {
-          <!-- What it fetched before answering, on the tool channel: a read,
-               the candidate screen, a ticker's fundamentals. One row each, in
-               the order the agent asked, styled like the orders below since
-               a read used to be one. The full text of each result is under
-               "Show the prompt". -->
-          <ul class="orders">
-            @for (fetched of turnExchanges(turn); track $index) {
-              <li>
-                <span class="side" [class.side--refused]="!fetchRan(fetched)">
-                  <span
-                    class="status-icon"
-                    [class.status-icon--ok]="fetchRan(fetched)"
-                    [class.status-icon--fail]="!fetchRan(fetched)"
-                  ></span
-                  >fetched {{ fetched.name }}
-                </span>
-                @if (fetchTarget(fetched)) {
-                  <strong>{{ fetchTarget(fetched) }}</strong>
-                }
-                @if (!fetchRan(fetched)) {
-                  <span class="muted">{{ fetched.result }}</span>
-                }
-              </li>
-            }
-          </ul>
-        }
-        @if (turnReasoning(turn)) {
-          <p class="reasoning">{{ turnReasoning(turn) }}</p>
-        }
-        @if (turnNotesIn(turn).length) {
-          <div class="agent-note">
-            <p class="agent-note-label">The agent asked for something</p>
-            @for (note of turnNotesIn(turn); track $index) {
-              <p class="agent-note-text">{{ note }}</p>
-            }
-          </div>
-        }
-        @if (turnTradesIn(turn).length) {
-          <ul class="orders">
-            @for (order of turnTradesIn(turn); track $index) {
-              <li>
-                <span class="side side--{{ order.side }}">
-                  <span class="status-icon status-icon--ok"></span>{{ order.side }}
-                </span>
-                <strong>{{ order.ticker }}</strong>
-                @if (order.quantity) {
-                  <span>{{ order.quantity }}</span>
-                }
-                @if (order.reason) {
-                  <span class="muted">{{ order.reason }}</span>
-                }
-              </li>
-            }
-          </ul>
-        }
+        <!-- Each turn is its own block. They used to be a flat run of labels
+             and lists, so a turn's orders sat nearer the NEXT turn's label
+             than their own and read as though they belonged to it. -->
+        <section class="turn">
+          <p class="turn-label">Turn {{ $index + 1 }} of {{ event().turns?.length }}</p>
+          @if (turnExchanges(turn).length) {
+            <!-- What it fetched before answering, on the tool channel: a read,
+                 the candidate screen, a ticker's fundamentals. One row each, in
+                 the order the agent asked, styled like the orders below since
+                 a read used to be one. The full text of each result is under
+                 "Show the prompt". -->
+            <ul class="orders">
+              @for (fetched of turnExchanges(turn); track $index) {
+                <li>
+                  <span class="side" [class.side--refused]="!fetchRan(fetched)">
+                    <span
+                      class="status-icon"
+                      [class.status-icon--ok]="fetchRan(fetched)"
+                      [class.status-icon--fail]="!fetchRan(fetched)"
+                    ></span
+                    >fetched {{ fetched.name }}
+                  </span>
+                  @if (fetchTicker(fetched)) {
+                    <strong
+                      ><a [routerLink]="['/research/ticker', fetchTicker(fetched)]">{{
+                        fetchTicker(fetched)
+                      }}</a></strong
+                    >
+                  }
+                  @if (fetchDate(fetched)) {
+                    <!-- `&ngsp;` keeps a real space between the ticker and the
+                         date. The flex gap already separates them on screen;
+                         this is for anything reading the row as text, which
+                         would otherwise get "NVDA(2026-09-08)". -->
+                    <span class="muted">&ngsp;{{ fetchDate(fetched) }}</span>
+                  }
+                  @if (!fetchRan(fetched)) {
+                    <span class="muted order-why">{{ fetched.result }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          }
+          @if (turnReasoning(turn)) {
+            <p class="reasoning">{{ turnReasoning(turn) }}</p>
+          }
+          @if (turnNotesIn(turn).length) {
+            <div class="agent-note">
+              <p class="agent-note-label">The agent asked for something</p>
+              @for (note of turnNotesIn(turn); track $index) {
+                <p class="agent-note-text">{{ note }}</p>
+              }
+            </div>
+          }
+          @if (turnTradesIn(turn).length) {
+            <ul class="orders">
+              @for (order of turnTradesIn(turn); track $index) {
+                <li>
+                  <span class="side side--{{ order.side }}">
+                    <span class="status-icon status-icon--ok"></span>{{ order.side }}
+                  </span>
+                  @if (order.ticker) {
+                    <strong
+                      ><a [routerLink]="['/research/ticker', order.ticker]">{{
+                        order.ticker
+                      }}</a></strong
+                    >
+                  }
+                  @if (order.quantity) {
+                    <span>{{ order.quantity }}</span>
+                  }
+                  <!-- What it asked for beyond the size: the price a limit
+                       named, the levels an adjust moves the exits to. -->
+                  @if (orderDetail(order)) {
+                    <span class="order-detail">{{ orderDetail(order) }}</span>
+                  }
+                  @if (order.reason) {
+                    <span class="muted order-why">{{ order.reason }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
+      @if (anyTurnNoted(event())) {
+        <!-- The turn blocks above print each note where it was written. This
+             says once, for the pass, what a note is — the flat layout below
+             carries the same paragraph inside its own note block, and a pass
+             with a note in three turns must not repeat it three times. -->
+        <p class="hint">
+          Nothing acts on a note automatically. It is the agent telling whoever maintains it what
+          would help — a tool it lacks, a number it cannot see. Building what it asks for is a
+          change like any other, and goes in the journal first.
+        </p>
       }
       @if (event().refused.length || failedIn(event()).length) {
         <!-- What a turn asked for above is not always what happened: an
@@ -111,14 +157,24 @@
              screened clean. Those are pass-wide outcomes, not one turn's,
              so they stay a single list rather than trying to guess which
              turn each belongs to. -->
+        <p class="hint">
+          A row inside a turn is what the agent <strong>asked</strong> for on that turn. These are
+          what happened to it afterwards, and one order can appear in both.
+        </p>
         <ul class="orders">
           @for (order of event().refused; track $index) {
             <li>
               <span class="side side--refused">
                 <span class="status-icon status-icon--fail"></span><app-term key="refused" />
               </span>
-              <strong>{{ order.ticker }}</strong>
-              <span class="muted">{{ order.why }}</span>
+              @if (order.ticker) {
+                <strong
+                  ><a [routerLink]="['/research/ticker', order.ticker]">{{
+                    order.ticker
+                  }}</a></strong
+                >
+              }
+              <span class="muted order-why">{{ order.why }}</span>
             </li>
           }
           @for (order of failedIn(event()); track $index) {
@@ -131,8 +187,14 @@
                   <app-term key="broker-said-no" />
                 }
               </span>
-              <strong>{{ order.ticker }}</strong>
-              <span class="muted">{{ order.why }}</span>
+              @if (order.ticker) {
+                <strong
+                  ><a [routerLink]="['/research/ticker', order.ticker]">{{
+                    order.ticker
+                  }}</a></strong
+                >
+              }
+              <span class="muted order-why">{{ order.why }}</span>
             </li>
           }
         </ul>
@@ -175,11 +237,19 @@
                 ></span
                 >fetched {{ fetched.name }}
               </span>
-              @if (fetchTarget(fetched)) {
-                <strong>{{ fetchTarget(fetched) }}</strong>
+              @if (fetchTicker(fetched)) {
+                <strong
+                  ><a [routerLink]="['/research/ticker', fetchTicker(fetched)]">{{
+                    fetchTicker(fetched)
+                  }}</a></strong
+                >
+              }
+              @if (fetchDate(fetched)) {
+                <!-- `&ngsp;` for the same reason as the multi-turn row above. -->
+                <span class="muted">&ngsp;{{ fetchDate(fetched) }}</span>
               }
               @if (!fetchRan(fetched)) {
-                <span class="muted">{{ fetched.result }}</span>
+                <span class="muted order-why">{{ fetched.result }}</span>
               }
             </li>
           }
@@ -210,12 +280,23 @@
               <span class="side side--{{ order.side }}">
                 <span class="status-icon status-icon--ok"></span>{{ order.side }}
               </span>
-              <strong>{{ order.ticker }}</strong>
+              @if (order.ticker) {
+                <strong
+                  ><a [routerLink]="['/research/ticker', order.ticker]">{{
+                    order.ticker
+                  }}</a></strong
+                >
+              }
               @if (order.quantity) {
                 <span>{{ order.quantity }}</span>
               }
+              <!-- What it asked for beyond the size: the price a limit named,
+                   the levels an adjust moves the exits to. -->
+              @if (orderDetail(order)) {
+                <span class="order-detail">{{ orderDetail(order) }}</span>
+              }
               @if (order.reason) {
-                <span class="muted">{{ order.reason }}</span>
+                <span class="muted order-why">{{ order.reason }}</span>
               }
             </li>
           }
@@ -224,8 +305,14 @@
               <span class="side side--refused">
                 <span class="status-icon status-icon--fail"></span><app-term key="refused" />
               </span>
-              <strong>{{ order.ticker }}</strong>
-              <span class="muted">{{ order.why }}</span>
+              @if (order.ticker) {
+                <strong
+                  ><a [routerLink]="['/research/ticker', order.ticker]">{{
+                    order.ticker
+                  }}</a></strong
+                >
+              }
+              <span class="muted order-why">{{ order.why }}</span>
             </li>
           }
           @for (order of failedIn(event()); track $index) {
@@ -238,8 +325,14 @@
                   <app-term key="broker-said-no" />
                 }
               </span>
-              <strong>{{ order.ticker }}</strong>
-              <span class="muted">{{ order.why }}</span>
+              @if (order.ticker) {
+                <strong
+                  ><a [routerLink]="['/research/ticker', order.ticker]">{{
+                    order.ticker
+                  }}</a></strong
+                >
+              }
+              <span class="muted order-why">{{ order.why }}</span>
             </li>
           }
         </ul>

@@ -1,5 +1,6 @@
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
 import {
   AgentEvent,
@@ -25,7 +26,7 @@ import { CopyButton } from '../../shared/copy-button';
 @Component({
   selector: 'app-decision-card',
   standalone: true,
-  imports: [DecimalPipe, Term, CopyButton],
+  imports: [DecimalPipe, RouterLink, Term, CopyButton],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './decision-card.html',
 })
@@ -106,8 +107,23 @@ export class DecisionCard {
     return (turn.orders ?? []).filter((o) => o.side === 'note').map((o) => o.reason);
   }
 
+  /** `memory` is held out alongside `note` for the same reason: both are the
+   * agent writing a sentence, not moving anything, and neither has a ticker
+   * or a quantity — rendered here they read as a trade in a stock called "".
+   * A memory note has no display of its own on this page yet, and had none
+   * before either: `_orders_json` never recorded one, so nothing is lost that
+   * the page used to show. */
   turnTradesIn(turn: DecisionTurn): AgentEventOrder[] {
-    return (turn.orders ?? []).filter((o) => o.side !== 'note');
+    return (turn.orders ?? []).filter((o) => o.side !== 'note' && o.side !== 'memory');
+  }
+
+  /** Whether any turn of the pass left a note.
+   *
+   * The turn blocks print each note where it was written; this decides
+   * whether the paragraph explaining what a note *is* prints once under them.
+   * A pass that left a note in three turns must not explain it three times. */
+  anyTurnNoted(event: AgentEvent): boolean {
+    return (event.turns ?? []).some((turn) => this.turnNotesIn(turn).length > 0);
   }
 
   /** What one turn fetched before it answered. Defaulted for the same reason
@@ -125,11 +141,61 @@ export class DecisionCard {
   /** What a fetch was asked about: the ticker, and the date when one was
    * given. Empty for the fetches that take nothing. */
   fetchTarget(exchange: DecisionExchange): string {
+    return [this.fetchTicker(exchange), this.fetchDate(exchange)].filter(Boolean).join(' ');
+  }
+
+  /** The two halves of `fetchTarget`, so the row can link the ticker and
+   * leave the date as plain text beside it. */
+  fetchTicker(exchange: DecisionExchange): string {
     const ticker = exchange.args?.['ticker'];
+    return ticker ? String(ticker) : '';
+  }
+
+  fetchDate(exchange: DecisionExchange): string {
     const date = exchange.args?.['date'];
-    return [ticker ? String(ticker) : '', date ? `(${String(date)})` : '']
-      .filter(Boolean)
-      .join(' ');
+    return date ? `(${String(date)})` : '';
+  }
+
+  /** What an order asked for beyond its ticker and its size, in a few words.
+   *
+   * On a buy or a sell: whether it traded at the going price or named one,
+   * and how long a named price may wait. On an adjust: which exits moved and
+   * to what. Empty for every other side, and for any order recorded before
+   * 2026-09-20 — the fields existed and were acted on, and nothing wrote them
+   * down, so an absent `order_type` means "not recorded", never "market".
+   *
+   * Where the old level came from is the pass's own outcome line in `reason`
+   * ("AAPL: moved stop from $330.00 to $334.16"), not this: an order is what
+   * the agent asked for, and it never states what the exit was resting at. */
+  orderDetail(order: AgentEventOrder): string {
+    const parts: string[] = [];
+    if (order.side === 'adjust') {
+      if (order.stop != null) parts.push(`stop to ${this.money(order.stop)}`);
+      if (order.target != null) parts.push(`target to ${this.money(order.target)}`);
+    }
+    if (order.side === 'buy' || order.side === 'sell') {
+      const kind = (order.order_type ?? '').toLowerCase().trim();
+      if (kind === 'limit' && order.limit_price != null) {
+        parts.push(`limit ${this.money(order.limit_price)}`);
+        // Only a limit order waits. A market order is filled or rejected at
+        // once, so saying when it would expire would describe nothing.
+        parts.push(
+          (order.time_in_force ?? '').toLowerCase().trim() === 'gtc'
+            ? 'stays past today'
+            : 'expires at the close',
+        );
+      } else if (kind) {
+        parts.push(`${kind} order`);
+      }
+    }
+    return parts.join(' · ');
+  }
+
+  private money(value: number): string {
+    return `$${value.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   }
 
   /** One fetch as a few words, for the prompt panel's label. A `decide` here

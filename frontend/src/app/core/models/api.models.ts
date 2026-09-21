@@ -418,6 +418,18 @@ export interface AgentEventOrder {
   ticker: string;
   quantity: number;
   reason: string;
+  /** Whether a buy or a sell trades now at the going price (`market`) or only
+   * at `limit_price` or better (`limit`). */
+  order_type?: string | null;
+  /** The price a limit order named. Null on a market order, which has none. */
+  limit_price?: number | null;
+  /** How long a limit order may wait: `day` is gone at the close, `gtc` waits
+   * until it fills or is cancelled. */
+  time_in_force?: string | null;
+  /** The level an `adjust` moves the stop to. */
+  stop?: number | null;
+  /** The level an `adjust` moves the take-profit to. */
+  target?: number | null;
 }
 
 /** One decision pass, with the words that produced it.

@@ -3398,6 +3398,41 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
 
 
 
+_ORDER_DETAIL_KEYS = ("order_type", "limit_price", "time_in_force", "stop", "target")
+_ORDER_DETAIL_PRICES = ("limit_price", "stop", "target")
+
+
+def _order_detail(order: dict) -> dict:
+    """What an order asked for beyond its ticker and its size.
+
+    On a buy or a sell: whether it is a market or a limit order, the price a
+    limit named, and how long it may wait. On an adjust: the levels it moves
+    the stop and the target to. Every one of these was parsed, acted on, and
+    then dropped before anything wrote it down — so the Decisions page could
+    only ever say "buy AAPL 5", never "limit $330.00", and an adjust was one
+    opaque row. Kept on the record since 2026-09-20.
+
+    A key the order did not carry is left out rather than stored as null, so a
+    plain market order's record is the same size it has always been. A price
+    the model wrote as text is read as a number here, and dropped when it is
+    not one: this is the record, and a string where a price belongs would only
+    be rendered as something the agent did not say.
+    """
+    detail: dict = {}
+    for key in _ORDER_DETAIL_KEYS:
+        value = order.get(key)
+        if value is None or value == "":
+            continue
+        if key in _ORDER_DETAIL_PRICES:
+            try:
+                detail[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+        else:
+            detail[key] = str(value)
+    return detail
+
+
 def _turn(prompt: str, answer) -> dict:
     """One turn of a pass, for the record.
 
@@ -3436,6 +3471,7 @@ def _turn(prompt: str, answer) -> dict:
                 "ticker": str(o.get("ticker", "")),
                 "quantity": o.get("quantity") or 0,
                 "reason": str(o.get("reason") or ""),
+                **_order_detail(o),
             }
             for o in orders
         ],
@@ -4970,9 +5006,13 @@ def _orders_json(run: "AgentRun") -> str | None:
     show a pass that untracked two tickers as having done nothing.
     """
     orders = (
+        # `_order_detail` carries the limit price and the time in force, so a
+        # row can say which kind of order this was rather than leaving every
+        # buy looking like a market order.
         [{"side": o["side"], "ticker": o["ticker"],
           "quantity": o.get("quantity") or 0,
-          "reason": str(o.get("reason") or "")[:300]}
+          "reason": str(o.get("reason") or "")[:300],
+          **_order_detail(o)}
          for o in run.placed]
         # The ticker is cut from the front of the message, which reads
         # "AVGO: moved stop to $333.84." — so the first word carries the colon
@@ -5338,7 +5378,11 @@ def adjust_exits(
             failed.append(f"{kind} ({exc})")
             continue
         db.move_resting_exit(existing.id, level)
-        moved.append((kind, level))
+        # The level it was at is carried alongside the new one: "moved stop to
+        # $334.16" never said what it moved from, so neither the next prompt
+        # nor the Decisions page could tell a stop being raised from a stop
+        # being loosened. NULL on a resting exit with no recorded price.
+        moved.append((kind, level, existing.limit_price))
 
     # Whatever had nothing resting yet is placed now, in one call so a pair
     # still goes out as a pair.
@@ -5365,7 +5409,10 @@ def adjust_exits(
                 armed = [(k, v) for k, v in armed if k not in levels]
                 failed.append(unguarded)
 
-    parts = [f"moved {k} to ${v:,.2f}" for k, v in moved]
+    parts = [
+        f"moved {k} from ${old:,.2f} to ${v:,.2f}" if old is not None else f"moved {k} to ${v:,.2f}"
+        for k, v, old in moved
+    ]
     parts += [f"placed {k} at ${v:,.2f}" for k, v in armed]
     if failed:
         parts += [f"could not move {f}" for f in failed]

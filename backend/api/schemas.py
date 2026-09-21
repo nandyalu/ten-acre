@@ -469,6 +469,19 @@ class AgentEventOrderOut(Schema):
     ticker: str
     quantity: float = 0
     reason: str = ""
+    # What the order asked for beyond its size — see ``agent._order_detail``.
+    # On a buy or a sell: the order type, the price a limit named, and how
+    # long it may wait. On an adjust: the levels it moves the exits to.
+    #
+    # All null on an order recorded before 2026-09-20, when these were parsed,
+    # acted on and dropped, and on a plain market order, which names no price
+    # of its own. A reader must treat a null as "not recorded", never as
+    # "market".
+    order_type: str | None = None
+    limit_price: float | None = None
+    time_in_force: str | None = None
+    stop: float | None = None
+    target: float | None = None
 
 
 class AgentNoteOut(Schema):

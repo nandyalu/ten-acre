@@ -118,5 +118,9 @@
   {
     "date": "2026-09-20",
     "message": "Analyst ratings commit harder now: a conflicting debate alone no longer defaults to Hold, so expect fewer Holds and more Overweight and Underweight calls than before today."
+  },
+  {
+    "date": "2026-09-20",
+    "message": "An adjust's outcome now names the level it moved from as well as the level it moved to: \"moved stop from $330.00 to $334.16\", not just \"moved stop to $334.16\"."
   }
 ]

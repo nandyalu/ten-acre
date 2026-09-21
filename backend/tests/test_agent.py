@@ -2379,6 +2379,10 @@ def test_moving_a_stop_replaces_rather_than_cancelling(monkeypatch):
     assert result["ok"] is True
     assert replaced == [("abc", "stop", 336.50)]
     assert moved == [(1, 336.50)], "the ledger has to follow the broker"
+    # The level it moved from, not only the one it moved to. "moved stop to
+    # $336.50" cannot be read as raising a stop or loosening one, and this
+    # message is both the next prompt's outcome line and the Decisions row.
+    assert result["message"] == "GOOG: moved stop from $315.04 to $336.50."
 
 
 def test_a_level_that_would_execute_at_once_is_refused(monkeypatch):
@@ -2538,6 +2542,60 @@ def test_an_adjust_records_the_ticker_without_its_separator():
     assert orders[0]["ticker"] == "AVGO"
     # The message itself is the record and keeps its original wording.
     assert orders[0]["reason"] == "AVGO: moved stop to $345.00."
+
+
+def test_a_placed_order_records_the_price_it_named():
+    """A limit order's own terms reach the record.
+
+    They were parsed, acted on and dropped, so a limit buy and a market buy
+    were the same four fields afterwards and the Decisions page could not tell
+    them apart.
+    """
+    run = agent.AgentRun(placed=[
+        {"side": "buy", "ticker": "AAPL", "quantity": 5, "reason": "cheap",
+         "order_type": "limit", "limit_price": 330.0, "time_in_force": "gtc"},
+        {"side": "sell", "ticker": "MSFT", "quantity": 2, "reason": "done",
+         "order_type": "market"},
+    ])
+
+    orders = json.loads(agent._orders_json(run))
+
+    assert orders[0]["order_type"] == "limit"
+    assert orders[0]["limit_price"] == 330.0
+    assert orders[0]["time_in_force"] == "gtc"
+    # A market order names no price, and a null one would read as a limit of
+    # nothing. The key is absent instead.
+    assert orders[1]["order_type"] == "market"
+    assert "limit_price" not in orders[1]
+
+
+def test_an_order_detail_drops_a_price_that_is_not_a_number():
+    """The model writes the record's contents. A price it wrote as prose is
+    left out rather than stored, because the page would render it as a figure
+    the agent never gave."""
+    detail = agent._order_detail(
+        {"side": "buy", "order_type": "limit", "limit_price": "about $330"}
+    )
+
+    assert detail == {"order_type": "limit"}
+    # A price written as a numeric string is still a price.
+    assert agent._order_detail({"limit_price": "330.00"})["limit_price"] == 330.0
+
+
+def test_a_turn_records_the_levels_an_adjust_asked_for():
+    """What the turn asked for, not what happened to it. The levels are the
+    whole content of an adjust, and without them the row said only which
+    ticker was touched."""
+    answer = (
+        '{"reasoning": "protect the gain", "orders": ['
+        '{"side": "adjust", "ticker": "AAPL", "stop": 334.16, "target": 360.0,'
+        ' "reason": "raise the floor"}]}'
+    )
+
+    turn = agent._turn("the prompt", answer)
+
+    assert turn["orders"][0]["stop"] == 334.16
+    assert turn["orders"][0]["target"] == 360.0
 
 
 # --- reading an analysis mid-pass -------------------------------------------

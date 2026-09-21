@@ -193,6 +193,84 @@ describe('DecisionsView', () => {
     expect(el.querySelector('.orders')?.textContent).toContain('AAPL');
   });
 
+  it('links every ticker to its own page', async () => {
+    // The ticker is the one word on a decision row a reader wants to follow:
+    // the chart, the analyses and the lots behind the order are all there.
+    service.eventsByMonth['2026-09'] = [
+      event({
+        orders: [{ side: 'buy', ticker: 'AAPL', quantity: 2, reason: 'cheap' }],
+        refused: [{ side: 'buy', ticker: 'MSFT', quantity: 9, reason: null, why: 'no cash' }],
+        failed: [],
+      }),
+    ];
+
+    const el = await render();
+
+    const hrefs = Array.from(el.querySelectorAll('.orders a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toContain('/research/ticker/AAPL');
+    expect(hrefs).toContain('/research/ticker/MSFT');
+  });
+
+  it('says whether an order named a price, and what an adjust moved', async () => {
+    /** 2026-09-20: `order_type`, `limit_price`, `time_in_force`, `stop` and
+     * `target` were parsed, acted on and dropped before anything wrote them
+     * down, so every buy read as a market order and an adjust said only which
+     * ticker it touched. */
+    service.eventsByMonth['2026-09'] = [
+      event({
+        orders: [
+          {
+            side: 'buy',
+            ticker: 'AAPL',
+            quantity: 5,
+            reason: 'waiting for my price',
+            order_type: 'limit',
+            limit_price: 330,
+            time_in_force: 'gtc',
+          },
+          {
+            side: 'adjust',
+            ticker: 'NVDA',
+            quantity: 0,
+            reason: 'NVDA: moved stop from $330.00 to $334.16.',
+            stop: 334.16,
+          },
+          { side: 'sell', ticker: 'MSFT', quantity: 1, reason: 'out', order_type: 'market' },
+        ],
+        refused: [],
+        failed: [],
+      }),
+    ];
+
+    const rows = Array.from((await render()).querySelectorAll('.orders li'));
+
+    expect(rows[0]?.textContent).toContain('limit $330.00');
+    expect(rows[0]?.textContent).toContain('stays past today');
+    expect(rows[1]?.textContent).toContain('stop to $334.16');
+    // The outcome line is what knows the level it moved from — an order says
+    // only where the agent wanted it.
+    expect(rows[1]?.textContent).toContain('moved stop from $330.00 to $334.16');
+    expect(rows[2]?.textContent).toContain('market order');
+    expect(rows[2]?.textContent).not.toContain('expires');
+  });
+
+  it('says nothing about the kind of order on a pass recorded before it was kept', async () => {
+    // A null `order_type` means "not recorded", never "market". Printing
+    // "market order" here would invent a decision the agent never stated.
+    service.eventsByMonth['2026-09'] = [
+      event({
+        orders: [{ side: 'buy', ticker: 'AAPL', quantity: 2, reason: 'cheap' }],
+        refused: [],
+        failed: [],
+      }),
+    ];
+
+    const row = (await render()).querySelector('.orders li');
+
+    expect(row?.textContent).toContain('AAPL');
+    expect(row?.textContent).not.toContain('market order');
+  });
+
   it('tells a broker failure apart from a refusal', async () => {
     // The two mean different things and the page has to say so: one is the
     // agent's arithmetic being wrong, the other is the world declining an
@@ -410,6 +488,59 @@ describe('DecisionsView', () => {
     expect(el.textContent).toContain('august pass');
   });
 
+  it('shows a one-turn pass as turn 1, with what it fetched before it decided', async () => {
+    /** 2026-09-20: the turn blocks needed two turns to appear, so a pass that
+     * fetched an analysis and then bought on it showed the buy with no sign of
+     * the fetch behind it — and the same pass was drawn two different ways
+     * depending on a count no reader could see. */
+    service.eventsByMonth['2026-09'] = [
+      event({
+        orders: [{ side: 'buy', ticker: 'AAPL', quantity: 2, reason: 'the read convinced me' }],
+        refused: [],
+        failed: [],
+        turns: [
+          {
+            prompt: 'the only prompt',
+            response: '{"reasoning":"buying","orders":[]}',
+            thinking: null,
+            reasoning: 'The analysis holds up.',
+            orders: [{ side: 'buy', ticker: 'AAPL', quantity: 2, reason: 'the read convinced me' }],
+            exchanges: [{ name: 'read', args: { ticker: 'AAPL' }, result: 'AAPL said Buy' }],
+          },
+        ],
+      }),
+    ];
+
+    const el = await render();
+
+    const turns = Array.from(el.querySelectorAll('.turn'));
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.textContent).toContain('Turn 1 of 1');
+    expect(turns[0]?.textContent).toContain('fetched read');
+    expect(turns[0]?.textContent).toContain('The analysis holds up.');
+    expect(turns[0]?.textContent).toContain('AAPL');
+  });
+
+  it('keeps the flat layout for a pass that kept no turn at all', async () => {
+    // A pass from before 2026-09-10, and a single-turn pass that fetched
+    // nothing, store no turn — `_turns_worth_keeping` does not keep one. The
+    // pass's own summary is all there is, and it still has to render.
+    service.eventsByMonth['2026-09'] = [
+      event({
+        reasoning: 'Nothing worth doing.',
+        orders: [{ side: 'untrack', ticker: 'CRM', quantity: 0, reason: 'No shares held.' }],
+        refused: [],
+        failed: [],
+      }),
+    ];
+
+    const el = await render();
+
+    expect(el.querySelector('.turn')).toBeNull();
+    expect(el.textContent).toContain('Nothing worth doing.');
+    expect(el.querySelector('.orders')?.textContent).toContain('CRM');
+  });
+
   describe('a pass that took more than one turn', () => {
     /** Before 2026-09-10 only the last turn was kept: a refusal retry rebuilt
      * the prompt and overwrote the first, so a two-turn pass was published as
@@ -443,6 +574,43 @@ describe('DecisionsView', () => {
       expect(el.textContent).toContain('the first prompt');
       expect(el.textContent).toContain('the second prompt, carrying the analysis');
       expect(el.textContent).toContain('2 turns');
+    });
+
+    it('keeps a turn’s orders inside that turn', async () => {
+      /** 2026-09-20: the turns were a flat run of labels and lists, and
+       * `.orders` has a wider top margin than `.turn-label` — so a turn's
+       * orders sat nearer the NEXT turn's label than their own and read as
+       * though they belonged to it. */
+      service.eventsByMonth['2026-09'] = [
+        event({
+          turns: [
+            {
+              prompt: 'the first prompt',
+              response: '{"orders":[]}',
+              thinking: null,
+              reasoning: 'Buying the dip.',
+              orders: [{ side: 'buy', ticker: 'AAPL', quantity: 2, reason: 'cheap' }],
+            },
+            {
+              prompt: 'the second prompt',
+              response: '{"orders":[]}',
+              thinking: null,
+              reasoning: 'Nothing more to do.',
+              orders: [],
+            },
+          ],
+        }),
+      ];
+
+      const el = await render();
+
+      const turns = Array.from(el.querySelectorAll('.turn'));
+      expect(turns).toHaveLength(2);
+      expect(turns[0]?.textContent).toContain('Turn 1 of 2');
+      expect(turns[0]?.querySelector('.orders')?.textContent).toContain('AAPL');
+      // The second turn asked for nothing, so nothing of the first must have
+      // drifted into it.
+      expect(turns[1]?.querySelector('.orders')).toBeNull();
     });
 
     it("shows every turn's thinking, not only the last", async () => {
