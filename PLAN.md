@@ -109,7 +109,7 @@ And in both turns: nothing to report is a valid answer.
 ### Before it ships
 
 1. **Two JOURNEY.md entries.** Turn 2 changes what the next pass is shown, which is the behavior test. Turn 1 is a new record type, which is the evidence test.
-2. **A change note in `backend/agent_changes.json`**, so the decision pass knows an evening review exists and may revise its note. Without it, a morning pass finds its note changed and nothing says why.
+2. **Somewhere to tell the decision pass an evening review exists**, so a morning pass does not find its note changed with nothing saying why. `backend/agent_changes.json` was that channel and was removed on 2026-09-21 with the rest of the change-note mechanism, so this step needs a new answer before the feature ships.
 3. **Probe it.** Build the reflection prompt from a copy of the live database, four samples, and read the reasoning. Three checks, one per guard:
    - Does every turn-1 note name a real pass and a real moment, or does it invent one?
    - Does turn 2 write a rule from the one INTC trade, or a hypothesis with a count?
@@ -178,7 +178,7 @@ Use the paraphrase test from the `probe-the-prompt` skill for the third count. A
 - The same model at temperature 1 agreed with itself in 2 of 12 paired analyses. A second copy adds randomness, not a view, and afterward nothing can say which voice a decision came from. CLAUDE.md's "second decision-maker in the record" applies to a second model as much as to a human hand, whenever the second voice can change the outcome.
 - One trade in nine days cannot measure it, and a dialogue is prose, which this repo has measured gets skimmed.
 
-**Feeding turn-1 notes back into the agent's prompt.** That would make the reflection a self-training loop. Memory notes are the agent's channel to itself. Turn-1 notes are its channel to the maintainer, answered through `backend/agent_changes.json`.
+**Feeding turn-1 notes back into the agent's prompt.** That would make the reflection a self-training loop. Memory notes are the agent's channel to itself. Turn-1 notes are its channel to the maintainer, and since 2026-09-21 there is no channel back — the change-note mechanism that answered them is gone.
 
 **Letting the reflection change the next wakeup time.** The final pass chose the alarm. A reflection that moves it has become a decision pass.
 

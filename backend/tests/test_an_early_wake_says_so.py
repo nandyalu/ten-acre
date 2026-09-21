@@ -1,7 +1,8 @@
 """An early wake tells the agent what woke it, and what it replaces.
 
-A restart with new change notes, a sharp move, and the earnings check all woke
-the agent by firing its pending alarm early. The alarm always said "You asked
+A sharp move, the earnings check, a stop filling and a position left unguarded
+all wake the agent by firing its pending alarm early. A restart with new change
+notes did too, until the change-note mechanism was removed on 2026-09-21. The alarm always said "You asked
 to be woken now". On 2026-09-13 a restart woke the agent on a Saturday night,
 and the prompt told it that it had asked for that.
 
@@ -54,9 +55,9 @@ def test_an_alarm_fired_early_carries_what_fired_it(monkeypatch):
     monkeypatch.setattr(scheduler, "_wakeup_task_id", "task-1")
     monkeypatch.setattr(scheduler.scheduler, "run_task_immediately", lambda tid: None)
 
-    assert scheduler.wake_agent_now("Change") is True
+    assert scheduler.wake_agent_now("Stop fill") is True
 
-    assert _run_alarm(monkeypatch) == ["Change"]
+    assert _run_alarm(monkeypatch) == ["Stop fill"]
 
 
 def test_an_alarm_on_time_says_the_agent_asked(monkeypatch):
@@ -80,21 +81,8 @@ def test_a_pull_that_fails_leaves_no_label(monkeypatch):
 
     monkeypatch.setattr(scheduler.scheduler, "run_task_immediately", gone)
 
-    assert scheduler.wake_agent_now("Change") is False
+    assert scheduler.wake_agent_now("Stop fill") is False
     assert scheduler._early_wake_label is None
-
-
-def test_new_change_notes_wake_the_agent_as_a_change(monkeypatch):
-    store = {}
-    monkeypatch.setattr(scheduler.db, "get_setting", lambda k: store.get(k))
-    monkeypatch.setattr(scheduler.db, "set_setting", lambda k, v: store.__setitem__(k, v))
-    monkeypatch.setattr(scheduler.agent, "load_change_notes", lambda: [{"date": "2026-09-13", "message": "m"}])
-    monkeypatch.setattr(scheduler, "_wakeup_task_id", "task-1")
-    monkeypatch.setattr(scheduler.scheduler, "run_task_immediately", lambda tid: None)
-
-    scheduler.wake_agent_for_new_changes()
-
-    assert scheduler._early_wake_label == "Change"
 
 
 def test_a_trigger_passes_its_own_label(monkeypatch):
@@ -108,20 +96,16 @@ def test_a_trigger_passes_its_own_label(monkeypatch):
     assert asked == ["Earnings"]
 
 
-def test_the_change_reason_says_a_change_woke_it():
-    assert scheduler._WOKE_BECAUSE["Change"] == "A change to this app woke you. You did not ask for this pass."
-
-
 # --- what the prompt says -------------------------------------------------------
 
 
 def test_an_early_pass_names_the_time_the_note_was_for():
     lines = "\n".join(agent.describe_wakeup(
-        scheduler._WOKE_BECAUSE["Change"], "Review tracked tickers at the open.",
+        scheduler._WOKE_BECAUSE["Event-driven"], "Review tracked tickers at the open.",
         planned=PLANNED, now=NOW,
     ))
 
-    assert "A change to this app woke you." in lines
+    assert "A rule watching your tickers spotted something." in lines
     assert (
         '**The note you left for your wakeup on Monday 14 September at 9:25 AM Eastern:** '
         '"Review tracked tickers at the open."'
@@ -194,7 +178,7 @@ def test_the_early_wake_is_named_at_the_top_and_asked_at_the_end():
     """
     far = datetime.datetime.now(ET) + datetime.timedelta(days=3)
     prompt = agent.build_prompt(
-        _book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Change"],
+        _book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Event-driven"],
         wakeup_note="a note", planned_wakeup=far,
     )
 
@@ -208,15 +192,15 @@ def test_the_early_wake_is_named_at_the_top_and_asked_at_the_end():
 
 
 def test_a_later_turn_names_the_wake_as_history():
-    """On 2026-09-13 the second turn said "A change to this app woke you" as
-    though the agent had just been woken, when its research had just landed."""
+    """On 2026-09-13 the second turn restated the wake reason as though the agent
+    had just been woken, when its research had just landed."""
     prompt = agent.build_prompt(
-        _book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Change"],
+        _book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Event-driven"],
         outcomes=["INTC: the analysis finished."],
     )
 
     assert "## Why this pass started" in prompt
-    assert "A change to this app woke you." in prompt
+    assert "A rule watching your tickers spotted something." in prompt
     assert "## Why you are awake" not in prompt
     assert "**Why you are asked again.** This is the same pass, not a new wake" in prompt
     # One pointer since 2026-09-21, because the four sections it used to name
@@ -227,10 +211,10 @@ def test_a_later_turn_names_the_wake_as_history():
 
 
 def test_the_first_turn_is_unchanged():
-    prompt = agent.build_prompt(_book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Change"])
+    prompt = agent.build_prompt(_book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Event-driven"])
 
     assert "## Why you are awake" in prompt
-    assert "A change to this app woke you." in prompt
+    assert "A rule watching your tickers spotted something." in prompt
     assert "asked again" not in prompt
 
 

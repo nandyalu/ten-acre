@@ -1,7 +1,7 @@
 ---
 name: stale-check
 description: Run after any change to this app, before committing. Records the
-  change in the right file (JOURNEY.md, docs/changelog.md, agent_changes.json)
+  change in the right file (JOURNEY.md or docs/changelog.md)
   and sweeps the surfaces that go stale silently — the prompt quoted in .claude/rules/agent.md,
   docs, site copy, code comments, and hardcoded values that are really
   settings. Every check here caught a real bug on 2026-09-10.
@@ -76,7 +76,7 @@ Rules:
 
 - **Write the entry before making the change**, not after. A reason reconstructed later is a story about what you would like to have been thinking.
 - **One or two sentences: what changed, and why.** Both files. Long-form reasoning that constrains a future edit goes in `CLAUDE.md` instead, because that is the file read before the code is touched.
-- **If the agent's own tools changed, add a line to `backend/agent_changes.json` too.** That is the one-line version aimed at the agent, and it wakes the agent on the next restart. A docs reshuffle does not need one.
+- **There is no third file aimed at the agent.** `backend/agent_changes.json` was one until 2026-09-21, when it and the mechanism that showed it were removed. The agent is not told when the app changes; do not re-add a line to a file that no longer exists.
 
 ---
 

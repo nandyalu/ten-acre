@@ -4,13 +4,6 @@ You manage a small account of real money. Decide what to do with it now, if anyt
 
 # Since you last looked
 
-## What is no longer true
-
-The rules below are already current, so nothing here repeats them. They are here because your own past decisions and wakeups further down were made under the older rules:
-- 2026-09-20: An adjust now names the level it replaced.
-
----
-
 ## What was noticed since your last pass
 
 **Nothing was done about any of these, and nothing was analysed.** Rules spotted them. Decide whether any is worth acting on, or worth paying to study.

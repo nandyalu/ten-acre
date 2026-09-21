@@ -123,7 +123,6 @@ def build_prompts() -> dict:
         wakeups=agent._recent_wakeups(),
         analysis_minutes=analysis.recent_durations(),
         running_analyses=analysis.in_flight(),
-        changes=agent._recent_changes(),
         alerts=agent._recent_alerts(),
         earnings=agent._earnings_due(),
     )
@@ -156,17 +155,21 @@ def build_prompts() -> dict:
             **(common | {"alerts": _raw_alerts()}),
         ),
     }
-    # An early wake: a change to the app woke the agent while its own planned
-    # wakeup was still ahead. The stored plan is used when it is in the future;
+    # An early wake: a resting stop fired while the agent's own planned wakeup
+    # was still ahead. The stored plan is used when it is in the future;
     # otherwise one two days out stands in, so the section under test exists.
+    #
+    # **This was `change` until 2026-09-21**, when the change-note mechanism
+    # and its wake reason were removed. What it tests is the early-wake branch,
+    # which any label can fire, so it is named for that now.
     planned = agent._last_planned_wakeup()
     if planned is None or planned <= datetime.datetime.now(datetime.timezone.utc):
         planned = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2)
-    out["change"] = agent.build_prompt(
+    out["early"] = agent.build_prompt(
         book, signals, prices,
-        woke_because=_WOKE_BECAUSE["Change"],
+        woke_because=_WOKE_BECAUSE["Stop fill"],
         wakeup_note=agent._last_wakeup_note()
-        or "Market reopens today. Review tracked tickers and consider deploying capital if attractive setups emerge.",
+        or "Waiting on COIN to hold $195 into the open; nothing else worth a look under its entry.",
         planned_wakeup=planned,
         **common,
     )
@@ -186,13 +189,13 @@ def build_prompts() -> dict:
             researched_now={held},
             **common,
         )
-        # The second turn of a pass a change to the app started: the wake is
-        # history by now, and the reason to be asked again is the research.
-        out["change_turn2"] = agent.build_prompt(
+        # The second turn of a pass an early wake started: the wake is history
+        # by now, and the reason to be asked again is the research.
+        out["early_turn2"] = agent.build_prompt(
             book, signals, prices,
             outcomes=outcomes,
             researched_now={held},
-            woke_because=_WOKE_BECAUSE["Change"],
+            woke_because=_WOKE_BECAUSE["Stop fill"],
             wakeup_note=agent._last_wakeup_note(),
             planned_wakeup=planned,
             **common,

@@ -118,10 +118,15 @@ def test_the_rule_tells_the_agent_what_it_will_and_will_not_get():
 
 
 def test_every_wake_path_has_a_reason_the_agent_can_read():
+    # "Change" was one of these until 2026-09-21, when the change-note
+    # mechanism that fired it was removed. A label with no reason would reach
+    # the prompt as a wake the agent cannot account for.
     for label in (
-        "Alarm", "Wakeup", "Event-driven", "Final", "Change", "Stop fill", "Unguarded position",
+        "Alarm", "Wakeup", "Event-driven", "Earnings", "Final",
+        "Stop fill", "Unguarded position",
     ):
         assert scheduler._WOKE_BECAUSE.get(label), label
+    assert "Change" not in scheduler._WOKE_BECAUSE
 
 
 def test_the_reason_reaches_run_once(monkeypatch):

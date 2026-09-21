@@ -46,6 +46,14 @@ The reason to switch off e2b is not speed; e4b is about **twice as slow** (13m12
 
 Analysis speed is what makes the 1-2 week trade horizon practical — signals have to be produced faster than they expire — so treat a regression here as a correctness problem, not a performance one.
 
+**The search-grounding model fails most of the time, and it is what made an analysis slow (measured 2026-09-21).** `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING_MODEL=gemma-4-31b-it` serves the news analyst's web queries. Across 2026-09-17, 09-18 and 09-21 it answered **15 of 57 requests**; the other 42 were 22 × `500`, 11 × `503` and 9 × `429`. **So this is Google failing to serve that model, not rate limiting** — 429 is under a quarter of it. Over the same days `gemini-3.5-flash-lite`, which does the analysis itself, answered **161 of 163**.
+
+**It costs minutes, not seconds, because the SDK retries.** The COIN analysis of 2026-09-21 was the slowest on record at 9.1 minutes, and 2m16s of it was four consecutive grounding failures between 13:35:04 and 13:37:20. The SDK's own declared sleeps over that run totalled 17.4 seconds; the rest was time spent on requests that then failed.
+
+**The throttle is not the cause and the numbers say so.** An analysis makes 14 to 22 calls over 5 to 9 minutes, about 2 or 3 a minute against `LLM_REQUESTS_PER_MINUTE=15`. Successful calls in the COIN run sat 43, 40 and 10 seconds apart, where the limiter would space them 4. **Analysis duration tripled per call (7.5s to 38.8s) while token counts halved**, which is the shape of waiting rather than of more work.
+
+**Three ways out, none of them tried yet.** Point grounding at `gemini-3.5-flash-lite`, the model already answering 99% of the time; turn grounding off with `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING=false` and lose whatever it adds to the news analyst; or cap the retries and accept a missing news section. The first is one `.env` value and reversible, so try it first. **Re-measure `analysis.recent_durations` afterwards** — the seven-day window added on 2026-09-21 means a fix shows up there within a week.
+
 **Gemini capacity note (2026-07-30):** `gemini-3.5-flash` returned 100% persistent `503 UNAVAILABLE` ("high demand") over ~12h straight — looked like a tier/capacity issue with that specific just-GA'd model, not a transient blip. `gemini-3.1-flash-lite` worked reliably (16/16 calls succeeded), ran a full analysis in <1 min vs Ollama's ~15 min, at roughly $0.02–0.08/analysis. If revisiting Gemini, start with `flash-lite`, not `3.5-flash`.
 
 ### Gemini's thinking and rate limits (2026-09-13)

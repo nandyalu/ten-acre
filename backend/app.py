@@ -28,7 +28,6 @@ from backend.api.routes import (
 )
 from backend.notifications import notify as notifier
 from backend.services import publish, trade_stream
-from backend.services.agent import load_change_notes
 from backend.tasks.scheduler import register_jobs, scheduler
 
 log = logging.getLogger("ten-acre.app")
@@ -72,19 +71,6 @@ async def lifespan(app: FastAPI):
         log.info("Discord notifications on, through a webhook")
     else:
         log.info("DISCORD_WEBHOOK_URL not set — running without notifications")
-    # Read and logged here, not just at prompt-build time, so a typo in
-    # agent_changes.json is visible in the logs the moment the container
-    # starts rather than discovered mid-decision weeks later. The agent still
-    # only sees these on its own next decision pass — starting the container
-    # does not force one, the same way nothing else here does.
-    changes = sorted(load_change_notes(), key=lambda e: e.get("date", ""))
-    if changes:
-        log.info(
-            "%d agent change note(s) on file — most recent (%s): %s",
-            len(changes), changes[-1].get("date"), changes[-1].get("message"),
-        )
-    else:
-        log.info("No agent change notes on file (backend/agent_changes.json)")
     # Best effort, and never fatal: without it a resting stop or take-profit
     # is noticed by the 15-minute poll instead of within a second.
     trade_stream.start()

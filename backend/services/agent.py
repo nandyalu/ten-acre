@@ -201,39 +201,6 @@ _FAILURE_LOOKBACK_RUNS = 3
 # the agent does not spend its attention reading its own log.
 _WAKEUPS_SHOWN = 6
 
-# **A change note is shown for a number of passes, not a number of days
-# (2026-09-12).** Days were wildly uneven, because the agent picks its own
-# cadence: measured over a week it ran between 3 and 11 passes a day, so the
-# same note was read about 25 times if it landed on a busy Tuesday and twice
-# if it landed before a quiet weekend — or never, if the agent slept through
-# the window. Counting passes is fair at both ends and caps the cost exactly.
-#
-# **This is not "until acknowledged", which was considered and rejected.**
-# That needed a judgement about whether the agent had understood, which is one
-# more thing to get wrong. A counter judges nothing.
-_CHANGE_NOTES_PASSES = 3
-
-# At most this many notes at once, newest first. A burst of edits — seven
-# landed on 2026-09-10 — must not crowd out the pass's own decision.
-_CHANGE_NOTES_SHOWN = 5
-
-# **Per note, and it is a budget rather than a suggestion.** The notes drifted
-# into commit messages: they averaged 530 characters by 2026-09-12 and the two
-# longest were 982 and 971, which put roughly 1,600 tokens of changelog in
-# front of the agent before it saw a single price. A note does not need to
-# explain the new rule — the rules are in the same prompt and already current.
-# It needs to say what is no longer true.
-_CHANGE_NOTE_MAX_CHARS = 240
-
-# Where the seen-counts live. A database row rather than the git-tracked file,
-# because it is this deployment's state and not a fact about the app. Losing
-# it to a reset re-shows a few notes, which is the harmless direction.
-_CHANGES_SEEN_KEY = "change_notes_seen"
-
-# Git-tracked rather than in the database — see describe_recent_changes for
-# why. backend/services/agent.py -> backend/ -> agent_changes.json.
-_CHANGES_FILE = Path(__file__).resolve().parent.parent / "agent_changes.json"
-
 _MEMORY_NOTES_KEY = "agent_memory_notes"
 _MEMORY_NOTE_MAX_CHARS = 500
 _MAX_MEMORY_NOTES = 10
@@ -300,34 +267,6 @@ def describe_memory_notes() -> list[str]:
     ]
 
 
-def load_change_notes() -> list[dict]:
-    """Read backend/agent_changes.json, defensively.
-
-    Read fresh rather than cached: the file is a few hundred bytes, read at
-    most a few times an hour, and caching it would only add a staleness bug
-    for no measurable benefit.
-
-    Also called from the app's startup log (see backend/app.py's lifespan),
-    so a typo in the file is visible in the logs the moment the container
-    starts rather than discovered mid-decision weeks later. A malformed file
-    must never break a decision pass, so every failure here is logged loudly
-    and answered with an empty list rather than raised.
-    """
-    try:
-        raw = _CHANGES_FILE.read_text()
-    except FileNotFoundError:
-        return []
-    try:
-        entries = json.loads(raw)
-    except ValueError:
-        log.exception("%s is not valid JSON — showing the agent nothing", _CHANGES_FILE)
-        return []
-    if not isinstance(entries, list):
-        log.error("%s must be a JSON list — showing the agent nothing", _CHANGES_FILE)
-        return []
-    return [e for e in entries if isinstance(e, dict) and e.get("date") and e.get("message")]
-
-
 def describe_analysis_timing(
     durations: list[float], running: dict, now: datetime.datetime | None = None
 ) -> list[str]:
@@ -362,54 +301,6 @@ def describe_analysis_timing(
                 started = started.replace(tzinfo=datetime.timezone.utc)
             parts.append(f"{ticker} ({(here - started).total_seconds() / 60:.0f} min so far)")
         lines.append("Being analysed right now: " + ", ".join(parts) + ".")
-    return lines
-
-
-def describe_recent_changes(changes: list[dict]) -> list[str]:
-    """Tell the agent what is no longer true, and why that matters to it.
-
-    **A note reaches the people who maintain this app, and "nothing acts on
-    it automatically."** That was only ever true in one direction. If a
-    maintainer actually built what a note asked for, the agent had no way to
-    learn its note had been read — it would keep asking, or keep working
-    around a restriction that no longer existed.
-
-    **It is a correction, not an explanation, and that is the whole reason it
-    can be short.** The agent has no memory between passes: it reads the
-    current rules fresh every time, so a note that describes how something
-    works now is repeating the rules it sits beside. What the rules cannot do
-    is explain the agent's *own history* — the past decisions, wakeups and
-    track record further down were produced under the older rules, and without
-    a note the agent can read a pattern out of behaviour that is no longer
-    possible.
-
-    These are written by hand in ``backend/agent_changes.json``, in the same
-    commit as the change itself and often alongside the JOURNEY.md entry it
-    also needs. **JOURNEY.md is where the long version goes.** A git-tracked
-    file rather than a database row on purpose: this project has reset its own
-    database more than once, and an entry here should survive that the way
-    JOURNEY.md already does.
-
-    Same-day notes are collapsed under one date. Seven landed on 2026-09-10
-    and read as seven separate upheavals rather than one day's work.
-    """
-    if not changes:
-        return []
-    lines = [
-        "The rules below are already current, so nothing here repeats them. "
-        "They are here because your own past decisions and wakeups further "
-        "down were made under the older rules:"
-    ]
-    by_date: dict[str, list[str]] = {}
-    for c in changes:
-        text = str(c.get("message", "") or "").strip()
-        if len(text) > _CHANGE_NOTE_MAX_CHARS:
-            # A backstop, not the mechanism — a test keeps the file itself
-            # inside the budget so this never fires in practice.
-            text = text[:_CHANGE_NOTE_MAX_CHARS].rsplit(" ", 1)[0] + "…"
-        by_date.setdefault(str(c.get("date", "")), []).append(text)
-    for date, texts in by_date.items():
-        lines.append(f"- {date}: " + " ".join(texts))
     return lines
 
 
@@ -1582,7 +1473,6 @@ def build_prompt(
     wakeups: list[dict] | None = None,
     analysis_minutes: list[float] | None = None,
     running_analyses: dict | None = None,
-    changes: list[dict] | None = None,
     readings: list[str] | None = None,
     dropped_with_read: list[dict] | None = None,
     outcomes: list[str] | None = None,
@@ -1710,7 +1600,6 @@ def build_prompt(
             # noticed" and "what you just did" read 0 of 4 below the tables and
             # 4 of 4 above them, and they are further above them here. Do not
             # move them back down (`agent-probes.md`).
-            ("What is no longer true", describe_recent_changes(changes or [])),
             # **What the rules noticed, as facts.** News about the world rather
             # than an answer to something the agent said, which is why it sits with
             # the account and the holdings rather than with the refusals and
@@ -3070,80 +2959,6 @@ def _recent_wakeups() -> list[dict]:
     return out
 
 
-def _change_key(entry: dict) -> str:
-    """A stable id for one note, from its own content.
-
-    Its position in the file would be simpler and is not safe: an entry
-    inserted or reordered would shift every id after it and re-show notes the
-    agent has already read. Editing a note's text does make it a new note,
-    which is the honest reading — the agent never saw those words.
-    """
-    raw = f"{entry.get('date', '')}|{entry.get('message', '')}".encode()
-    return hashlib.sha1(raw).hexdigest()[:12]
-
-
-def _is_dated(entry: dict) -> bool:
-    """Whether the date reads as a date. An unreadable one means a typo, which
-    the startup log already names; showing it would put "- not-a-date:" in
-    front of the agent."""
-    try:
-        datetime.date.fromisoformat(entry["date"])
-        return True
-    except (ValueError, KeyError, TypeError):
-        return False
-
-
-def _changes_seen() -> dict[str, int]:
-    """How many passes have shown each note. Unreadable state counts as none
-    seen, which re-shows a few notes rather than silently hiding them."""
-    try:
-        stored = json.loads(db.get_setting(_CHANGES_SEEN_KEY) or "{}")
-    except ValueError:
-        return {}
-    return {k: int(v) for k, v in stored.items() if isinstance(k, str)} if isinstance(stored, dict) else {}
-
-
-def mark_changes_seen(changes: list[dict]) -> None:
-    """Count one pass against each note that was shown.
-
-    **Called once per pass, not once per prompt.** A pass builds several
-    prompts — a read, a refusal retry, another act-turn — and counting those
-    would expire a note inside the pass that first showed it.
-
-    Entries no longer in the file are pruned here, so the row cannot grow
-    forever as notes are added over months.
-    """
-    if not changes:
-        return
-    live = {_change_key(e) for e in load_change_notes()}
-    seen = {k: v for k, v in _changes_seen().items() if k in live}
-    for entry in changes:
-        key = _change_key(entry)
-        seen[key] = seen.get(key, 0) + 1
-    db.set_setting(_CHANGES_SEEN_KEY, json.dumps(seen))
-
-
-def _recent_changes() -> list[dict]:
-    """Notes the agent has not yet read enough times, oldest first.
-
-    Oldest first is the order every other "recent history" list in the prompt
-    uses. Capped at the newest few, so a day that produced seven notes does not
-    hand the agent a changelog before it sees a price.
-    """
-    seen = _changes_seen()
-    unread = []
-    # **The pool is capped before the seen-filter, not after.** Filtering
-    # first would rotate: once the newest few had been read the batch behind
-    # them would surface, and an agent would work through every note ever
-    # written. A note the newer ones have pushed out has been superseded.
-    dated = [e for e in load_change_notes() if _is_dated(e)]
-    for entry in dated[-_CHANGE_NOTES_SHOWN:]:
-        if seen.get(_change_key(entry), 0) < _CHANGE_NOTES_PASSES:
-            unread.append(entry)
-    unread.sort(key=lambda e: e.get("date", ""))
-    return unread
-
-
 _EARNINGS_KEY = "earnings_due"
 _ALERTS_SHOWN = 8
 
@@ -3465,7 +3280,7 @@ def _recent_broker_failures() -> list[dict]:
 
 
 def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=None,
-            menu=None, outcomes=None, budget=None, changes=None, researched_now=None,
+            menu=None, outcomes=None, budget=None, researched_now=None,
             woke_because=None, pass_notes=None):
     """(reasoning, accepted, rejected), with one correction pass.
 
@@ -3495,11 +3310,6 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # Read once and shared with the retry too. The retry is the same pass, so
     # its cadence history has not changed.
     recent_wakeups = _recent_wakeups()
-    # **Supplied by the caller, because a note is counted per pass and this
-    # runs per turn.** Reading them here as well would make the same pass see
-    # three different lists as its own turns expired them. None means a caller
-    # with no pass around it — a test — and reading them is then right.
-    recent_changes = _recent_changes() if changes is None else changes
     # What the rules noticed, and who reports soon. Read once and shared with
     # every turn of this pass, for the same reason as everything above.
     alerts = _recent_alerts()
@@ -3546,7 +3356,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         watchlist=watchlist, max_watchlist=_max_watchlist(),
         failures=recent_failures, unsettled_cash=unsettled, wakeups=recent_wakeups,
         analysis_minutes=analysis_minutes, running_analyses=running_analyses,
-        changes=recent_changes, outcomes=outcomes,
+        outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
@@ -3636,7 +3446,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              watchlist=watchlist, max_watchlist=_max_watchlist(),
                              failures=recent_failures, unsettled_cash=unsettled,
                              wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
-                             running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
+                             running_analyses=running_analyses, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
@@ -3674,7 +3484,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                          watchlist=watchlist, max_watchlist=_max_watchlist(),
                          failures=recent_failures, unsettled_cash=unsettled,
                          wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
-                         running_analyses=running_analyses, changes=recent_changes, outcomes=outcomes,
+                         running_analyses=running_analyses, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
@@ -5068,8 +4878,6 @@ def run_once(woke_because: str | None = None) -> AgentRun:
     # new analysis in the signal table that the next turn has to be able to see.
     run = None
     outcomes: list[str] = []
-    # Read once for the whole pass, and counted once — see mark_changes_seen.
-    changes = _recent_changes()
     # Tickers this pass has paid to have analysed. The signals table marks
     # their rows, because that is where the agent actually looks.
     researched: set[str] = set()
@@ -5114,15 +4922,10 @@ def run_once(woke_because: str | None = None) -> AgentRun:
         decision = _decide(
             book, signals, prices, closed=closed,
             regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
-            outcomes=outcomes, budget=budget, changes=changes,
+            outcomes=outcomes, budget=budget,
             researched_now=researched, woke_because=woke_because,
             pass_notes=notes_this_pass,
         )
-        if act_turn == 0:
-            # After the first answer, not before it: a pass that fell over on
-            # the way to the model never showed the agent anything.
-            mark_changes_seen(changes)
-
         reasoning, accepted, rejected = decision
         # getattr, because Decision unpacks like the tuple it replaced and a caller
         # may still hand back a plain one — several tests patch _decide that way.

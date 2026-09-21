@@ -355,83 +355,6 @@ def restore_wakeup_alarm() -> None:
     _replace_wakeup_alarm(wanted.astimezone(market_clock.US_MARKET_TZ))
 
 
-# How many entries in backend/agent_changes.json had already been announced as
-# of the last startup this container saw. A count rather than the newest date,
-# because the file can gain two entries with the same date in one deploy (it
-# did, on 2026-09-08) — a second deploy later the same day would then look
-# like "nothing new" if compared by date. The file only ever grows by
-# appending (see agent.describe_recent_changes), so a rising count is an
-# unambiguous "the agent has not been told about this yet," however the dates
-# line up.
-_CHANGES_SEEN_COUNT_KEY = "agent_changes_seen_count"
-
-
-def wake_agent_for_new_changes() -> None:
-    """If a change note was written down since this container last started,
-    wake the agent now rather than making it wait for its own next chosen
-    time — which can be up to four days out.
-
-    Called once from register_jobs, after restore_wakeup_alarm, so there is
-    always a pending alarm to pull forward. **Never awaited from the lifespan
-    that calls register_jobs**: pulling the alarm forward, or scheduling a
-    fresh one-off task, both just hand off to quiv's own worker thread and
-    return at once — a slow decision pass can never hold up the app coming
-    up.
-
-    Losing the seen-count to a database reset is an acceptable failure mode:
-    the worst case is one extra wakeup after the reset, re-announcing
-    something the agent may already have seen. Never waking it for a real
-    change would be the worse failure, and there is no way to have neither
-    without a marker that survives every reset a marker in the database
-    cannot.
-
-    **The count is written when a pass completes, not here (2026-09-19).**
-    It was written here, before the wake, and a redeploy that day replaced
-    the container twice, 35 seconds apart: the first start wrote the count
-    and scheduled the pass, the stop cancelled the pass, and the second start
-    found nothing new. The note reached the agent only at its next planned
-    time. ``_record_changes_announced`` now writes the count from
-    ``_run_agent_pass_locked``, so a wake that never ran its pass is a wake
-    the next start repeats.
-    """
-    global _early_wake_label
-    changes = agent.load_change_notes()
-    seen = int(db.get_setting(_CHANGES_SEEN_COUNT_KEY) or 0)
-    if len(changes) <= seen:
-        return
-    log.info(
-        "%d new agent change note(s) since this container last started — waking the agent now",
-        len(changes) - seen,
-    )
-    if not wake_agent_now("Change"):
-        # No pending alarm to pull forward — should not happen right after
-        # restore_wakeup_alarm, but a fresh one-off is the honest fallback
-        # rather than silently doing nothing. No interval needed for a
-        # one-off since quiv 0.9.0 (#65) — see _replace_wakeup_alarm.
-        # The one-off runs the same alarm job, so it carries the same label.
-        _early_wake_label = "Change"
-        scheduler.add_task(
-            task_name="agent_wakeup_new_change", func=agent_wakeup_alarm,
-            delay=0, run_once=True,
-        )
-
-
-def _record_changes_announced() -> None:
-    """Write down how many change notes are on file now that a pass has shown
-    them, so the next start does not wake the agent for the same ones.
-
-    Called from ``_run_agent_pass_locked`` after every completed pass, not
-    only one labelled "Change": whatever woke it, the pass carried every note
-    on file. A failed pass records nothing, because the agent saw nothing.
-    A failure to write is logged and swallowed, since the pass has already
-    happened and the worst outcome is one repeated wake.
-    """
-    try:
-        db.set_setting(_CHANGES_SEEN_COUNT_KEY, str(len(agent.load_change_notes())))
-    except Exception:
-        log.exception("Could not record the change notes as announced")
-
-
 def wake_agent_now(label: str | None = None) -> bool:
     """Pull the pending alarm forward instead of letting it fire stale.
 
@@ -497,7 +420,6 @@ _WOKE_BECAUSE = {
     "Event-driven": "A rule watching your tickers spotted something. You did not ask for this pass.",
     "Earnings": "A company you track reports earnings soon. You did not ask for this pass.",
     "Final": "This is the last pass before the close. Anything you want done today has to be done now.",
-    "Change": "A change to this app woke you. You did not ask for this pass.",
     "Stop fill": "A resting stop or target closed one of your positions on its own. You did not ask for this pass.",
     "Unguarded position": "A position of yours has nothing resting under it to protect it. You did not ask for this pass.",
 }
@@ -533,7 +455,6 @@ async def _run_agent_pass_locked(label: str) -> None:
         _replace_wakeup_alarm(market_clock.next_open())
         return
     _replace_wakeup_alarm(run.next_wakeup or market_clock.next_open())
-    _record_changes_announced()
     if run.unguarded:
         # **Pulled forward after the alarm above is set, never during the
         # pass (2026-09-16).** Calling this from inside run_once itself is
@@ -888,6 +809,3 @@ def register_jobs() -> None:
     # Last, so the agent's alarm is rebuilt only once everything it may need is
     # registered — a restored wakeup can be due immediately.
     restore_wakeup_alarm()
-    # After the alarm, not before: this pulls that alarm forward, so it needs
-    # one to already exist.
-    wake_agent_for_new_changes()

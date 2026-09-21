@@ -63,19 +63,42 @@ def in_flight() -> dict[str, "datetime.datetime"]:
     return dict(_in_flight)
 
 
-def recent_durations(limit: int = 20) -> list[float]:
+# How far back a duration may come from. **A row count alone was not enough
+# (2026-09-21).** The window was the newest 20 rows with no date bound, and on
+# 2026-09-21 that reached back to the first analysis this database ever held:
+# 11 of the 21 rows were `qwen-3.8-27b`, a model this deployment stopped using
+# on 2026-09-13, at 2.3 to 4.4 minutes against the current model's 3.2 to 9.1.
+# The prompt told the agent an analysis takes about 4 minutes when the last
+# five had taken 4.5 to 9.1, which is the direction that matters — the agent
+# plans a wakeup around this number and a pass spent on an answer that has not
+# arrived is a pass wasted.
+#
+# The docstring below already gave the reason: the number moves with the model
+# and the hardware. A count cannot express that; a date can.
+_DURATION_DAYS = 7
+
+
+def recent_durations(limit: int = 20, days: int = _DURATION_DAYS) -> list[float]:
     """How long the last few analyses took, in minutes, newest first.
 
     Read from the agent's own history rather than a constant. The number moves
     with the model, the hardware and how many run at once, and a figure written
     into the prompt by hand would be wrong the first time any of those changed.
+
+    Bounded both ways: at most ``limit`` runs, and none older than ``days``.
+    **An empty list is the honest answer after a quiet week**, and
+    ``describe_analysis_timing`` then says nothing about how long a run takes
+    rather than quoting a figure from a model that is no longer in use.
     """
+    import datetime
+
     from backend.database import db
 
+    cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
     return [
         s.duration_seconds / 60
         for s in db.get_recent_signals(limit=limit)
-        if s.duration_seconds
+        if s.duration_seconds and str(s.signal_date)[:10] >= cutoff
     ]
 
 

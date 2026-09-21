@@ -112,3 +112,44 @@ def test_a_row_still_says_when_it_was_analysed():
     """The `Analysed` cell carries the in-pass marker now, so it must stay
     readable as a time first."""
     assert _line(None).startswith("| AAA | 2026-09-03 | Buy |")
+
+
+# --- how far back the timing figure looks ---------------------------------------
+
+
+def test_a_duration_older_than_the_window_is_not_averaged(monkeypatch):
+    """**Added 2026-09-21.** The window was the newest 20 rows with no date
+    bound, so on that date it reached back to the first analysis this database
+    ever held and averaged two models together: `qwen-3.8-27b` at 2.3 to 4.4
+    minutes and the current model at 3.2 to 9.1. The agent plans a wakeup
+    around this number."""
+    import datetime
+    import types as _types
+
+    from backend.services import analysis
+
+    today = datetime.date.today()
+
+    def row(days_ago, seconds):
+        return _types.SimpleNamespace(
+            signal_date=(today - datetime.timedelta(days=days_ago)).isoformat(),
+            duration_seconds=seconds,
+        )
+
+    monkeypatch.setattr(
+        "backend.database.db.get_recent_signals",
+        lambda limit=10, **kw: [row(1, 540), row(6, 300), row(9, 120), row(40, 120)],
+    )
+
+    assert analysis.recent_durations() == [9.0, 5.0]
+
+
+def test_a_quiet_week_says_nothing_rather_than_quoting_an_old_model(monkeypatch):
+    """No recent run means no honest figure. The section then carries only what
+    is running right now, if anything is."""
+    from backend.services import agent
+
+    assert agent.describe_analysis_timing([], {}) == []
+    assert "An analysis takes about" not in "\n".join(
+        agent.describe_analysis_timing([], {})
+    )

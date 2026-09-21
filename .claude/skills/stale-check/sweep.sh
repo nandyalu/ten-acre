@@ -34,7 +34,7 @@ echo "-- what the API serves, to bind against instead:"
 grep -nE "^\s+[a-z_]+:" backend/api/schemas.py | sed -n '/class SettingsOut/,/^$/p'
 
 echo; echo "### 4. REFERENCES TO REMOVED MECHANISMS (past tense is fine, present tense is a bug)"
-grep -rniE "morning sweep|daily sweep|13:35 (UTC|batch|pass)|11:00 UTC|each weekday|Decide now|\`?/(analyze|track|model|horizon|candidates)\`" \
+grep -rniE "morning sweep|daily sweep|13:35 (UTC|batch|pass)|11:00 UTC|each weekday|Decide now|\`?/(analyze|track|model|horizon|candidates)\`|agent_changes\.json|What is no longer true|wake_agent_for_new_changes" \
   backend/ frontend/src/ docs/ README.md CLAUDE.md .claude/rules/ \
   --include=*.py --include=*.html --include=*.ts --include=*.md \
   --exclude-dir=tests --exclude="*.spec.ts" --exclude="*-experiment.md" \

@@ -138,7 +138,6 @@ WAKEUPS = [
     {"at": "21 Sep 10:15 AM", "acted": False},
     {"at": "21 Sep 11:00 AM", "acted": False},
 ]
-CHANGES = [{"date": "2026-09-20", "message": "An adjust now names the level it replaced."}]
 MEMORY = ["Skip INTC — stopped out on it twice this month on the same breakout setup."]
 PENDING = [_pending("TSLA", "buy", 3, 402.50, "2026-09-19 15:41:00")]
 RUNNING = {"ORCL": datetime.datetime(2026, 9, 21, 15, 12, tzinfo=datetime.timezone.utc)}
@@ -159,7 +158,6 @@ FULL = dict(
     wakeups=WAKEUPS,
     analysis_minutes=[9.4, 10.1, 11.8],
     running_analyses=RUNNING,
-    changes=CHANGES,
     alerts=ALERTS,
     earnings=[("ORCL", "2026-09-24")],
     price_ranges=PRICE_RANGES,

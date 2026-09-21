@@ -94,7 +94,7 @@ This is the part that matters and the part usually skipped.
 
 **Write the `JOURNEY.md` entry before the fix**, like any behaviour change. One or two sentences: what changed, and why. Name the window if the record is affected.
 
-**If the agent's own tools were involved, add a line to `backend/agent_changes.json`.** The agent cannot see a fix. It will keep working around a restriction that no longer exists, or keep asking for a thing that now exists — and a new entry wakes it on the next restart rather than leaving it until whatever time it last chose, which can be four days out.
+**If the agent's own tools were involved, note that the agent cannot see the fix.** It will keep working around a restriction that no longer exists, or keep asking for a thing that now exists. `backend/agent_changes.json` used to close that gap and was removed on 2026-09-21, so there is no way to tell it any more — which makes this something to weigh when judging whether the days after an incident are usable.
 
 ## 7. Then stop it happening silently again
 

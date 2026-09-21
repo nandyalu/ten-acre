@@ -50,7 +50,7 @@ Then read the entry itself:
 
 - Does it say **why**, or only what? The what is already in the diff.
 - Is it a sentence or two? Long-form reasoning that constrains a future edit belongs in `CLAUDE.md`, or in the `.claude/rules/` file for that area.
-- If the agent's own tools changed, is there a line in `backend/agent_changes.json`? Without one the agent keeps working around a restriction that has been lifted.
+- If the agent's own tools changed, does the diff try to add a line to `backend/agent_changes.json`? That file and its mechanism were removed on 2026-09-21; the agent is no longer told when the app changes, so such a line belongs in JOURNEY.md instead.
 
 ## 4. Are the claims in the description ones somebody checked?
 

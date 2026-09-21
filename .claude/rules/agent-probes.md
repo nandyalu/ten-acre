@@ -270,3 +270,36 @@ Both arms reconciled the holding with its signal — the two sections were alrea
 **The likely confound is the other change in the same pair.** The after arm spent its attention on COIN, which is what a signals table that now says "you own this" invites. `watchlist` was fetched 7 of 7 in both arms, so the pointer is acted on either way — on this channel the prompt carries one line and the table is a fetch, which limits how much this move could ever have changed.
 
 **If the watchlist stops being read on the live book, this is the first thing to put back.**
+
+## Removing "What is no longer true", and why the probe could not test it (2026-09-21)
+
+**A matched `turn1` pair was run and it measured almost nothing. Record why, because the next person will reach for the same probe.**
+
+The section renders only when a change note is inside its three-pass window. On the day it was removed there was none, so the section was already absent from the live prompt — and the before-arm, built from the code that still had the mechanism, produced a prompt with no such section either. **The two arms differed by one line**: the analysis-timing figure, which changed in the same commit. The prompts were otherwise identical apart from a two-minute clock drift between the runs.
+
+| | Before | After |
+|---|---|---|
+| Named a `next_wakeup` | 6 of 7 | 7 of 7 |
+| Ordered research | 4 of 7 | 1 of 7 |
+| Placed a buy | 0 of 7 | 1 of 7 |
+| Fetched 3 to 5 times, answered through `decide` | 7 of 7 | 7 of 7 |
+
+**Nothing broke, and nothing else can be claimed.** The research swing of 3 is at the floor, and the only prompt line that differed says how long an analysis takes, so it is not even clear which change a difference would belong to.
+
+**The removal is unprobed, and it cannot be probed after the fact**, because the mechanism that produced the section is deleted. To build a before-arm somebody would have to restore `backend/agent_changes.json`, the loader and the seen-counter, and date an entry into the window.
+
+**What stands as the recorded cost is the evidence that was already here.** Limit orders were reached for by 0 of 8 samples across two models unannounced, and by 2 of 4 once a change note announced them, with one sample naming the note as its reason. The `fundamentals` fetch was called by 1 of 4 on the day a note announced it and by nobody before. **That channel no longer exists, so both rules now sit in the unannounced condition permanently.** If a new tool ships and the live book never reaches for it, this is the first thing to suspect.
+
+### The analysis-timing window, bounded to seven days the same day
+
+`analysis.recent_durations` had a row count and no date bound, so on 2026-09-21 it reached back to the first analysis this database ever held: 11 of its 20 rows were `qwen-3.8-27b` at 2.3 to 4.4 minutes, a model this deployment stopped using on 2026-09-13, against the current model's 3.2 to 9.1.
+
+| | 20 rows, no date bound | Last 7 days |
+|---|---|---|
+| Runs averaged | 20 | 9 |
+| Models | two | one |
+| The line | *"about 4 minutes here — recently between 2 and 9"* | *"about 5 minutes here — recently between 4 and 9"* |
+
+The last five real runs took 4.5 to 9.1 minutes, so the old figure understated it. **Erring low is the expensive direction**: the agent plans a wakeup around this number, and a pass spent on an answer that has not arrived is a pass wasted. `_DURATION_DAYS` is 7, and both bounds apply.
+
+**The behavioural effect is unmeasured**, for the reason above — the pair that carried this change carried nothing else to separate it from, and a one-digit change to one line is not something seven samples can resolve.

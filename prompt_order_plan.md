@@ -300,8 +300,9 @@ Run after every phase-2 step:
 python -m backend.scripts.probe_prompt --turn turn1 --parallel --samples 7
 ```
 
-The variants `build_prompts()` names are `turn1`, `turn2`, `woken`, `change`, `change_turn2` and `read`.
-Match the variant to the step: `change` for 2.2, `woken` for 2.5, `turn2` or `change_turn2` for 2.4.
+The variants `build_prompts()` names are `turn1`, `turn2`, `woken`, `early`, `early_turn2`, `read`, `retry`, `layout` and `layout_retry`.
+Match the variant to the step: `early` for 2.2, `woken` for 2.5, `turn2` or `early_turn2` for 2.4.
+(`early` and `early_turn2` were `change` and `change_turn2` until 2026-09-21, when the change-note mechanism they were named after was removed. They test the early-wake branch, which any wake label fires.)
 
 ### The environment
 

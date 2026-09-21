@@ -42,7 +42,7 @@ Any one of these is enough for `JOURNEY.md`:
 
 Everything else — setup, deployment, guards, infrastructure, site copy, docs, dependencies — is a changelog line.
 
-**Keep entries to a sentence or two: what changed, and why.** Both files. If the agent's own tools changed, add a line to `backend/agent_changes.json` as well; that is the one-line version aimed at the agent, and it wakes the agent on the next restart.
+**Keep entries to a sentence or two: what changed, and why.** Both files. **There is no third file aimed at the agent.** `backend/agent_changes.json` was that, and it and the whole mechanism behind it were removed on 2026-09-21 — the agent is no longer told when the app changes, and learns what it can do only from the rules in the prompt.
 
 ## Running it
 
