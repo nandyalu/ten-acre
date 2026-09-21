@@ -5,7 +5,6 @@ You manage a small account of real money. Decide what to do with it now, if anyt
 ## The time
 
 It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, at 4:00 PM.
-If you name no next_wakeup, you will next be asked at 2026-09-22T09:30 Eastern, the following open. Name a time if you want a different one.
 
 ---
 
@@ -33,6 +32,12 @@ No new signals today.
 ## Rules
 
 - The buys you place must cost $10,000.00 or less in total, added up across every buy. Not each — in total. If placing multiple buys in one turn, allocate quantities so that sum(quantity × price) fits within your available cash.
+
+---
+
+## Your next wakeup
+
+If you name no next_wakeup, you will next be asked at 2026-09-22T09:30 Eastern, the following open. Name a time if you want a different one.
 
 ---
 

@@ -858,23 +858,57 @@ def _asked_again(
 
 
 def describe_clock() -> list[str]:
-    """The time, and the wakeup that happens if the agent names none.
+    """The time, first, because everything below is read against it.
 
-    First, because everything below is read against it and because the agent
-    chooses its own next wakeup — a question about the time it could not
-    answer while nothing in the prompt said what time it was.
+    The fallback wakeup used to be the second line here. It moved to
+    ``describe_next_wakeup`` on 2026-09-21: it is an instruction about the
+    answer, not a fact about now, and it sat about two thousand words above
+    the field it describes.
+    """
+    return [market_clock.describe()]
+
+
+def describe_next_wakeup(
+    planned: "datetime.datetime | None" = None,
+    note: str | None = None,
+    now: "datetime.datetime | None" = None,
+) -> list[str]:
+    """When the agent will next be asked, and the choice it has about that.
 
     **The fallback is stated as a real instant.** The rules say "the following
     open" and the agent had to work out which day that was — at 3:59 PM on a
     Thursday it reasoned through the weekend to get there. Stating it costs one
     line and removes the arithmetic.
+
+    **An early pass asks again (2026-09-13).** When the wakeup the agent
+    planned is still ahead, this pass replaces that alarm, so the agent is
+    asked for a time and a note again. **Read, 4 of 4, and the ask is what does
+    the work rather than the reason line** (`agent-probes.md`) — which is why
+    the ask now sits beside the answer rather than at the top of the prompt
+    with the reason.
+
+    Colocating the two removed a third copy of one fact: the ask used to end
+    "If you give no time, you are asked at the following open", which is the
+    line directly above it here.
     """
-    return [
-        market_clock.describe(),
+    lines = [
         f"If you name no next_wakeup, you will next be asked at "
         f"{market_clock.next_open().astimezone(market_clock.US_MARKET_TZ).strftime('%Y-%m-%dT%H:%M')} "
         "Eastern, the following open. Name a time if you want a different one.",
     ]
+    if planned is not None and planned > market_clock.now_et(now) + _EARLY_WAKE_MARGIN:
+        when = planned.astimezone(market_clock.US_MARKET_TZ).strftime(
+            "%A %-d %B at %-I:%M %p Eastern"
+        )
+        # "the note above is gone" until 2026-09-21, when the note stopped
+        # being above: it stays at the top of the prompt with the wake reason.
+        lost = " If you write no note, the one you left for that wakeup is gone." if note else ""
+        lines.append(
+            f"**Choose your next wakeup again.** This pass replaces the wakeup you "
+            f'planned for {when}. Give "next_wakeup" a time, the same one if it '
+            f'still suits you, and write a "next_wakeup_note" for that pass.{lost}'
+        )
+    return lines
 
 
 def describe_account(book: agent_book.Book, unsettled_cash: float = 0.0) -> list[str]:
@@ -1593,6 +1627,9 @@ def build_prompt(
         ("Candidates you could research", candidates),
         ("Rules",
          describe_rules(book, price, watchlist, max_watchlist, menu, horizon_days, answer_by_tool)),
+        # Last but for the shape to write it in: this is a decision, and the
+        # answer section is the format every decision goes into.
+        ("Your next wakeup", describe_next_wakeup(planned_wakeup, wakeup_note)),
         # The heading differs by channel because the JSON one is a promise about
         # what follows — a shape to copy — and the tool one is an instruction.
         ("How to answer" if answer_by_tool else "Answer in this shape",
@@ -3247,14 +3284,9 @@ def describe_wakeup(
             "positions below are current and the note is not — act on it only "
             "where it still holds."
         )
-    if early:
-        lost = " If you write no note, the note above is gone." if note else ""
-        lines.append(
-            f"**Choose your next wakeup again.** This pass replaces the wakeup you "
-            f'planned for {when}. Give "next_wakeup" a time, the same one if it '
-            'still suits you, and write a "next_wakeup_note" for that pass. If you '
-            f"give no time, you are asked at the following open.{lost}"
-        )
+    # The ask to choose again lives in `describe_next_wakeup` since
+    # 2026-09-21, beside the fallback instant and the field it fills. What
+    # stays here is why this pass is happening and what the agent left itself.
     return lines
 
 

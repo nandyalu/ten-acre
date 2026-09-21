@@ -59,6 +59,7 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 | The tool channel, end to end | 4 of 4 | **Works** |
 | Every section under a `##` heading, with a rule between | 7 before, 7 after | **No regression.** Every difference is inside the noise floor |
 | Cutting the repeated research explanation | 7 before, 7 after | **No regression.** Every difference is inside the noise floor |
+| Moving the wakeup ask and its fallback to one section at the end | 7 + 7 before, 7 after | **No regression.** The fallback is still read from the bottom, 7 of 7 |
 
 ## Read, and the evidence for it
 

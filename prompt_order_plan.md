@@ -187,6 +187,18 @@ The clock stays first. Only the instruction moves.
 The early-wake ask reads 4 of 4 today, and that result belongs to its current position at the top.
 If the reading drops after the move, put it back and record why in the commit message.
 
+**Step 2.2 done 2026-09-21.** `## Your next wakeup` sits between `## Rules` and `## Answer in this shape`, carrying the fallback instant and, on an early wake, the ask.
+
+**Placed before the answer shape, not after it as this plan first said.** The answer shape is the closing template; a content section after it would mean reading the form and then more content. The order reads: what you may do, when you are next asked, how to write it down.
+
+Colocating the two halves deleted a third copy of one fact — the ask used to end "If you give no time, you are asked at the following open", which is now the line above it.
+
+**The split that stays:** why the pass is happening is still under the clock, because it is read against everything below. Only the ask moved. The probe log is the reason — the early-wake finding was 4 of 4 and says the ask does the work, not the reason line. A test pins both ends.
+
+Probed: **no regression, and the risk did not materialise.** The fallback instant is still read from the bottom of the prompt — 7 of 7 chose it — and 7 of 7 named a wakeup and wrote a note.
+
+**A method note for later steps.** Comparing a run against the min-max of two earlier runs flags differences of 1 as "outside the band". That is an artifact of treating two points as a range. Judge against the measured floor of 3 of 7, not against a two-run spread.
+
 ### Step 2.3 — move `memory` up into Now
 
 Standing notes and wake notes are both the agent talking to itself.
@@ -327,7 +339,7 @@ One opinion once is noise.
 - [x] 1.4 add the `##` headings
 - [x] 1.5 read the diff, JOURNEY entry, probe, commit
 - [x] 2.1 cut the duplication
-- [ ] 2.2 the `next_wakeup` section
+- [x] 2.2 the `next_wakeup` section
 - [ ] 2.3 move `memory` into Now
 - [ ] 2.4 consolidate `last_answer`
 - [ ] 2.5 move `noticed` beside the wake reason

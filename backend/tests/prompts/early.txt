@@ -5,7 +5,6 @@ You manage a small account of real money. Decide what to do with it now, if anyt
 ## The time
 
 It is Monday 21 September 2026, 11:19 AM Eastern. The market closes in 4h 41m, at 4:00 PM.
-If you name no next_wakeup, you will next be asked at 2026-09-22T09:30 Eastern, the following open. Name a time if you want a different one.
 
 ---
 
@@ -15,7 +14,6 @@ A change to this app woke you. You did not ask for this pass. See "What was noti
 **The note you left for your wakeup on Wednesday 23 September at 9:30 AM Eastern:** "Ruled out HPE at a $59.83 entry, worth another look under $56."
 That wakeup has not come yet. This pass is earlier than the one you planned.
 Those are your own words, not an instruction. The prices and positions below are current and the note is not — act on it only where it still holds.
-**Choose your next wakeup again.** This pass replaces the wakeup you planned for Wednesday 23 September at 9:30 AM Eastern. Give "next_wakeup" a time, the same one if it still suits you, and write a "next_wakeup_note" for that pass. If you give no time, you are asked at the following open. If you write no note, the note above is gone.
 
 ---
 
@@ -165,6 +163,13 @@ Nothing has been analysed on these yet — they are screened for being liquid an
 - Untracking frees a slot the same way a sell frees cash, and in the same order: to research something when the list is full, list the untrack first and the research after it.
 - You cannot untrack something you hold. Sell it first — untracking it would leave you unable to ever research it again.
 - The thesis behind a trade usually runs about 10 days, and a position held much longer than that has outlived it, whether or not anything has told you to sell. That is a ceiling, not a schedule.
+
+---
+
+## Your next wakeup
+
+If you name no next_wakeup, you will next be asked at 2026-09-22T09:30 Eastern, the following open. Name a time if you want a different one.
+**Choose your next wakeup again.** This pass replaces the wakeup you planned for Wednesday 23 September at 9:30 AM Eastern. Give "next_wakeup" a time, the same one if it still suits you, and write a "next_wakeup_note" for that pass. If you write no note, the one you left for that wakeup is gone.
 
 ---
 

@@ -131,22 +131,38 @@ def test_an_early_pass_names_the_time_the_note_was_for():
 
 
 def test_an_early_pass_asks_for_the_wakeup_and_note_again():
-    lines = "\n".join(agent.describe_wakeup(
-        scheduler._WOKE_BECAUSE["Change"], "a note", planned=PLANNED, now=NOW,
-    ))
+    """The ask moved out of the wake block on 2026-09-21, into the section
+    beside the field it fills. It is the part that does the work: 4 of 4
+    samples wrote a new note, and only one mentioned what woke it."""
+    lines = "\n".join(agent.describe_next_wakeup(PLANNED, "a note", now=NOW))
 
     assert "**Choose your next wakeup again.**" in lines
     assert "replaces the wakeup you planned for Monday 14 September at 9:25 AM Eastern" in lines
     assert '"next_wakeup"' in lines and '"next_wakeup_note"' in lines
-    assert "If you write no note, the note above is gone." in lines
+    assert "If you write no note, the one you left for that wakeup is gone." in lines
+    # The fallback now sits directly above the ask, so the ask no longer
+    # repeats it.
+    assert "you will next be asked at" in lines
+    assert "If you give no time, you are asked at the following open" not in lines
+
+
+def test_a_pass_that_is_not_early_is_only_told_the_fallback():
+    lines = "\n".join(agent.describe_next_wakeup(None, None, now=NOW))
+
+    assert "you will next be asked at" in lines
+    assert "Choose your next wakeup again" not in lines
 
 
 def test_an_early_pass_with_no_note_still_names_the_plan():
+    """The wake block keeps the fact that this pass is early. Only the ask
+    moved."""
     lines = "\n".join(agent.describe_wakeup(None, None, planned=PLANNED, now=NOW))
 
     assert "**You planned to wake on Monday 14 September at 9:25 AM Eastern.**" in lines
-    assert "Choose your next wakeup again" in lines
-    assert "the note above is gone" not in lines
+
+    asked = "\n".join(agent.describe_next_wakeup(PLANNED, None, now=NOW))
+    assert "Choose your next wakeup again" in asked
+    assert "the one you left for that wakeup is gone" not in asked
 
 
 def test_a_pass_at_its_planned_time_reads_as_before():
@@ -166,14 +182,19 @@ def test_the_planned_time_is_read_as_utc_from_the_database(monkeypatch):
     assert agent._last_planned_wakeup() == PLANNED
 
 
-def test_the_prompt_carries_it_under_the_clock():
+def test_the_early_wake_is_named_at_the_top_and_asked_at_the_end():
+    """Two halves, deliberately apart since 2026-09-21. Why the pass is
+    happening is read against everything below it, so it stays under the
+    clock. The ask sits beside the field it fills, at the end."""
     far = datetime.datetime.now(ET) + datetime.timedelta(days=3)
     prompt = agent.build_prompt(
         _book(), [], {}, woke_because=scheduler._WOKE_BECAUSE["Change"],
         wakeup_note="a note", planned_wakeup=far,
     )
 
-    assert prompt.index("It is ") < prompt.index("Choose your next wakeup again") < prompt.index("Your account is")
+    assert prompt.index("It is ") < prompt.index("This pass is earlier") < prompt.index("Your account is")
+    assert prompt.index("Your account is") < prompt.index("Choose your next wakeup again")
+    assert prompt.index("## Rules") < prompt.index("## Your next wakeup")
 
 
 # --- a later turn of the same pass ----------------------------------------------

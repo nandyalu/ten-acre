@@ -57,7 +57,8 @@ The table is the order. The numbered notes under it are keyed to sections, not t
 | 20 | `## Every ticker you track` | 7 |
 | 21 | `## Candidates you could research` | 7 |
 | 22 | `## Rules` | 14 |
-| 23 | `## Answer in this shape`, or `## How to answer` on the tool channel | 14 |
+| 23 | `## Your next wakeup` | 1b |
+| 24 | `## Answer in this shape`, or `## How to answer` on the tool channel | 14 |
 
 **A heading is load-bearing where a wake reason points at it.** `describe_wakeup` and `_asked_again` name four of these headings in so many words — "What was noticed since your last pass", "What you just did, a moment ago, in this pass", "What you asked to read", "What was not carried out", "Your previous answer was refused". Rename a heading and the pointer points at nothing, which is the exact failure the "no wake reason may promise a section" rule was written for.
 
@@ -65,6 +66,8 @@ The notes:
 
 1. **The clock** — the Eastern time, the date, and how long until the close. First, because everything below is read against it and because the agent chooses its own next wakeup, which is a question about the time.
 1b. **Why it is awake, and the note the last pass left for this one.** Four things start a pass — its own chosen time, something noticed while it slept, the last call before the close, a change to the app — and it was told none of them until 2026-09-12; the labels were log lines. `next_wakeup_note` is the other half: the agent has no memory between passes, and the prompt carries prices and positions but never conclusions, so this is the one place it can hand something to its own future self. **No wake reason may promise a section** — one said "see what it was, below" and the earnings path reaches the same pass with no alerts, so the prompt pointed at nothing and seven probe runs read straight past it. `build_prompt` adds the pointer, because only it knows whether the section is there.
+
+   **The ask and the reason are at opposite ends of the prompt since 2026-09-21, deliberately.** Why the pass is happening stays under the clock, because it is read against everything below it. The ask to choose a wakeup — and the computed instant the agent gets if it names none — is `describe_next_wakeup`, between the rules and the answer shape, beside the field it fills. Colocating those two removed a third statement of one fact: the ask used to end "If you give no time, you are asked at the following open", which is now the line directly above it. **Probed the same day: the fallback instant is still read from the bottom (7 of 7 chose it), and 7 of 7 named a wakeup and wrote a note.**
 
    **An early wake says that it is early, and asks again (2026-09-13).** A restart with new change notes, a sharp move and the earnings check all fire the pending alarm early through `scheduler.wake_agent_now(label)`, and until that date the alarm always said "You asked to be woken now". The label now travels with the alarm in `_early_wake_label`. When the planned wakeup is still ahead, `describe_wakeup` shows the note beside the time it was written for, and asks for `next_wakeup` and `next_wakeup_note` again, because the early pass replaces the planned alarm. **Read, 4 of 4, and the ask is what does the work rather than the reason line** (`agent-probes.md`). **A later turn of the same pass names the wake as history** — "Why this pass started" — and adds "Why you are asked again", built in `build_prompt` from whichever of the outcomes, the readings and the refusals are really in that prompt.
 
