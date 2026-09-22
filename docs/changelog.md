@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-22
+
+- **Infrastructure** — The release workflow now also builds and pushes the image to `ghcr.io` on every tag, tagged with the tag name and `latest`. Before this, the only artifact a tag produced was the wheel-and-constraints zip; a deployment still had to build the image itself from source.
+
 ## 2026-09-21
 
 - **The site** — Every turn of a decision pass on the Decisions page now opens with why the agent was awake: its own chosen time, a move it slept through, the last call before the close, a change to the app. It is the sentence the agent itself read, under the heading its own prompt used — "Why you are awake" on the first turn, "Why this pass started" on every later one, because by then the wake is history. The page could say what a pass did and never what asked it, because nothing stored the reason; see [the journey](journey.md). Absent on a pass recorded before today, and on a skipped pass, which never reaches the model.
