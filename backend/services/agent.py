@@ -582,14 +582,32 @@ def describe_watchlist(
     comparison between exactly those two.
 
     Shared by the prompt and by the ``watchlist`` fetch, like ``describe_menu``.
+
+    **A row past ``_BRIEF_MOVE_PCT`` is marked STALE (2026-09-22).** The legend
+    said a large move on a stale analysis "is the signal that a fresh look may
+    be worth paying for", and the model read the number and drew nothing from
+    it: seven control samples had INTC's +13.5% in front of them and one used
+    the word stale, once. With the marker on the row, 7 of 7 reasoned about
+    staleness and one quoted the cell back before acting. The fact was never
+    missing; the conclusion was, and prose above a table is where a conclusion
+    goes to be skimmed. See the 2026-09-22 entry in JOURNEY.md, and
+    `agent-probes.md` for both arms.
+
+    **Its instruction about exits does not work, and more prose will not fix
+    it.** The held wording says not to move an exit set from a stale analysis,
+    and stop adjustments went 3 of 7 to 4 of 7 — one sample called the old stop
+    "potentially irrelevant" and raised it to an invented number in the same
+    breath. That is a habit, not a gap in what the agent knows.
     """
     held_tickers = {h.ticker for h in book.holdings}
     lines = [
         f"You track {len(watchlist)} of at most {max_watchlist} tickers. **Moved since** "
         f"is the price as of {as_of} against the price at the most recent analysis of that "
-        "ticker — a large move on a stale analysis is the signal that a fresh look may be "
-        "worth paying for. Tickers left watched with stale or 'never' analysed status consume "
-        "watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.",
+        f"ticker — a row that has moved {_BRIEF_MOVE_PCT:.0f}% or more since it was analysed "
+        "is marked **STALE**: the decision on it was made about a different price, and "
+        "nothing re-checks it but you. Tickers left watched with stale or 'never' analysed "
+        "status consume watchlist slots; untrack watched tickers you no longer plan to trade "
+        "to keep slots available.",
         "",
         "| Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -611,6 +629,26 @@ def describe_watchlist(
             if live is not None:
                 pct = (live - last.price_at_signal) / last.price_at_signal * 100
                 move = f"{pct:+.1f}%"
+                # **The marker rides on the decision, because the decision is
+                # what went stale** — not the price, which the `Moved since`
+                # cell beside it already states plainly. A held row says more
+                # than a watched one: an exit is resting under the position,
+                # set from this analysis, and the agent cannot see the levels
+                # it came from once the signal ages out of the three-day
+                # signals table. That is the case this was built for.
+                if abs(pct) >= _BRIEF_MOVE_PCT:
+                    said += (
+                        f" — **STALE: {pct:+.1f}% since this ran, and you hold it. The "
+                        "stop and target resting under this position came from that "
+                        "analysis, so they no longer say where the thesis breaks. Pay "
+                        "for a fresh look before you trust this decision or move an "
+                        "exit off it.**"
+                        if status == "held"
+                        else
+                        f" — **STALE: {pct:+.1f}% since this ran, so this decision was "
+                        "made about a different price. Pay for a fresh look before you "
+                        "act on it.**"
+                    )
         lines.append(
             f"| {ticker} | {status} | {price_text} | {day_high} | {day_low} | "
             f"{when} | {then} | {move} | {said} |"
@@ -1170,13 +1208,21 @@ def describe_research_price(price: float) -> list[str]:
     — not even what is held — so every analysis, new ticker or re-look, is this
     same decision, and there is no daily count on how many you may make: cash
     is what bounds it.
+
+    **The section gives the price a scale, and does not warn about spending it
+    (2026-09-22).** It used to end "A bad choice of what to study is a loss like
+    any other, so spend it where you actually want a fresh look — not because it
+    is free to ask." That named the downside of researching and never the
+    downside of not researching, so the only risk the agent could weigh was the
+    small one: $0.05 against a $10,000 book is five thousandths of one percent,
+    and one trade the agent gets wrong costs a hundred times more. See the
+    2026-09-22 entry in JOURNEY.md.
     """
     return [
         f"Nothing is analysed automatically, holdings included. A \"research\" order "
         f"costs ${price:,.2f} and runs inside this pass, so you can act on what it "
-        "found before you finish. A bad choice of what to study is a loss like any "
-        "other, so spend it where you actually want a fresh look — not because it is "
-        "free to ask.",
+        "found before you finish. That is cheap next to the cost of a trade you get "
+        "wrong. Research anything you are unsure about.",
     ]
 
 

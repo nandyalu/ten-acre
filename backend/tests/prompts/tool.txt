@@ -122,7 +122,7 @@ These are long-term notes you recorded previously that persist until you clear t
 
 ## Paying for research
 
-Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass, so you can act on what it found before you finish. A bad choice of what to study is a loss like any other, so spend it where you actually want a fresh look — not because it is free to ask.
+Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass, so you can act on what it found before you finish. That is cheap next to the cost of a trade you get wrong. Research anything you are unsure about.
 
 ---
 

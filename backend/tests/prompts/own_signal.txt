@@ -72,7 +72,7 @@ Expected value, where the analyst gave one: INTC +0.84R.
 
 ## Every ticker you track
 
-You track 4 of at most 30 tickers. **Moved since** is the price as of 2026-09-21 11:19 AM ET against the price at the most recent analysis of that ticker — a large move on a stale analysis is the signal that a fresh look may be worth paying for. Tickers left watched with stale or 'never' analysed status consume watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.
+You track 4 of at most 30 tickers. **Moved since** is the price as of 2026-09-21 11:19 AM ET against the price at the most recent analysis of that ticker — a row that has moved 5% or more since it was analysed is marked **STALE**: the decision on it was made about a different price, and nothing re-checks it but you. Tickers left watched with stale or 'never' analysed status consume watchlist slots; untrack watched tickers you no longer plan to trade to keep slots available.
 
 | Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |
 |---|---|---|---|---|---|---|---|---|
@@ -135,7 +135,7 @@ These are long-term notes you recorded previously that persist until you clear t
 
 ## Paying for research
 
-Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass, so you can act on what it found before you finish. A bad choice of what to study is a loss like any other, so spend it where you actually want a fresh look — not because it is free to ask.
+Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass, so you can act on what it found before you finish. That is cheap next to the cost of a trade you get wrong. Research anything you are unsure about.
 
 ---
 

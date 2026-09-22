@@ -83,6 +83,83 @@ def test_held_and_watched_only_are_marked_apart(watching):
     assert "| CCC | watched |" in prompt
 
 
+class _Analysed:
+    """A ticker's most recent analysis, as `_last_analysis` returns it."""
+
+    def __init__(self, ticker, price_then, decision="Overweight"):
+        self.ticker, self.price_at_signal, self.decision = ticker, price_then, decision
+        self.signal_date, self.created_at, self.id = "2026-09-18", None, 1
+        self.entry_price = self.stop_loss = self.price_target = None
+        self.win_probability = self.risk_reward = self.expected_value_r = None
+
+
+def _analysed(watching, **by_ticker):
+    """Give each named ticker a last analysis at the price given."""
+    rows = {t: [_Analysed(t, p)] for t, p in by_ticker.items()}
+    watching.setattr(agent.db, "get_recent_signals", lambda ticker, limit=1: rows.get(ticker, []))
+
+
+def test_a_row_past_the_move_threshold_is_marked_stale(monkeypatch, watching):
+    """The fact was never missing — the conclusion was. Seven control samples
+    had INTC's +13.5% in front of them and one used the word stale, once; with
+    the marker 7 of 7 reasoned about it. See the 2026-09-22 JOURNEY.md entry."""
+    watchlist = watching(("AAA", "BBB"))
+    # AAA is 10% above its analysis, BBB 1% — one side of the threshold each.
+    _analysed(monkeypatch, AAA=100.0, BBB=100.0)
+
+    prompt = agent.build_prompt(
+        _book(), [], {"AAA": 110.0, "BBB": 101.0},
+        watchlist=watchlist, max_watchlist=4,
+    )
+
+    assert "STALE: +10.0% since this ran" in prompt
+    # The quiet row stays quiet: a marker on most rows is not a signal.
+    assert "| BBB | watched |" in prompt
+    assert "STALE: +1.0%" not in prompt
+
+
+def test_a_stale_row_that_is_held_names_the_exits_resting_under_it(monkeypatch, watching):
+    """The case this was built for: once a signal ages out of the three-day
+    signals table, the levels its stop came from are nowhere in the prompt."""
+    watchlist = watching(("AAA",))
+    _analysed(monkeypatch, AAA=100.0)
+
+    prompt = agent.build_prompt(
+        _book(holdings=[("AAA", 3, 90.0)]), [], {"AAA": 120.0},
+        watchlist=watchlist, max_watchlist=4,
+    )
+
+    assert "STALE: +20.0% since this ran, and you hold it" in prompt
+    assert "no longer say where the thesis breaks" in prompt
+
+
+def test_a_fall_past_the_threshold_is_stale_too(monkeypatch, watching):
+    """Staleness is distance from the analysed price, not a gain. A decision
+    made 8% above the current price is as out of date as one made below it."""
+    watchlist = watching(("AAA",))
+    _analysed(monkeypatch, AAA=100.0)
+
+    prompt = agent.build_prompt(
+        _book(), [], {"AAA": 92.0}, watchlist=watchlist, max_watchlist=4,
+    )
+
+    assert "STALE: -8.0% since this ran" in prompt
+
+
+def test_the_legend_states_the_threshold_it_actually_uses(monkeypatch, watching):
+    """One number, read from `_BRIEF_MOVE_PCT` rather than written out twice.
+    A legend quoting a threshold the rows do not use is worse than no legend."""
+    watchlist = watching(("AAA",))
+    _analysed(monkeypatch, AAA=100.0)
+
+    prompt = agent.build_prompt(
+        _book(), [], {"AAA": 100.0}, watchlist=watchlist, max_watchlist=4,
+    )
+
+    assert f"moved {agent._BRIEF_MOVE_PCT:.0f}% or more since it was analysed" in prompt
+    assert "may be worth paying for" not in prompt
+
+
 def test_a_full_watchlist_says_so_rather_than_waiting_to_refuse(watching):
     watchlist = watching(tickers=("AAA", "BBB", "CCC", "DDD"), cap=4)
 
