@@ -382,3 +382,24 @@ The section renders only when a change note is inside its three-pass window. On 
 The last five real runs took 4.5 to 9.1 minutes, so the old figure understated it. **Erring low is the expensive direction**: the agent plans a wakeup around this number, and a pass spent on an answer that has not arrived is a pass wasted. `_DURATION_DAYS` is 7, and both bounds apply.
 
 **The behavioural effect is unmeasured**, for the reason above — the pair that carried this change carried nothing else to separate it from, and a one-digit change to one line is not something seven samples can resolve.
+
+## The last-pass fallback line, probed at midday (2026-09-23)
+
+**This probed the first wording, which was replaced the same day and is not current.** The line now reads "You will next be asked at the time you name in next_wakeup. If you name none, or a time after `<today 15:55>` Eastern, you are asked at `<today 15:55>` Eastern, the last pass before today's close." The shorter wording is not probed yet.
+
+**The change:** `describe_next_wakeup` used to say, on every pass, "you will next be asked at the following open." That was false on any pass before the scheduler's own last-pass-before-close run, which fires five minutes before the close no matter what the agent names. The line now names that 15:55 pass first when it is still ahead of the next open, and the fixed rule in `SYSTEM_PROMPT` points at "the time stated under 'Your next wakeup'" instead of hardcoding "the following open" a second time.
+
+**The hypothesis:** on a midday pass, the model's reasoning should show it read the 15:55 pass, not just the fallback's old ending. It should not claim, or act as if, its next look is tomorrow's 9:30 open when it names no time or a morning time.
+
+**Method:** the live book was read as-is (holding INTC and NVDA, cash for one more trade), and the clock was forced to 2026-09-23 11:00 AM Eastern — a live session, ahead of both the 15:55 final pass and tomorrow's 9:30 open, and the same instant the new unit test uses. Seven samples ran through the same forced `decide` call the app makes, on `gemini-3.5-flash-lite`.
+
+**One artifact of the probe itself, not of the app:** only the market clock was forced to 11:00 AM; the separate check the prompt uses to decide whether the market is open runs off the real wall clock, which was after hours when the probe ran. So the rendered prompt carried a contradiction — "The market is closed right now" next to "It is ... 11:00 AM ... The market closes in 5h 0m" — that a real midday pass would never show. Recorded here so nobody mistakes it for a finding: no run treated it as a wakeup-scheduling problem, only as a market-hours one.
+
+**Result: 7 of 7 read the 15:55 pass.** Six named `next_wakeup: "2026-09-23T15:55"` outright. The seventh named tomorrow's open and still showed it knew about the interim pass — the clean case, since that is exactly the belief the old line risked:
+
+- Run 6: *"According to the prompt, if I don't set a next wakeup time, I'll be checked again at 15:55 Eastern today and then at the open tomorrow."*
+- Run 4: *"If we don't specify one, the system defaults to the last pass before today's close at 2026-09-23T15:55 Eastern."*
+- Run 3: *"The prompt guidance states I'll be asked again at `2026-09-23T15:55` if I don't give a `next_wakeup` explicitly."*
+- Run 7 (named `2026-09-24T09:30`): *"The prompt tells me I'll be asked again at 3:55 PM today, before the close, and tomorrow at the open, 9:30 AM Eastern. I think it makes sense to schedule the next check for tomorrow at 9:30 AM Eastern..."* — a deliberate choice to skip the 15:55 pass, made with the pass named, not a run that forgot it exists.
+
+No run reasoned toward "my next look is tomorrow's open" without first passing through 15:55. **This is a clean 7 of 7 on the one thing the change set out to fix**, and it is the sample size for catching breakage, not for measuring a preference between naming 15:55 and naming tomorrow — six of seven still chose 15:55 outright, which the old line could never have produced since it never named that time at all.

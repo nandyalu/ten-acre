@@ -162,7 +162,32 @@ def test_the_rule_says_any_hour_is_allowed():
 def test_the_rule_names_the_fallback():
     """Naming no time is not a plan, and the agent should know what silence
     costs it."""
-    assert "asked at the following open" in agent.SYSTEM_PROMPT
+    assert 'asked at the time stated under "Your next wakeup"' in agent.SYSTEM_PROMPT
+
+
+def test_the_fallback_names_the_last_pass_before_the_close_when_it_comes_first():
+    """The scheduler runs a pass five minutes before the close whatever time
+    the agent names. The line said only "the following open" until
+    2026-09-23, which was false on every pass during a session."""
+    import datetime
+
+    tz = agent.market_clock.US_MARKET_TZ
+    midday = datetime.datetime(2026, 9, 23, 11, 0, tzinfo=tz)  # a Wednesday
+    [line] = agent.describe_next_wakeup(now=midday)
+    assert line == (
+        "You will next be asked at the time you name in next_wakeup. If you name "
+        "none, or a time after 2026-09-23T15:55 Eastern, you are asked at "
+        "2026-09-23T15:55 Eastern, the last pass before today's close."
+    )
+
+    evening = datetime.datetime(2026, 9, 23, 18, 0, tzinfo=tz)
+    [line] = agent.describe_next_wakeup(now=evening)
+    assert line == (
+        "You will next be asked at the time you name in next_wakeup. If you name "
+        "none, you are asked at 2026-09-24T09:30 Eastern, the following open. If "
+        "you name a time after 2026-09-24T15:55 Eastern, you are asked at "
+        "2026-09-24T15:55 Eastern, the last pass before that close."
+    )
 
 
 def test_the_prompt_says_how_long_an_analysis_takes():

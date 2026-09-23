@@ -853,11 +853,26 @@ def describe_next_wakeup(
     "If you give no time, you are asked at the following open", which is the
     line directly above it here.
     """
-    lines = [
-        f"If you name no next_wakeup, you will next be asked at "
-        f"{market_clock.next_open().astimezone(market_clock.US_MARKET_TZ).strftime('%Y-%m-%dT%H:%M')} "
-        "Eastern, the following open. Name a time if you want a different one.",
-    ]
+    stamp = lambda t: t.astimezone(market_clock.US_MARKET_TZ).strftime("%Y-%m-%dT%H:%M")
+    following_open = market_clock.next_open(now)
+    final = market_clock.next_final_pass(now)
+    # **The next wakeup is one time, and the last pass before the close caps
+    # it (2026-09-23).** The scheduler runs that pass whatever time the agent
+    # names, and this line said only "the following open", so every pass
+    # during a session planned around a wakeup that was not the next one.
+    ask = "You will next be asked at the time you name in next_wakeup."
+    if final < following_open:
+        lines = [
+            f"{ask} If you name none, or a time after {stamp(final)} Eastern, you "
+            f"are asked at {stamp(final)} Eastern, the last pass before today's close.",
+        ]
+    else:
+        lines = [
+            f"{ask} If you name none, you are asked at {stamp(following_open)} "
+            f"Eastern, the following open. If you name a time after "
+            f"{stamp(final)} Eastern, you are asked at {stamp(final)} Eastern, "
+            "the last pass before that close.",
+        ]
     if planned is not None and planned > market_clock.now_et(now) + _EARLY_WAKE_MARGIN:
         when = planned.astimezone(market_clock.US_MARKET_TZ).strftime(
             "%A %-d %B at %-I:%M %p Eastern"
@@ -2579,7 +2594,8 @@ _FIXED_RULES = [
     "see that rejection here next time. Waking early to commission the "
     "analyses you want ready for the open is a good use of this; sending an "
     "order at midnight is not.",
-    "- **If you name no time, you will next be asked at the following open.** "
+    "- **If you name no time, you will next be asked at the time stated under "
+    "\"Your next wakeup\".** "
     "That is a fallback, not a plan. Name the time you actually want. Waking "
     "costs nothing, which is exactly why asking for the minimum every time "
     "wastes the day rather than saving it.",

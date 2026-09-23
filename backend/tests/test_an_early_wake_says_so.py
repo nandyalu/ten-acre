@@ -126,14 +126,14 @@ def test_an_early_pass_asks_for_the_wakeup_and_note_again():
     assert "If you write no note, the one you left for that wakeup is gone." in lines
     # The fallback now sits directly above the ask, so the ask no longer
     # repeats it.
-    assert "you will next be asked at" in lines
+    assert "You will next be asked at" in lines
     assert "If you give no time, you are asked at the following open" not in lines
 
 
 def test_a_pass_that_is_not_early_is_only_told_the_fallback():
     lines = "\n".join(agent.describe_next_wakeup(None, None, now=NOW))
 
-    assert "you will next be asked at" in lines
+    assert "You will next be asked at" in lines
     assert "Choose your next wakeup again" not in lines
 
 

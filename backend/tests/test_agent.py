@@ -2974,7 +2974,7 @@ def test_the_prompt_names_the_default_wakeup_as_an_instant():
     day that was — at 3:59 PM on a Thursday it reasoned through the weekend."""
     prompt = agent.build_prompt(_book(), [], {})
 
-    line = next(l for l in prompt.splitlines() if "If you name no next_wakeup" in l)
+    line = next(l for l in prompt.splitlines() if "If you name none" in l)
 
     assert "T" in line and "Eastern" in line, f"not a concrete instant: {line}"
 

@@ -179,7 +179,8 @@ DECISION = {
             "type": "string",
             "description": (
                 "When to ask you next: an ISO datetime in Eastern time, such as "
-                "2026-09-11T09:00. Leave it out to be asked at the following open."
+                "2026-09-11T09:00. Leave it out to be asked at the time stated "
+                "under \"Your next wakeup\"."
             ),
         },
         "next_wakeup_note": {

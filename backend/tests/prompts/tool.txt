@@ -146,7 +146,7 @@ Screened candidates you could research are available on request: call candidates
 
 ## Your next wakeup
 
-If you name no next_wakeup, you will next be asked at 2026-09-22T09:30 Eastern, the following open. Name a time if you want a different one.
+You will next be asked at the time you name in next_wakeup. If you name none, or a time after 2026-09-21T15:55 Eastern, you are asked at 2026-09-21T15:55 Eastern, the last pass before today's close.
 
 ---
 
