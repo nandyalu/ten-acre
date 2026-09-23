@@ -13,6 +13,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 - **Infrastructure** — A function response to Gemini carries the id of the call it answers. Google's migration checklist for `gemini-3.8-flash` requires it. The app sent the name only, which the models in use accepted.
 - **Setup** — `EXPERIMENT_START_DATE` wins over the stored start date, and switching the agent on stamps that date rather than today when it is set. A deployment that ran from 2026-09-03 with no stamp was stamped 2026-09-23 when its settings were saved, and the variable, which its docstring called an override, could not correct it.
 - **Tooling** — `probe_prompt.py` probes the decision model, and sends each request once. The SDK retries a `503` by itself, the throttle does not see those retries, and on 2026-09-23 a free key counted five requests for four calls.
+- **Repository** — A new autouse fixture keeps research charges in memory for every test. `agent_book.build_book` subtracts every charge in the database from cash, and a developer's `data/trading.db` copy carries $3.45 of real charges, so 19 book and performance tests saw $996.55 where they expected $1,000. Same fix as `isolated_ticker_status`.
 
 ## 2026-09-22
 

@@ -97,6 +97,38 @@ def isolated_request_count(monkeypatch):
     return store
 
 
+@pytest.fixture(autouse=True)
+def isolated_research_charges(monkeypatch):
+    """Keep research charges in memory for every test.
+
+    **`agent_book.build_book` subtracts every charge in the database from the
+    cash**, through `research.total_spent`. The developer's `data/trading.db`
+    is a copy of the live book, with $3.45 of real charges, so 19 book and
+    performance tests saw $996.55 where they expected $1,000. They failed on
+    every checkout that held a copy of a live database, and passed on an
+    empty one. Same reasoning as `isolated_ticker_status` above. Kept in
+    memory, so a test that records a charge still sees it.
+    """
+    import itertools
+    import types
+
+    from backend.services import research
+
+    rows: list = []
+    ids = itertools.count(1)
+
+    def record(ticker, amount_usd, charged_at, note=None):
+        row = types.SimpleNamespace(
+            id=next(ids), ticker=ticker, amount_usd=amount_usd, charged_at=charged_at, note=note
+        )
+        rows.append(row)
+        return row.id
+
+    monkeypatch.setattr(research.db, "record_research_charge", record)
+    monkeypatch.setattr(research.db, "get_research_charges", lambda: list(rows))
+    return rows
+
+
 @pytest.fixture
 def fake_bar_cache(monkeypatch):
     """In-memory stand-in for the ``dailybar`` table. Yields the backing store
