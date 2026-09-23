@@ -21,8 +21,8 @@ paths:
 
 Two copies of the compose config exist and are **not synced automatically**:
 
-- `compose.example.yaml` — the tracked template a self-hoster starts from. `dockge/` held this machine's local working copy until the move to Portainer; it is gitignored and no longer authoritative.
-- The deployed copy lives in **Portainer's stack store** (the container's compose label reads `/data/compose/<stack id>/v<n>/docker-compose.yml`, a path inside the Portainer container) with its `.env`. Portainer manages it, since 2026-09-17; before that it was `/opt/stacks/trading-experiment/compose.yaml` under Dockge. Applying a repo edit to the deployed stack means re-applying the diff by hand in the Portainer stack editor. **As of 2026-09-09, every secret for every container in this stack (and others on this host) lives in `.env` and is read with `${VAR}` substitution** — the earlier drift, where Discord and Webull secrets were pasted directly into the deployed `environment:` block, is gone. A wholesale replace of the `environment:` block is safe now; check `.env` first if a value still looks hardcoded.
+- `compose.example.yaml` — the tracked template a self-hoster starts from. `dockge/` is gitignored and not authoritative.
+- **Each deployment's own copy, managed by a different tool on each host (checked 2026-09-23).** On this machine, **Dockge** manages `/opt/stacks/trading-experiment/compose.yaml` and its `.env` beside it. On nebula, **Portainer** manages stack 58: the container's compose label reads `/data/compose/58/v<n>/docker-compose.yml`, a path inside the Portainer container, with `stack.env`. Until 2026-09-23 this file said this machine had moved to Portainer on 2026-09-17; that described nebula. Applying a repo edit to either means re-applying the diff by hand in that tool's editor. **Every secret lives in the `.env` and is read with `${VAR}` substitution**, so a wholesale replace of the `environment:` block is safe; check the `.env` first if a value still looks hardcoded. **Mask commented lines too when you print a `.env`**: this machine's holds two commented-out secrets, and a mask that skipped comments printed them on 2026-09-23.
 
 **The public site is a fully static Cloudflare Pages deployment as of 2026-09-09, at `ten-acre.nandyalu.com` (a subdomain of the domain bought that same day).** It went through a live read-only mirror first, briefly: standing up a second container (`trading-experiment-public`, `PUBLIC_MODE=1`) behind a Cloudflare Tunnel surfaced two real gaps in "read-only" as a live-backend property — a read request's own database side effect wasn't caught by the write-guard middleware (see `positions.get_current_price`), and a Webull-sandbox flag read that container's own empty environment instead of the real agent's. Both were patched, but the pattern was the point: a live backend on the public side can keep developing this class of gap no matter how carefully it's gated. The fix was to remove the live backend from the public path entirely rather than keep patching it:
 
@@ -42,13 +42,23 @@ Two copies of the compose config exist and are **not synced automatically**:
 
 **`trading-bot-public` and `cloudflared` are retired**, along with the Zero Trust tunnel itself (deleted outright, not just unused) — the public site is now files with no server, no database connection, and no credentials anywhere near it. `ten-acre.nandyalu.com`'s DNS points at the Cloudflare Pages project directly (Workers & Pages → the project → Custom domains), which also means the domain's *only* remaining live surface is the private app container and the pages publisher — nothing else. **On 2026-09-17 `docker ps` showed no publisher container at all**, only the app; if the public site's JSON stops updating, that is the first thing to check.
 
-**One deployment, the container `ten-acre` on image `ten-acre:local`, since 2026-09-17.** It was `trading-experiment` from 2026-09-02 to 2026-09-17, on port 8125, on a named volume `agent_data`, under Dockge. The rename kept the data: the current container bind-mounts `/var/appdata/ten-acre/data` on the host at `/app/data`, and that directory holds the database, both log files and the journey files from before the rename. The old `trading-bot` and `analyst-bot` containers stopped on 2026-09-01.
+**Two deployments since 2026-09-10, each a container named `ten-acre` on an image `ten-acre:local` built on its own host.**
 
-**The database stamps the experiment's start date** the first time the agent is switched on (`backend/services/experiment.py`), and this deployment's database says **2026-09-10**. The signals and the persisted log both begin that day. `frontend/src/app/shared/experiment.ts` holds 2026-09-02 as the fallback for a site with no API behind it; everything on the site that says "since" or "day N" reads the stamped value.
+| | This machine | Nebula |
+|---|---|---|
+| Manager | Dockge | Portainer, stack 58 |
+| Data on the host | `/opt/stacks/trading-experiment/data` | `/var/appdata/ten-acre/data` |
+| Dashboard port | 8125 | 8126 |
+| Webull account class | `INDIVIDUAL_CASH` | `INDIVIDUAL_MARGIN` |
+| Stamped start date | 2026-09-23 | 2026-09-10 |
 
-The dashboard runs on **8126**, not the 8080 the template defaults to — the deployed copy sets its own port, the same drift the `environment:` block has. `docker ps` is the authority.
+Both mount their data directory at `/app/data`. **Both use the one Webull app key**, because Webull issues one per account and allows one account, so only one of them holds the trade stream; the other settles fills on the 15-minute poll. This machine's container was `trading-experiment` until 2026-09-17, and the old `trading-bot` and `analyst-bot` containers stopped on 2026-09-01.
 
-To inspect the live container: `docker logs ten-acre`, `docker exec ten-acre env`. Do not edit the deployed compose file on disk — hand the user the exact diff/snippet to paste into the Portainer stack editor instead (their stated preference).
+**The database stamps the experiment's start date** the first time the agent is switched on (`backend/services/experiment.py`). See the table above for each. **This machine's stamp is 2026-09-23 although its book began on 2026-09-03**: its database predates the stamp, so the first start of an image that writes it stamped the day of that start. `frontend/src/app/shared/experiment.ts` holds 2026-09-02 as the fallback for a site with no API behind it; everything on the site that says "since" or "day N" reads the stamped value.
+
+Neither dashboard is on the 8080 the template defaults to. `docker ps` is the authority.
+
+To inspect the live container: `docker logs ten-acre`, `docker exec ten-acre env`. Do not edit the deployed compose file on disk — hand the user the exact diff or snippet to paste into Dockge or Portainer instead (their stated preference). Nebula is reached with `ssh nebula`.
 
 ## Three ways to run it, since 2026-09-17
 

@@ -39,7 +39,7 @@ The prompt may lie to the model. The code MUST never lie to itself. The reasonin
 
 ## Deployment in brief
 
-One deployment: the container `ten-acre`, on the image `ten-acre:local`, with the dashboard on port **8126** and the data bind-mounted at `/var/appdata/ten-acre/data`. `docker ps` is the authority, and `docker logs ten-acre` shows the live container. **Portainer owns the deployed compose file. NEVER edit it on disk** — give the user the exact snippet to paste into the Portainer stack editor. Everything else is in `.claude/rules/deployment.md`.
+Two deployments, each a container `ten-acre` on an image `ten-acre:local` built on its own host: this machine (Dockge, dashboard on **8125**) and nebula (`ssh nebula`, Portainer, dashboard on **8126**). `docker ps` is the authority, and `docker logs ten-acre` shows the live container. **Dockge and Portainer own the deployed compose files. NEVER edit them on disk** — give the user the exact snippet to paste into the right editor. Everything else is in `.claude/rules/deployment.md`.
 
 ## Session hygiene
 
