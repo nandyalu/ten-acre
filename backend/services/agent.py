@@ -2622,9 +2622,14 @@ class _Answer(str):
 
     def __new__(
         cls, text, prompt_tokens=0, completion_tokens=0, seconds=0.0, thinking=None,
-        exchanges=None, channel="json",
+        exchanges=None, channel="json", model=None, cached_tokens=0,
     ):
         answer = super().__new__(cls, text)
+        # The model that answered, and the input tokens Google served from its
+        # cache (tool channel only). Both on the turn since 2026-09-23, when the
+        # decision model could first differ from the analysis model.
+        answer.model = model
+        answer.cached_tokens = cached_tokens
         answer.prompt_tokens = prompt_tokens
         answer.completion_tokens = completion_tokens
         answer.seconds = seconds
@@ -2725,17 +2730,21 @@ def _ask(prompt: str, tools: "ToolContext | None" = None) -> _Answer:
     started = time.monotonic()
     exchanges: list[dict] = []
     channel = "json"
+    cached_tokens = 0
     if answers_by_tool():
-        content, thinking, prompt_tokens, completion_tokens, exchanges, channel = (
+        model = analysis.decision_model()
+        content, thinking, prompt_tokens, completion_tokens, exchanges, channel, cached_tokens = (
             _invoke_by_tool(prompt, tools)
         )
     else:
+        model = analysis.get_model()
         content, thinking, prompt_tokens, completion_tokens = _invoke(
             analysis._quick_think_llm(), prompt
         )
     seconds = time.monotonic() - started
     return _Answer(
-        content, prompt_tokens, completion_tokens, seconds, thinking, exchanges, channel
+        content, prompt_tokens, completion_tokens, seconds, thinking, exchanges, channel,
+        model, cached_tokens,
     )
 
 
@@ -2768,16 +2777,17 @@ def _invoke_by_tool(
     warning below is what says it happened, so a day of fallbacks is visible
     in the log rather than only as odd answers on the Decisions page.
     """
+    model = analysis.decision_model()
     try:
         reply = llm_gemini.decide(
-            SYSTEM_PROMPT_TOOL, prompt, decision_schema.DECIDE, model=analysis.get_model(),
+            SYSTEM_PROMPT_TOOL, prompt, decision_schema.DECIDE, model=model,
             fetches=decision_schema.FETCHES if tools is not None else (),
             fetch=tools.fetch if tools is not None else None,
             budget=tools.budget if tools is not None else None,
         )
         return (
             reply.content, reply.thinking, reply.prompt_tokens, reply.completion_tokens,
-            reply.exchanges, "tool",
+            reply.exchanges, "tool", reply.cached_tokens,
         )
     except llm_throttle.DailyLimitReached:
         raise
@@ -2787,10 +2797,15 @@ def _invoke_by_tool(
     # a text answer to it has nothing to copy: the first live fallback
     # (2026-09-17, a refused `tool` role) came back without a `reasoning` key.
     # The shape travels with the fallback, so the answer is whole either way.
+    #
+    # **The fallback asks the decision model, not the analysis model.** With
+    # AGENT_DECISION_MODEL set, the analysis model answering here would put a
+    # second decision-maker in the record.
     return (
-        *_invoke(analysis._quick_think_llm(), f"{prompt}\n\n{_FALLBACK_SHAPE}"),
+        *_invoke(analysis._quick_think_llm(model), f"{prompt}\n\n{_FALLBACK_SHAPE}"),
         [],
         "text-fallback",
+        0,
     )
 
 
@@ -3632,6 +3647,9 @@ def _turn(prompt: str, answer) -> dict:
         # that is a bare string, which is what every turn before 2026-09-17
         # was in fact.
         "channel": getattr(answer, "channel", None) or "json",
+        # Absent on every turn before 2026-09-23, and on a test fake.
+        "model": getattr(answer, "model", None),
+        "cached_tokens": getattr(answer, "cached_tokens", 0) or 0,
         "reasoning": reasoning,
         "orders": [
             {

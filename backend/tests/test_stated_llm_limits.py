@@ -16,7 +16,11 @@ import pytest
 
 from backend.services import agent, llm_throttle
 
-_VARS = ("LLM_REQUESTS_PER_MINUTE", "LLM_TOKENS_PER_MINUTE", "LLM_REQUESTS_PER_DAY", "LLM_DAY_TIMEZONE")
+_VARS = (
+    "LLM_REQUESTS_PER_MINUTE", "LLM_TOKENS_PER_MINUTE", "LLM_REQUESTS_PER_DAY", "LLM_DAY_TIMEZONE",
+    "AGENT_LLM_REQUESTS_PER_MINUTE", "AGENT_LLM_TOKENS_PER_MINUTE", "AGENT_LLM_REQUESTS_PER_DAY",
+    "AGENT_DECISION_MODEL",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -34,13 +38,18 @@ def clock(monkeypatch):
 
     monkeypatch.setattr(llm_throttle.time, "monotonic", lambda: state["now"])
     monkeypatch.setattr(llm_throttle.time, "sleep", sleep)
-    monkeypatch.setattr(
-        llm_throttle, "_load_day_count",
-        lambda day: state["store"].get("count", 0) if state["store"].get("day") == day else 0,
-    )
+    # The shared bucket's count is state["store"]; any other bucket's is
+    # state["buckets"][name], each shaped as the setting is: {"day", "count"}.
+    state["buckets"] = {None: state["store"]}
+
+    def load(day, bucket=None):
+        stored = state["buckets"].setdefault(bucket, {})
+        return stored.get("count", 0) if stored.get("day") == day else 0
+
+    monkeypatch.setattr(llm_throttle, "_load_day_count", load)
     monkeypatch.setattr(
         llm_throttle, "_save_day_count",
-        lambda day, count: state["store"].update(day=day, count=count),
+        lambda day, count, bucket=None: state["buckets"].setdefault(bucket, {}).update(day=day, count=count),
     )
     yield state
     llm_throttle.reset()
@@ -260,3 +269,57 @@ def test_with_no_daily_limit_research_is_not_checked(monkeypatch):
         agent.set_research_runner(None)
 
     assert ran == ["INTC", "SMR"]
+
+
+# --- a separate decision model (2026-09-23) ---------------------------------------
+
+
+def _two_models(monkeypatch):
+    """Analysis on flash-lite, decisions on 3.8-flash: Google limits each model
+    on its own, so each gets its own bucket."""
+    monkeypatch.setenv("AGENT_DECISION_MODEL", "gemini-3.8-flash")
+    from backend.services import analysis
+
+    monkeypatch.setattr(analysis, "get_model", lambda: "gemini-3.5-flash-lite")
+
+
+def test_the_decision_model_counts_against_its_own_day(clock, monkeypatch):
+    _two_models(monkeypatch)
+    monkeypatch.setenv("LLM_REQUESTS_PER_DAY", "500")
+    monkeypatch.setenv("AGENT_LLM_REQUESTS_PER_DAY", "1")
+    run, calls = _call()
+
+    run(model="gemini-3.8-flash")
+    with pytest.raises(llm_throttle.DailyLimitReached):
+        run(model="gemini-3.8-flash")
+    # The analysis model's day is untouched by the decider's, and goes on.
+    run(model="gemini-3.5-flash-lite")
+
+    assert len(calls) == 2
+    assert clock["buckets"][llm_throttle.AGENT]["count"] == 1
+    assert llm_throttle.requests_left_today() == 499
+
+
+def test_the_decision_model_keeps_its_own_minute(clock, monkeypatch):
+    _two_models(monkeypatch)
+    monkeypatch.setenv("LLM_REQUESTS_PER_MINUTE", "15")
+    monkeypatch.setenv("AGENT_LLM_REQUESTS_PER_MINUTE", "1")
+    run, _ = _call()
+
+    run(model="gemini-3.8-flash")
+    run(model="gemini-3.5-flash-lite")  # a different bucket: no wait
+    assert clock["slept"] == []
+    run(model="models/gemini-3.8-flash")  # the SDK's own spelling, same bucket
+    assert len(clock["slept"]) == 1
+
+
+def test_one_model_named_twice_stays_one_bucket(monkeypatch):
+    """The same name for both is one Google limit, so splitting it would let
+    the two together pass it."""
+    monkeypatch.setenv("AGENT_DECISION_MODEL", "gemini-3.5-flash-lite")
+    from backend.services import analysis
+
+    monkeypatch.setattr(analysis, "get_model", lambda: "gemini-3.5-flash-lite")
+    assert llm_throttle.bucket_for("gemini-3.5-flash-lite") is None
+    monkeypatch.delenv("AGENT_DECISION_MODEL")
+    assert llm_throttle.bucket_for("gemini-3.8-flash") is None

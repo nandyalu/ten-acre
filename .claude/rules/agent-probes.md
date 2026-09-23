@@ -165,6 +165,44 @@ The markers were not hand-picked: every number appearing in the whole prompt **e
 
 **The half that plainly failed is the one worth acting on.** The marker's own instruction is not to move an exit set from a stale analysis, and stop adjustments on INTC went 3 of 7 to 4 of 7 — no better, slightly worse. Sample 3 read the marker, drew the right conclusion — *"the 13.5% move makes the old stop/target potentially irrelevant"* — and then raised the stop to a number it invented anyway. **A marker that is read 7 of 7 and disobeyed on its one instruction says the problem is not information.** Raising a stop is what this model reaches for whenever a holding is in profit, and a sentence beside the row does not outrank that. Anything built here should expect to be read and still ignored on that point, and the answer is more likely a refusal in `screen` than more prose — which would be a restriction, so it needs its own JOURNEY.md entry and argument.
 
+## Moving the prose into the system message is a regression (2026-09-22, probe only)
+
+**Tested, rejected, not built.** Two arms of eight through the pool proxy, same fabricated $4,000 book, AAPL pinned at $341.56 because that day's cache held a bad $123.45 row. The lean arm moved every legend, explanation and rule into the system message and left the user message as labelled figures and tables — 10,679 chars down to 4,370. The rules lost their per-pass figures and pointed at the `Cash` line instead, so the system message would be constant across passes. The STALE marker was split: the flag stayed on the row, its sentence moved to the legend.
+
+| Signal | Control | Lean | Swing |
+|---|---|---|---|
+| Reasoned about staleness | 8 of 8 | 8 of 8 | 0 |
+| Researched the stale INTC | **7 of 8** | **3 of 8** | **4** |
+| Moved an exit on INTC instead | 2 of 8 | 4 of 8 | 2 |
+| Answer usable | 8 of 8 | 7 of 8 | 1 |
+| Prompt tokens per call | 5,924 | 5,560 | −6% |
+
+**The flag survives the move and the action does not.** Staleness was still read 8 of 8 with nothing but `— **STALE**` on the row, so the marker does not need its sentence beside it to be noticed. But research on the stale holding halved, which is outside the noise floor. The exit swing of 2 is inside it and is not a finding.
+
+**Proximity decides which of two competing instructions wins, and that is the lesson worth keeping.** Both arms invoked the stop-raising rule at the same rate — 6 of 8 control, 7 of 8 lean — so the lean arm did not forget anything. Lean sample 4 read the flag, drew the right conclusion, and then cited the other rule: *"Since the analysis is stale and the price moved significantly, I should check for a new analysis or at least ensure my stop is appropriate… The rule says: If a holding has an UNSET stop or is in unrealized profit, use adjust to set or raise its stop to protect gains."* In the control that same sentence sits in the cell, inches from the number, and beats the general rule. In a legend it competes with every other rule and loses. **The same text, moved, stops changing behaviour.**
+
+**Do not re-run this restructure for the token saving.** The user message fell 60% and the whole call fell 6%, because the system message absorbed what the user message shed.
+
+## `gemini-3.8-flash` against `gemini-3.5-flash-lite` as the decider (2026-09-23, probe only)
+
+**Four samples an arm, `turn1`, one `sqlite3` copy of nebula's book, the market closed in both, thinking level high, the image built on 2026-09-22 (before the STALE marker).** The 3.8 arm ran on a billed key, because a free key refused every real-size request (see `llm-providers.md`). Four samples is under the floor at the top of this file, so read the counts as a lead. What makes this worth recording is that the differences are the same in all four samples, and several are the difference between a feature being used and not.
+
+| | Flash-lite | 3.8-flash |
+|---|---|---|
+| Requests per pass | 2 to 3 | 4 to 5 |
+| Fetches per pass | 3 to 6 | 7 to 11 |
+| Called `fundamentals` | 0 of 4 | **4 of 4** |
+| Quoted a figure from `fundamentals` | 0 of 4 | **3 of 4** (*"PEG 0.63, 50% YoY rev growth"*) |
+| Called `candidates` | 1 of 4 | 4 of 4 |
+| A note naming a condition, not only the resting levels | 0 of 4 | **4 of 4** |
+| Ordered research | 2 of 4 (INTC) | 0 of 4 |
+
+**The notes are the plainest difference.** Flash-lite's notes restate the stop and target, which the note rule says not to spend the note on. 3.8's say what to watch: *"monitor whether $195-$200 support holds at the open. Check INTC breakout momentum above $120 to determine whether a fresh swing long research/entry is warranted."* One sample drew on the track record unprompted: *"that INTC trade – premature exit, lesson learned. Need to be more patient there."* One untracked two stale Underweight names, which flash-lite has not been seen to do.
+
+**3.8 ordered no research at 1:15 AM, and it said why.** Every sample planned a wakeup before the open to order it instead: *"Researching them now is pointless because the market data is stale, and I can't place an order."* That is a defensible call, because an analysis at 1 AM reads the previous close. It also means a closed-market probe cannot measure research appetite on this model. **Probe research on 3.8 with the market open.**
+
+**`fundamentals` moves off the unconfirmed list on this model only.** The entry below stays true for flash-lite.
+
 ## Unconfirmed as read, and kept anyway
 
 Each of these is correct, rendered, cheap, and may be read by a different model. **Do not treat the presence of one as proof the agent uses it, and do not cite one as a precedent for skipping a probe.**

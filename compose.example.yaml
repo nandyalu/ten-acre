@@ -69,6 +69,15 @@ services:
       - LLM_TOKENS_PER_MINUTE=${LLM_TOKENS_PER_MINUTE:-}
       - LLM_REQUESTS_PER_DAY=${LLM_REQUESTS_PER_DAY:-}
       - LLM_DAY_TIMEZONE=${LLM_DAY_TIMEZONE:-America/Los_Angeles}
+      # On the google provider, a different model for the agent's decisions
+      # than for the analyses. Unset, the agent decides with the analysis
+      # model. Google limits each model on its own, so a separate decision
+      # model has its own limits here. On a free key the flash models refused
+      # most real-size requests with 503 on 2026-09-23; a billed key did not.
+      - AGENT_DECISION_MODEL=${AGENT_DECISION_MODEL:-}
+      - AGENT_LLM_REQUESTS_PER_MINUTE=${AGENT_LLM_REQUESTS_PER_MINUTE:-}
+      - AGENT_LLM_TOKENS_PER_MINUTE=${AGENT_LLM_TOKENS_PER_MINUTE:-}
+      - AGENT_LLM_REQUESTS_PER_DAY=${AGENT_LLM_REQUESTS_PER_DAY:-}
       # Both think stages share one model name.
       - TRADINGAGENTS_DEEP_THINK_LLM=${LLM_MODEL:-gemma4-e4b-qat-128k}
       - TRADINGAGENTS_QUICK_THINK_LLM=${LLM_MODEL:-gemma4-e4b-qat-128k}

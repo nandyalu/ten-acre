@@ -46,6 +46,14 @@ states the limits in three variables:
 
 Unset, each one costs nothing. That keeps the rule above: this waits only where
 a vendor or a person stated a limit.
+
+**The decision model can have limits of its own (2026-09-23).** Google sets its
+limits per model, so when ``AGENT_DECISION_MODEL`` names a model other than the
+analysis model, the calls made with it go into a second bucket. That bucket
+reads ``AGENT_LLM_REQUESTS_PER_MINUTE``, ``AGENT_LLM_TOKENS_PER_MINUTE`` and
+``AGENT_LLM_REQUESTS_PER_DAY``, keeps its own per-minute window, and stores its
+own day's count. ``LLM_DAY_TIMEZONE`` applies to both. With no separate
+decision model, every call goes into the one bucket, as before.
 """
 import collections
 import datetime
@@ -80,8 +88,10 @@ REQUESTS_PER_ANALYSIS = 25
 _DEFAULT_DAY_TIMEZONE = "America/Los_Angeles"
 _EASTERN = ZoneInfo("America/New_York")
 # The day's count, kept in BotSetting as {"day", "count"} so that a restart
-# does not start it again at zero.
+# does not start it again at zero. The decision model's bucket adds a suffix.
 _DAY_SETTING_KEY = "llm_requests_today"
+# The bucket for a separate decision model. None is the shared bucket.
+AGENT = "agent"
 
 # Gemini puts the wait in the error body: "'retryDelay': '41s'" in its JSON,
 # or "retry_delay { seconds: 41 }" in the protobuf text form.
@@ -93,12 +103,12 @@ _lock = threading.Lock()
 # What the vendor last told us, or None where it told us nothing.
 _remaining_requests: int | None = None
 _window_started_at = 0.0
-# Calls started in the last minute, oldest first, as [started_at, tokens].
-# Empty unless a per-minute limit is stated.
-_recent_calls: collections.deque = collections.deque()
-# The vendor's current day, and the requests counted against it.
-_day: str | None = None
-_day_count = 0
+# Per bucket: calls started in the last minute, oldest first, as
+# [started_at, tokens]. Empty unless a per-minute limit is stated.
+_recent_calls: dict[str | None, collections.deque] = collections.defaultdict(collections.deque)
+# Per bucket: the vendor's current day, and the requests counted against it.
+_day: dict[str | None, str] = {}
+_day_count: dict[str | None, int] = {}
 # Variables already reported as unreadable, so a typo is logged once.
 _warned: set[str] = set()
 
@@ -134,16 +144,33 @@ def _positive_int(name: str) -> int | None:
     return value if value > 0 else None
 
 
-def limits() -> Limits:
-    """The limits this deployment stated. Read from the environment on each
-    call, so a test can set them. Unset, empty, or zero means no limit."""
+def limits(bucket: str | None = None) -> Limits:
+    """The limits this deployment stated for ``bucket``. Read from the
+    environment on each call, so a test can set them. Unset, empty, or zero
+    means no limit."""
     zone = (os.environ.get("LLM_DAY_TIMEZONE") or "").strip() or _DEFAULT_DAY_TIMEZONE
+    prefix = "AGENT_" if bucket == AGENT else ""
     return Limits(
-        requests_per_minute=_positive_int("LLM_REQUESTS_PER_MINUTE"),
-        tokens_per_minute=_positive_int("LLM_TOKENS_PER_MINUTE"),
-        requests_per_day=_positive_int("LLM_REQUESTS_PER_DAY"),
+        requests_per_minute=_positive_int(f"{prefix}LLM_REQUESTS_PER_MINUTE"),
+        tokens_per_minute=_positive_int(f"{prefix}LLM_TOKENS_PER_MINUTE"),
+        requests_per_day=_positive_int(f"{prefix}LLM_REQUESTS_PER_DAY"),
         day_timezone=zone,
     )
+
+
+def bucket_for(model) -> str | None:
+    """The bucket a call with ``model`` counts against.
+
+    ``AGENT`` for the decision model when it is not the analysis model, and
+    None for every other call. When the two names are the same, Google counts
+    them against one limit, so they stay in one bucket.
+    """
+    decision = (os.environ.get("AGENT_DECISION_MODEL") or "").strip()
+    if not decision or not model or str(model).removeprefix("models/") != decision:
+        return None
+    from backend.services import analysis  # analysis imports this module
+
+    return AGENT if analysis.get_model() != decision else None
 
 
 def rate_limited(exc: Exception) -> bool:
@@ -247,13 +274,13 @@ def reset() -> None:
     The day's count is forgotten in memory only. The next call reads it back
     from the database, so a reset cannot give back requests already spent.
     """
-    global _remaining_requests, _window_started_at, _day, _day_count
+    global _remaining_requests, _window_started_at
     with _lock:
         _remaining_requests = None
         _window_started_at = 0.0
         _recent_calls.clear()
-        _day = None
-        _day_count = 0
+        _day.clear()
+        _day_count.clear()
 
 
 # --- the limits a deployment states ---------------------------------------------
@@ -273,46 +300,50 @@ def _now(zone: ZoneInfo) -> datetime.datetime:
     return datetime.datetime.now(zone)
 
 
-def _load_day_count(day: str) -> int:
+def _setting_key(bucket: str | None) -> str:
+    return _DAY_SETTING_KEY if bucket is None else f"{_DAY_SETTING_KEY}_{bucket}"
+
+
+def _load_day_count(day: str, bucket: str | None = None) -> int:
     """The count stored for ``day``, or 0 when the stored count is for another day."""
     try:
         from backend.database import db
 
-        stored = json.loads(db.get_setting(_DAY_SETTING_KEY) or "{}")
+        stored = json.loads(db.get_setting(_setting_key(bucket)) or "{}")
     except Exception:
         log.warning("Could not read today's model request count", exc_info=True)
         return 0
     return int(stored.get("count") or 0) if stored.get("day") == day else 0
 
 
-def _save_day_count(day: str, count: int) -> None:
+def _save_day_count(day: str, count: int, bucket: str | None = None) -> None:
     """Never raises. A count that could not be stored costs accuracy after a
     restart. A call lost to it would cost a pass."""
     try:
         from backend.database import db
 
-        db.set_setting(_DAY_SETTING_KEY, json.dumps({"day": day, "count": count}))
+        db.set_setting(_setting_key(bucket), json.dumps({"day": day, "count": count}))
     except Exception:
         log.warning("Could not store today's model request count", exc_info=True)
 
 
-def _sync_day(lim: Limits) -> None:
+def _sync_day(lim: Limits, bucket: str | None = None) -> None:
     """Start the count again when the vendor's day has changed. Call with the lock held."""
-    global _day, _day_count
     today = _now(_zone(lim.day_timezone)).date().isoformat()
-    if _day != today:
-        _day = today
-        _day_count = _load_day_count(today)
+    if _day.get(bucket) != today:
+        _day[bucket] = today
+        _day_count[bucket] = _load_day_count(today, bucket)
 
 
 def requests_left_today() -> int | None:
-    """Requests left under the stated daily limit, or None when none is stated."""
+    """Requests left under the stated daily limit of the shared bucket, which
+    analyses use, or None when none is stated."""
     lim = limits()
     if lim.requests_per_day is None:
         return None
     with _lock:
         _sync_day(lim)
-        return max(0, lim.requests_per_day - _day_count)
+        return max(0, lim.requests_per_day - _day_count[None])
 
 
 def describe_daily_shortfall(left: int) -> str:
@@ -321,8 +352,11 @@ def describe_daily_shortfall(left: int) -> str:
     zone = _zone(lim.day_timezone)
     tomorrow = _now(zone).date() + datetime.timedelta(days=1)
     starts = datetime.datetime.combine(tomorrow, datetime.time(0, 0), tzinfo=zone).astimezone(_EASTERN)
+    from backend.services import analysis  # analysis imports this module
+
+    runs = "the analysts" if analysis.decision_model() != analysis.get_model() else "you and the analysts"
     return (
-        f"The model that runs you and the analysts allows {lim.requests_per_day} requests a day, "
+        f"The model that runs {runs} allows {lim.requests_per_day} requests a day, "
         f"and {left} are left today. One analysis needs about {REQUESTS_PER_ANALYSIS}. "
         f"The count starts again on {starts.strftime('%A %-d %B at %-I:%M %p')} Eastern."
     )
@@ -352,55 +386,55 @@ def _tokens_used(result) -> int | None:
         return None
 
 
-def _minute_wait(lim: Limits, estimate: int) -> float:
+def _minute_wait(lim: Limits, estimate: int, bucket: str | None = None) -> float:
     """Seconds until a call of ``estimate`` tokens fits the per-minute limits.
     Call with the lock held."""
+    recent = _recent_calls[bucket]
     now = time.monotonic()
-    while _recent_calls and now - _recent_calls[0][0] >= _WINDOW_SECONDS:
-        _recent_calls.popleft()
-    if not _recent_calls:
+    while recent and now - recent[0][0] >= _WINDOW_SECONDS:
+        recent.popleft()
+    if not recent:
         # An empty minute always admits one call, even one larger than the
         # token limit. Otherwise that call would wait forever.
         return 0.0
-    too_many = lim.requests_per_minute is not None and len(_recent_calls) >= lim.requests_per_minute
+    too_many = lim.requests_per_minute is not None and len(recent) >= lim.requests_per_minute
     too_big = (
         lim.tokens_per_minute is not None
-        and sum(tokens for _, tokens in _recent_calls) + estimate > lim.tokens_per_minute
+        and sum(tokens for _, tokens in recent) + estimate > lim.tokens_per_minute
     )
     if not (too_many or too_big):
         return 0.0
     # When the oldest call leaves the window. The loop in _reserve asks again.
-    return _WINDOW_SECONDS - (now - _recent_calls[0][0]) + 0.05
+    return _WINDOW_SECONDS - (now - recent[0][0]) + 0.05
 
 
-def _reserve(estimate: int):
-    """Count one call against the stated limits, and wait first when a
-    per-minute limit would be passed.
+def _reserve(estimate: int, bucket: str | None = None):
+    """Count one call against the limits stated for ``bucket``, and wait first
+    when a per-minute limit would be passed.
 
     Returns the entry to correct with the real token count, or None when no
     per-minute limit is stated. Raises DailyLimitReached at once, without a
     wait, when the day's requests are spent.
     """
-    global _day_count
     while True:
-        lim = limits()
+        lim = limits(bucket)
         with _lock:
             if lim.requests_per_day is not None:
-                _sync_day(lim)
-                if _day_count >= lim.requests_per_day:
+                _sync_day(lim, bucket)
+                if _day_count[bucket] >= lim.requests_per_day:
                     raise DailyLimitReached(
                         f"All {lim.requests_per_day} model requests for today are spent; "
                         f"the count starts again at midnight in {lim.day_timezone}"
                     )
-            wait = _minute_wait(lim, estimate)
+            wait = _minute_wait(lim, estimate, bucket)
             if wait <= 0:
                 entry = None
                 if lim.requests_per_minute is not None or lim.tokens_per_minute is not None:
                     entry = [time.monotonic(), estimate]
-                    _recent_calls.append(entry)
+                    _recent_calls[bucket].append(entry)
                 if lim.requests_per_day is not None:
-                    _day_count += 1
-                    _save_day_count(_day, _day_count)
+                    _day_count[bucket] += 1
+                    _save_day_count(_day[bucket], _day_count[bucket], bucket)
                 return entry
         log.info("Waiting %.0fs to stay inside the stated per-minute limit", wait)
         time.sleep(wait)
@@ -443,10 +477,11 @@ def throttled(call, raw_call=None):
     """
     def run(*args, **kwargs):
         estimate = _estimate_tokens(kwargs)
+        bucket = bucket_for(kwargs.get("model"))
         for attempt in range(1, _ATTEMPTS + 1):
             _wait_for_the_window()
             # Outside the try: a spent day is not a refusal to wait out.
-            entry = _reserve(estimate)
+            entry = _reserve(estimate, bucket)
             try:
                 if raw_call is not None:
                     raw = raw_call(*args, **kwargs)

@@ -184,6 +184,19 @@ def get_model() -> str:
     return (db.get_setting(_MODEL_SETTING_KEY) or "").strip() or DEFAULT_MODEL
 
 
+def decision_model() -> str:
+    """The LLM the agent decides with: ``AGENT_DECISION_MODEL`` when it is
+    set, else the analysis model.
+
+    **Only the Gemini tool channel reads it** (2026-09-23). The JSON channel
+    goes through the analysis graph's client, which is built for one model.
+    An env var and not a setting, because a change of the model that decides
+    changes the experiment: it belongs in the compose file and in JOURNEY.md,
+    not behind a dropdown.
+    """
+    return (os.environ.get("AGENT_DECISION_MODEL") or "").strip() or get_model()
+
+
 def _canonical(model: str) -> str:
     """Ollama's implicit tag: ``foo`` and ``foo:latest`` name the same model,
     and the endpoint always reports the tagged form. Without this the
@@ -410,10 +423,11 @@ def _build_graph(
     return graph
 
 
-def _quick_think_llm():
-    """The shared Q&A client, rebuilt when the model setting changes."""
+def _quick_think_llm(model: str | None = None):
+    """The shared Q&A client, rebuilt when the model changes. ``model`` is the
+    analysis model unless named."""
     global _qa_graph, _qa_graph_model
-    model = get_model()
+    model = model or get_model()
     with _qa_graph_lock:
         if _qa_graph is None or _qa_graph_model != model:
             _qa_graph = _build_graph(model)

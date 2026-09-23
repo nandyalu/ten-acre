@@ -56,6 +56,28 @@ Analysis speed is what makes the 1-2 week trade horizon practical — signals ha
 
 **Gemini capacity note (2026-07-30):** `gemini-3.5-flash` returned 100% persistent `503 UNAVAILABLE` ("high demand") over ~12h straight — looked like a tier/capacity issue with that specific just-GA'd model, not a transient blip. `gemini-3.1-flash-lite` worked reliably (16/16 calls succeeded), ran a full analysis in <1 min vs Ollama's ~15 min, at roughly $0.02–0.08/analysis. If revisiting Gemini, start with `flash-lite`, not `3.5-flash`.
 
+### The decision model, and why it needs a billed key (2026-09-23)
+
+**`AGENT_DECISION_MODEL` names the model the agent decides with, on the tool channel only.** `analysis.decision_model()` returns it, or the analysis model when it is unset. The text fallback asks the same model (`analysis._quick_think_llm(model)`), so a failed call cannot put a second decision-maker in the record. **Google limits each model on its own**, so `llm_throttle.bucket_for` puts the decision model's calls in a second bucket with its own `AGENT_LLM_*` limits and its own stored day's count (`llm_requests_today_agent`). The same name in both settings stays one bucket, because it is one Google limit. Every turn records `model` and `cached_tokens`.
+
+**A free key cannot run a flash-class decider. Measured the same night, SDK retries off, one request per call:**
+
+| Key | Model | Tiny prompt | Real prompt (8.7K system + 5.6K user, six tools) |
+|---|---|---|---|
+| Free | `gemini-3.8-flash` | 2 of 5 | 0 of 9, all `503 UNAVAILABLE` |
+| Free | `gemini-3.7-flash` | 0 of 2 | not reached |
+| Free (second key) | `gemini-3.5-flash` | 1 of 1 | 0 of 1 |
+| Free | `gemini-3.5-flash-lite` | 1 of 1 | 9 of 9 |
+| Billed | `gemini-3.8-flash` | 1 of 1 | **21 of 21**, at `thinking_level=high` |
+
+**The 503 says "high demand" and means the free tier is served last.** A theory that an explicit `thinking_level` caused it was tested and is wrong: `gemini-3.7-flash` refused "Reply with the word ok." with no level, no tools and no system message. **Do not read a tiny prompt's success as a working model.** Every free flash model that answered one refused the next real-size prompt.
+
+**A failed request still costs quota.** Google counted the 503s against the 20-a-day limit and charged 13.6K input tokens for them. The SDK retries a 503 by itself, which the throttle never sees: the console counted five requests for four calls. The probe now sends each request once (`llm_gemini.http_options`); the app keeps the SDK's retries, because on a billed key they are what carries a pass through a busy minute.
+
+**What 3.8-flash costs as the decider, on the billed key:** 4 to 5 requests a pass, 46K to 66K input and 4.6K to 9.4K output tokens. At $0.75 and $3.75 per 1M (the list price until 2026-12-31, doubling on 2027-01-01) that is $0.05 to $0.09 a pass, about $10 a month at five passes a day. Cached input costs a tenth, and each round resends the conversation, so read `cached_tokens` on the turns before trusting that figure.
+
+**Google's 3.8 migration checklist, checked against this app:** no sampling parameters are sent (the LangChain client sets `temperature=None` for any `gemini-3*` model when none is given), no `candidate_count`, `thinking_level` rather than `thinking_budget`, no prefilled model turn. **A `FunctionResponse` now carries its call's `id`**, which the checklist requires and `Part.from_function_response` cannot send. LangChain's fixed-sampling allowlist names only `gemini-3.5-flash-lite` and `gemini-3.6-flash`; check it before moving the analysis graph to 3.7 or 3.8.
+
 ### Gemini's thinking and rate limits (2026-09-13)
 
 **Gemini thinks only at a stated level.** At its default level, `gemini-3.5-flash-lite` returned zero thinking tokens. Set `TRADINGAGENTS_GOOGLE_THINKING_LEVEL` to `low`, `medium` or `high`; on one small trading question they cost 386, 490 and 702 thinking tokens. `analysis._build_graph` turns on `include_thoughts` for every Gemini client, and `llm_content` reads the thinking in a callback, before TradingAgents' Google client flattens the answer to a string. What comes back is Google's summary of the thinking, not the raw reasoning an Ollama model returns.

@@ -6,6 +6,13 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-23
+
+- **Setup** — A new optional setting, `AGENT_DECISION_MODEL`, lets the agent decide with a different Gemini model than the analyses. Google limits each model on its own, so the decision model has its own limits in `AGENT_LLM_REQUESTS_PER_MINUTE`, `AGENT_LLM_TOKENS_PER_MINUTE` and `AGENT_LLM_REQUESTS_PER_DAY`, and its own stored day's count. The text fallback asks the same model, so a failed call cannot put a second decision-maker in the record. Unset, nothing changes. A deployment that turns it on needs a [journey](journey.md) entry that day, because the model that decides is the experiment.
+- **Data** — Each turn of a pass records the model that answered and, on the tool channel, the input tokens Google served from its cache. Both are absent on turns before today. Each fetch round sends the whole conversation again, so the cached count shows what that really costs. See [the journey](journey.md).
+- **Infrastructure** — A function response to Gemini carries the id of the call it answers. Google's migration checklist for `gemini-3.8-flash` requires it. The app sent the name only, which the models in use accepted.
+- **Tooling** — `probe_prompt.py` probes the decision model, and sends each request once. The SDK retries a `503` by itself, the throttle does not see those retries, and on 2026-09-23 a free key counted five requests for four calls.
+
 ## 2026-09-22
 
 - **Infrastructure** — The release workflow now also builds and pushes the image to `ghcr.io` on every tag, tagged with the tag name and `latest`. Before this, the only artifact a tag produced was the wheel-and-constraints zip; a deployment still had to build the image itself from source.

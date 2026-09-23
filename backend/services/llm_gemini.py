@@ -57,6 +57,11 @@ log = logging.getLogger("ten-acre.llm_gemini")
 
 _client = None
 _client_lock = threading.Lock()
+# HTTP options for the one client, read when it is built. None keeps the SDK's
+# defaults. The probe sets one attempt: the SDK retries a 503 by itself, the
+# throttle does not see those retries, and Google counts each one against the
+# day's limit (2026-09-23: five requests counted for four calls).
+http_options: types.HttpOptions | None = None
 
 # What a fetch is told when it was asked for and could not run.
 ALLOWANCE_SPENT = "Not run: the fetch allowance for this pass is spent. Decide with what you have."
@@ -99,6 +104,11 @@ class Reply(NamedTuple):
     completion_tokens: int
     # One entry per fetch the model asked for, in order: name, args, result.
     exchanges: list[dict]
+    # Input tokens Google served from its cache, across every round. They are
+    # part of prompt_tokens and cost a tenth of the full input price. Each
+    # round sends the whole conversation again, so this shows how much of
+    # that the cache absorbed.
+    cached_tokens: int = 0
 
 
 def client() -> genai.Client:
@@ -107,7 +117,7 @@ def client() -> genai.Client:
     global _client
     with _client_lock:
         if _client is None:
-            made = genai.Client()
+            made = genai.Client(http_options=http_options) if http_options else genai.Client()
             # attach() looks for ``.client.models.generate_content``, the shape
             # of the graph's LangChain wrapper. A holder gives this bare client
             # the same shape, so one throttle serves both.
@@ -157,7 +167,7 @@ def decide(
     contents: list = [types.Content(role="user", parts=[types.Part(text=prompt)])]
     thoughts: list[str] = []
     exchanges: list[dict] = []
-    prompt_tokens = completion_tokens = 0
+    prompt_tokens = completion_tokens = cached_tokens = 0
 
     while True:
         may_fetch = bool(fetch_names) and budget.get("fetches", 0) > 0 and budget.get("rounds", 0) > 0
@@ -177,6 +187,7 @@ def decide(
         parts, content = _parts(response)
         used = getattr(response, "usage_metadata", None)
         prompt_tokens += int(getattr(used, "prompt_token_count", 0) or 0)
+        cached_tokens += int(getattr(used, "cached_content_token_count", 0) or 0)
         # Thoughts are output the pass paid for, the same way an Ollama
         # reply's reasoning counts inside its completion_tokens.
         completion_tokens += int(getattr(used, "candidates_token_count", 0) or 0) + int(
@@ -196,22 +207,23 @@ def decide(
             taking = wanted[: budget["fetches"]]
             budget["fetches"] -= len(taking)
             budget["rounds"] -= 1
-            responses: list[tuple[str, dict]] = []
+            # (call id, name, response) for each call answered in this round.
+            responses: list[tuple[str | None, str, dict]] = []
             for call in wanted:
                 args = plain(dict(getattr(call, "args", None) or {}))
                 text = fetch(call.name, args) if call in taking else ALLOWANCE_SPENT
                 exchanges.append({"name": call.name, "args": args, "result": text})
-                responses.append((call.name, {"result": text}))
+                responses.append((getattr(call, "id", None), call.name, {"result": text}))
             if decided is not None:
                 # The rule the read side has always had: a fetch and an
                 # answer in one round, and only the fetch runs. Said in the
                 # function's own response, so the model reads it where it
                 # looks for results.
                 exchanges.append({"name": name, "args": plain(dict(decided.args or {})), "result": DECIDE_WITH_FETCH})
-                responses.append((name, {"result": DECIDE_WITH_FETCH}))
+                responses.append((getattr(decided, "id", None), name, {"result": DECIDE_WITH_FETCH}))
             note = _rounds_note(budget)
             if note is not None:
-                responses[-1][1]["rounds"] = note
+                responses[-1][2]["rounds"] = note
                 # On the record too, as its own row, so the Decisions page
                 # shows what the model was told and when.
                 exchanges.append({"name": "rounds", "args": {}, "result": note})
@@ -220,9 +232,17 @@ def decide(
             # 'tool' is not supported. Please use a valid role: ... USER,
             # MODEL". Function responses travel under ``user`` on this
             # endpoint, the shape Google's function-calling guide shows.
+            #
+            # **Each response carries the id of the call it answers.** Google's
+            # Gemini 3.8 migration checklist requires the id and the name on
+            # every FunctionResponse. Part.from_function_response takes no id,
+            # so the part is built directly. A call with no id sends none.
             contents.append(types.Content(
                 role="user",
-                parts=[types.Part.from_function_response(name=n, response=r) for n, r in responses],
+                parts=[
+                    types.Part(function_response=types.FunctionResponse(id=i, name=n, response=r))
+                    for i, n, r in responses
+                ],
             ))
             continue
 
@@ -231,13 +251,13 @@ def decide(
             if len(calls) > 1:
                 log.warning("Gemini made %d function calls in the deciding round; only %s is read", len(calls), name)
             text = json.dumps(plain(dict(getattr(decided, "args", None) or {})), ensure_ascii=False)
-            return Reply(text, thinking, prompt_tokens, completion_tokens, exchanges)
+            return Reply(text, thinking, prompt_tokens, completion_tokens, exchanges, cached_tokens)
         # mode ANY makes this a vendor fault, not a model choice. Whatever text
         # came back goes to the tolerant parser, which is where every answer
         # went before this module existed.
         text = "\n".join(p.text for p in parts if getattr(p, "text", None) and not getattr(p, "thought", False))
         log.warning("Gemini answered without calling %s; reading its text instead", name)
-        return Reply(text, thinking, prompt_tokens, completion_tokens, exchanges)
+        return Reply(text, thinking, prompt_tokens, completion_tokens, exchanges, cached_tokens)
 
 
 def _parts(response) -> tuple[list, object]:

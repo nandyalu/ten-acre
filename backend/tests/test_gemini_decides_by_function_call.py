@@ -383,7 +383,7 @@ def test_a_failed_decide_call_falls_back_to_the_text_channel(monkeypatch):
     refuses. The fallback is the path every other provider uses."""
     _on_gemini(monkeypatch, _Generate(raises=RuntimeError("schema refused")))
     message = _Message('{"orders": []}', usage={"input_tokens": 10, "output_tokens": 2})
-    monkeypatch.setattr(analysis, "_quick_think_llm", lambda: _Llm(message=message))
+    monkeypatch.setattr(analysis, "_quick_think_llm", lambda *_: _Llm(message=message))
 
     answer = agent._ask("a prompt")
 
@@ -435,7 +435,7 @@ def test_the_fallback_carries_the_json_shape_the_tool_prompt_lacks(monkeypatch):
             seen.append(messages)
             return _Message('{"reasoning": "fine", "orders": []}',
                             usage={"input_tokens": 10, "output_tokens": 2})
-    monkeypatch.setattr(analysis, "_quick_think_llm", lambda: _Llm())
+    monkeypatch.setattr(analysis, "_quick_think_llm", lambda *_: _Llm())
 
     agent._ask("the tool prompt")
 
@@ -751,3 +751,67 @@ def test_a_research_of_a_name_never_fetched_is_refused(monkeypatch):
     retry_prompt = generate.calls[1][1][0].parts[0].text
     assert "Your previous answer was refused" in retry_prompt
     assert "A read does not run on this turn" not in retry_prompt
+
+
+# --- the Gemini 3.8 checklist, and a separate decision model (2026-09-23) ---------
+
+
+def test_a_function_response_carries_the_id_of_its_call():
+    """Google's 3.8 migration checklist: every FunctionResponse carries the
+    call's id and name."""
+    fetch, _, budget = _fetching(results={"track_record": "No closed trades yet."})
+    call = _call("track_record")
+    call.id = "call-7"
+    generate = _Generate(_response([_part(call=call)]), _decided())
+
+    _decide(generate, fetches=decision_schema.FETCHES, fetch=fetch, budget=budget)
+
+    sent = generate.calls[1][1][2].parts[0].function_response
+    assert (sent.id, sent.name) == ("call-7", "track_record")
+
+
+def test_cached_tokens_are_summed_across_rounds():
+    fetch, _, budget = _fetching(results={"track_record": "none"})
+    first, second = _response([_part(call=_call("track_record"))]), _decided()
+    first.usage_metadata.cached_content_token_count = 1000
+    second.usage_metadata.cached_content_token_count = 4000
+
+    reply = _decide(_Generate(first, second), fetches=decision_schema.FETCHES, fetch=fetch, budget=budget)
+
+    assert reply.cached_tokens == 5000
+
+
+def test_the_decision_model_decides_and_is_on_the_turn(monkeypatch):
+    generate = _Generate(_decided())
+    _on_gemini(monkeypatch, generate)
+    monkeypatch.setenv("AGENT_DECISION_MODEL", "gemini-3.8-flash")
+
+    answer = agent._ask("a prompt")
+
+    assert generate.calls[0][0] == "gemini-3.8-flash"
+    turn = agent._turn("a prompt", answer)
+    assert (turn["model"], turn["cached_tokens"]) == ("gemini-3.8-flash", 0)
+
+
+def test_the_fallback_asks_the_decision_model_not_the_analysis_model(monkeypatch):
+    """Otherwise a failed call would put a second decision-maker in the record."""
+    _on_gemini(monkeypatch, _Generate(raises=RuntimeError("schema refused")))
+    monkeypatch.setenv("AGENT_DECISION_MODEL", "gemini-3.8-flash")
+    asked = []
+    message = _Message('{"orders": []}', usage={"input_tokens": 10, "output_tokens": 2})
+
+    def llm(model=None):
+        asked.append(model)
+        return _Llm(message=message)
+    monkeypatch.setattr(analysis, "_quick_think_llm", llm)
+
+    answer = agent._ask("a prompt")
+
+    assert asked == ["gemini-3.8-flash"]
+    assert (answer.channel, answer.model) == ("text-fallback", "gemini-3.8-flash")
+
+
+def test_no_decision_model_means_the_analysis_model(monkeypatch):
+    monkeypatch.delenv("AGENT_DECISION_MODEL", raising=False)
+    monkeypatch.setattr(analysis, "get_model", lambda: "gemini-3.5-flash-lite")
+    assert analysis.decision_model() == "gemini-3.5-flash-lite"

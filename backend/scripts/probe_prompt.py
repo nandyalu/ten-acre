@@ -370,7 +370,7 @@ def _ask_gemini(system: str, user: str, tools=None) -> dict:
     """
     started = time.monotonic()
     reply = llm_gemini.decide(
-        system, user, decision_schema.DECIDE, model=analysis.get_model(),
+        system, user, decision_schema.DECIDE, model=analysis.decision_model(),
         fetches=decision_schema.FETCHES if tools is not None else (),
         fetch=tools.fetch if tools is not None else None,
         budget=tools.budget if tools is not None else None,
@@ -400,7 +400,7 @@ def _ask_gemini_text(system: str, user: str) -> dict:
 
     started = time.monotonic()
     response = llm_gemini.client().models.generate_content(
-        model=analysis.get_model(),
+        model=analysis.decision_model(),
         contents=[types.Content(role="user", parts=[types.Part(text=user)])],
         config=types.GenerateContentConfig(
             system_instruction=system,
@@ -434,6 +434,13 @@ def main() -> int:
     parser.add_argument("--parallel", action="store_true", help="one sample per GPU, all at once")
     parser.add_argument("--base-url", default="http://localhost:11435/v1", help="serial endpoint")
     args = parser.parse_args()
+
+    # One attempt per request. The SDK retries a 503 by itself, the throttle
+    # does not see those retries, and on a free tier each one spends a request
+    # of the day's limit (2026-09-23). A probe that fails should fail once.
+    from google.genai import types
+
+    llm_gemini.http_options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
 
     prompts = build_prompts()
     if args.turn not in prompts:
