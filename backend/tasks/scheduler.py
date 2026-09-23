@@ -190,6 +190,9 @@ async def _settle_agent_fills() -> None:
         # the run that placed them.
         if fill["was_stop"] and fill["status"] == "filled":
             await notify(agent.format_stop_fill(fill))
+            # What the next prompt says happened. The wake reason alone
+            # names no ticker (2026-09-23).
+            await asyncio.to_thread(agent.record_exit_fill, fill)
             stopped = True
         # A limit buy is the other case an ordinary fill doesn't cover: it
         # never brackets (see agent._place), so it can land with nothing
@@ -206,10 +209,19 @@ async def _settle_agent_fills() -> None:
         # nobody else — the agent learned only whenever it next happened to
         # wake for some other reason, up to four days later. Same trigger a
         # sharp move or an earnings date already uses.
-        await _maybe_run_agent("Stop fill" if stopped else "Limit buy filled")
+        # **A stop fill ignores the cooldown (2026-09-23).** The second INTC
+        # stop filled 30 minutes after a pass and was skipped, so the agent
+        # slept until the next open with a book it did not know it had. A
+        # pass that is running now is not interrupted: the fill is an alert,
+        # and _run_agent_pass_locked wakes the agent again if that pass
+        # ended without seeing it.
+        if stopped:
+            await _maybe_run_agent("Stop fill", cooldown=False)
+        else:
+            await _maybe_run_agent("Limit buy filled")
 
 
-async def _maybe_run_agent(label: str = "Event-driven") -> None:
+async def _maybe_run_agent(label: str = "Event-driven", *, cooldown: bool = True) -> None:
     """Let the agent act on fresh intraday signals, but only when it could
     actually trade on them.
 
@@ -235,7 +247,10 @@ async def _maybe_run_agent(label: str = "Event-driven") -> None:
     if not agent.is_enabled():
         return
     now = datetime.datetime.now(datetime.timezone.utc)
-    if _last_agent_run is not None and now - _last_agent_run < _AGENT_COOLDOWN:
+    if _pass_lock.locked() and not cooldown:
+        log.info("%s while a pass is running; that pass or the next one is told", label)
+        return
+    if cooldown and _last_agent_run is not None and now - _last_agent_run < _AGENT_COOLDOWN:
         log.info("Agent ran %s ago — inside the cooldown, skipping", now - _last_agent_run)
         return
     # **Stamped only once a pass is really going to happen.** It used to be set
@@ -464,10 +479,30 @@ async def _run_agent_pass_locked(label: str) -> None:
         # time; this only pulls that choice forward, the same way a new
         # change note already does.
         wake_agent_now("Unguarded position")
+    elif _fill_after(getattr(run, "looked_at", None)):
+        # A stop filled after this pass built its last prompt, so the pass
+        # never saw it, and the wake it would have caused was skipped because
+        # this pass was running. See _settle_agent_fills.
+        wake_agent_now("Stop fill")
     # A note is worth posting even on a day it did nothing else: it is the
     # agent saying it is short of something, which is the point of having it.
     if run.acted or run.rejected or run.failed or run.notes:
         await notify(embed=agent.format_run_embed(run))
+
+
+def _fill_after(looked_at: datetime.datetime | None) -> bool:
+    """True when a stop or target filled after ``looked_at``."""
+    if looked_at is None:
+        return False
+    for alert in agent.db.get_recent_alerts(limit=20):
+        if alert.alert_type not in ("stop_fill", "target_fill"):
+            continue
+        raised = alert.created_at
+        if raised.tzinfo is None:
+            raised = raised.replace(tzinfo=datetime.timezone.utc)
+        if raised > looked_at:
+            return True
+    return False
 
 
 async def _agent_wakeup_job() -> None:

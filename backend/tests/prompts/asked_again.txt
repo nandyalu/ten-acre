@@ -73,7 +73,7 @@ Of that cash, $412.80 came from sales that have not settled yet. You can spend i
 
 ## What you hold
 
-**Value** is quantity times price now, and is also about what selling the whole position would raise, before slippage. **Stop** and **Target** are what is actually resting at the broker, not a level you asked for earlier — `UNSET` means nothing is resting on that side, and a move against you on it would not be caught.
+**Value** is quantity times price now, and is also about what selling the whole position would raise, before slippage. **Stop** and **Target** are what is actually resting at the broker, not a level you asked for earlier — `UNSET` means nothing is resting on that side, and a move against you on it would not be caught. Each buy rests its own exits, so where parts of a position rest at different levels, each level shows its shares; `adjust` moves all of them to the level you give.
 
 | Ticker | Shares | Avg cost | Price now | Range since purchase | Value | Unrealized | % of account | Held | Stop | Target |
 |---|---|---|---|---|---|---|---|---|---|---|

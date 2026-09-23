@@ -155,14 +155,17 @@ def test_a_triggered_stop_is_announced(monkeypatch):
     monkeypatch.setattr(
         scheduler.agent, "settle_pending",
         lambda: [{"ticker": "ZBH", "side": "sell", "quantity": 10.0, "price": 92.0,
-                  "was_stop": True, "status": "filled"}],
+                  "was_stop": True, "exit_kind": "stop", "limit_price": 92.10,
+                  "client_order_id": "abc", "status": "filled"}],
     )
+    alerts = []
+    monkeypatch.setattr(scheduler.agent.db, "record_alert", lambda **kw: alerts.append(kw))
 
     async def fake_notify(*args, **kwargs):
         posted.append(args[0] if args else kwargs)
 
-    async def fake_maybe_run_agent(label="Event-driven"):
-        woke.append(label)
+    async def fake_maybe_run_agent(label="Event-driven", cooldown=True):
+        woke.append((label, cooldown))
 
     monkeypatch.setattr(scheduler, "notify", fake_notify)
     monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
@@ -172,8 +175,16 @@ def test_a_triggered_stop_is_announced(monkeypatch):
     assert "Stop triggered" in posted[0]
     assert "ZBH" in posted[0] and "92.00" in posted[0]
     # 2026-09-16: a stop firing on its own is worth waking the agent for, not
-    # only worth telling a person on Discord.
-    assert woke == ["Stop fill"]
+    # only worth telling a person on Discord. 2026-09-23: the cooldown does
+    # not hold it back.
+    assert woke == [("Stop fill", False)]
+    # 2026-09-23: the next prompt says which position, how many shares and
+    # at what price. The wake reason alone named none of them.
+    assert [a["alert_type"] for a in alerts] == ["stop_fill"]
+    assert alerts[0]["message"] == (
+        "10 share(s) of ZBH were sold at $92.00: your resting stop at $92.10 fired. "
+        "No pass ordered this sale."
+    )
 
 
 def test_an_ordinary_fill_is_not_announced_again(monkeypatch):
@@ -232,9 +243,10 @@ def test_a_filled_take_profit_is_announced_as_a_target_hit(monkeypatch):
     async def fake_notify(*args, **kwargs):
         posted.append(args[0] if args else kwargs)
 
-    async def fake_maybe_run_agent(label="Event-driven"):
+    async def fake_maybe_run_agent(label="Event-driven", cooldown=True):
         pass
 
+    monkeypatch.setattr(scheduler.agent.db, "record_alert", lambda **kw: None)
     monkeypatch.setattr(scheduler, "notify", fake_notify)
     monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
     asyncio.run(scheduler._settle_agent_fills())

@@ -67,6 +67,8 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 | The clock moved from section 2 to section 14 | 7 before, 7 after | **No regression.** 6 of 7 both ways opened on the market being closed, 0 of 7 both ways ordered into a shut venue |
 | `You hold` on the signals table | 7 before, 7 after | **Right direction, at the floor.** The reasoning shows it better than the counts |
 | The watchlist moved up beside the signals | 7 before, 7 after | **No difference, and confounded** — probed in the same pair as the two above |
+| A filled stop as an alert row, 2026-09-23 | 1 of 1 | **Read**, too few samples to say more |
+| Several lots' stops in one Stop cell, 2026-09-23 | 2 of 2 | **Read**, too few samples to say more |
 
 ## Read, and the evidence for it
 
@@ -147,6 +149,16 @@ The markers were not hand-picked: every number appearing in the whole prompt **e
 **The fence makes no difference to whether the analysis is read**, so the choice falls to what else it buys: a hard boundary around a document that carries its own markdown, on top of the demotion. Kept on that ground, not on a reading improvement.
 
 **The one thing to watch is orders, not reading.** 3 of 7 to 0 of 7 is at the floor and cannot be attributed — the floor run itself swung "ordered research" from 3 to 1 on identical code, and the consolidation probe showed the same 3-to-0 pattern. But a read exists to be acted on, so if the live book starts reading and not acting, unfence first and probe again before looking anywhere else.
+
+## A filled stop and a multi-lot Stop cell are read, 1 of 1 and 2 of 2 (2026-09-23)
+
+**Both scenarios are this book's real state on 2026-09-23, rebuilt from a copy of the live database**, with the uncommitted `backend/` mounted over a throwaway container. The fills arm hid runs 81 and 82 and recorded the two real INTC stop fills with `agent.record_exit_fill`. The lots arm set those two fills back to pending, so INTC was 71 shares with stops at $118.00 on 15, $119.50 on 19 and $120.00 on 37. `gemini-3.5-flash-lite` returned 503 on most attempts, so the samples are few.
+
+**The alert row is read (1 of 1).** *"we've had some recent stop-loss executions at $119.51 and $120.00 earlier today, leaving us with the current 15 shares."* Both prices are in no other part of the prompt. Pass 81, with only the wake reason, used its first turn to search for the fill.
+
+**The lots cell is read as lots (2 of 2).** *"15 at $118.00, 19 at $119.50, and 37 at $120.00. Wait, that's all 71 shares accounted for with stops."* Neither sample took one level for the whole position. Neither moved the stops, so no sample tested `adjust` on several lots; the unit tests cover that.
+
+**Too few samples for a rate.** This says the content is read, not how often. Run it again at a quieter time before citing a number.
 
 ## A STALE marker on a watchlist row is read, 7 of 7 (2026-09-22, probe only)
 

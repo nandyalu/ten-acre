@@ -229,6 +229,13 @@ class AgentRun(SQLModel, table=True):
     # reason, on a skipped pass, and on every row before 2026-09-21. Nothing
     # is backfilled: see the JOURNEY.md entry for that date.
     woke_because: str | None = None
+    # **When the pass built its last prompt.** "What was noticed since your
+    # last pass" starts here. It started at ``ran_at``, which is when the pass
+    # was recorded, and a pass can run for many minutes after its last look.
+    # An alert raised in that time was then too old for the next pass and too
+    # late for this one, so the agent never saw it. NULL on a skipped pass and
+    # on every row before 2026-09-23; readers use ``ran_at`` then.
+    looked_at: datetime.datetime | None = None
     reasoning: str = ""
     placed: int = 0
     rejected: int = 0

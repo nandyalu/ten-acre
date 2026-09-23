@@ -1461,7 +1461,13 @@ def test_a_refused_bracket_still_buys(monkeypatch):
     result = agent._place(_order(), 98.41, {"ZBH": 95.30}, {"ZBH": 101.50})
 
     # No "exits" key, which is what tells run_once to arm them the slow way.
-    assert result == {"client_order_id": "fallback"}
+    # The levels and the refusal go back with it, so the slow way rests the
+    # same levels and the prompt can say why (2026-09-23).
+    assert result == {
+        "client_order_id": "fallback",
+        "levels": (95.30, 101.50),
+        "bracket_refused": "CANT_USE_UNSETTLE_FUNDS_FOR_COMBO_ORDER",
+    }
 
 
 def test_a_buy_with_no_usable_stop_gets_one_from_the_stock_s_own_volatility(monkeypatch):
@@ -1945,8 +1951,8 @@ def test_an_unguarded_position_is_told_to_the_pass_that_caused_it(monkeypatch):
 
     message = agent._arm_exits(_order(), None, None, run=run)
 
-    assert message == "ZBH: the analysis gave no usable stop or target"
-    assert run.unguarded == ["ZBH: the analysis gave no usable stop or target"]
+    assert message == "ZBH: no usable stop or target was available to rest"
+    assert run.unguarded == ["ZBH: no usable stop or target was available to rest"]
 
 
 def test_a_guarded_position_reports_nothing_unguarded(monkeypatch):
@@ -2387,7 +2393,7 @@ def test_moving_a_stop_replaces_rather_than_cancelling(monkeypatch):
     """Cancelling first leaves a window with nothing under the position, which
     is the state this whole area exists to avoid."""
     class Row:
-        id, client_order_id, exit_kind, limit_price = 1, "abc", "stop", 315.04
+        id, client_order_id, exit_kind, limit_price, quantity = 1, "abc", "stop", 315.04, 7.0
 
     replaced, moved = [], []
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)

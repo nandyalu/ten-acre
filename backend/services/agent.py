@@ -902,6 +902,31 @@ def describe_account(book: agent_book.Book, unsettled_cash: float = 0.0) -> list
     return lines
 
 
+def _resting_levels(ticker: str) -> dict[str, dict[float, float]]:
+    """Shares resting at each level, per kind: {"stop": {94.36: 19, 95.46: 15}}.
+
+    **Each buy rests its own exits, so one ticker can have several stops
+    (2026-09-23).** The table showed one of them. INTC held 71 shares in three
+    lots, the Stop column said $120.00, and 34 of those shares had a stop at
+    $94.36 or $95.46.
+    """
+    out: dict[str, dict[float, float]] = {}
+    for t in db.get_resting_exits(ticker):
+        if t.exit_kind and t.limit_price:
+            levels = out.setdefault(t.exit_kind, {})
+            levels[t.limit_price] = levels.get(t.limit_price, 0) + (getattr(t, "quantity", 0) or 0)
+    return out
+
+
+def _levels_text(levels: dict[float, float] | None) -> str:
+    """"$120.00", or "$94.36 on 19, $95.46 on 15" when lots differ."""
+    if not levels:
+        return "UNSET"
+    if len(levels) == 1:
+        return f"${next(iter(levels)):,.2f}"
+    return ", ".join(f"${p:,.2f} on {q:g}" for p, q in sorted(levels.items()))
+
+
 def describe_holdings(
     book: agent_book.Book, price_ranges: dict[str, tuple[float, float]] | None = None
 ) -> list[str]:
@@ -919,21 +944,16 @@ def describe_holdings(
     if not book.holdings:
         return ["You hold nothing. The whole account is in cash."]
     price_ranges = price_ranges or {}
-    exits_by_ticker = {
-        h.ticker: {
-            t.exit_kind: t.limit_price
-            for t in db.get_resting_exits(h.ticker)
-            if t.exit_kind and t.limit_price
-        }
-        for h in book.holdings
-    }
+    exits_by_ticker = {h.ticker: _resting_levels(h.ticker) for h in book.holdings}
     lines = [
         "**Value** is quantity times price now, and is "
         "also about what selling the whole position would raise, before "
         "slippage. **Stop** and **Target** are what is actually resting at "
         "the broker, not a level you asked for earlier — `UNSET` means "
         "nothing is resting on that side, and a move against you on it "
-        "would not be caught.",
+        "would not be caught. Each buy rests its own exits, so where parts of "
+        "a position rest at different levels, each level shows its shares; "
+        "`adjust` moves all of them to the level you give.",
         "",
         "| Ticker | Shares | Avg cost | Price now | Range since purchase | Value"
         " | Unrealized | % of account | Held | Stop | Target |",
@@ -964,8 +984,8 @@ def describe_holdings(
         # the model cannot tell an exit it should move from one that is already
         # where it wants it — or notice there is none at all.
         resting = exits_by_ticker.get(h.ticker, {})
-        stop_text = f"${resting['stop']:,.2f}" if resting.get("stop") else "UNSET"
-        target_text = f"${resting['target']:,.2f}" if resting.get("target") else "UNSET"
+        stop_text = _levels_text(resting.get("stop"))
+        target_text = _levels_text(resting.get("target"))
         lines.append(
             f"| {h.ticker} | {h.quantity:g} | ${h.avg_cost:,.2f} | {price_each}"
             f" | {range_text} | {value} | {pnl} | {weight_text} | {held_text}"
@@ -3062,7 +3082,10 @@ def _recent_alerts() -> list[dict]:
     mean it. With no previous pass to measure from, 24 hours is the fallback.
     """
     runs = db.get_agent_runs(limit=1)
-    since = getattr(runs[0], "ran_at", None) if runs else None
+    # **From the previous pass's last look, not from when it was recorded
+    # (2026-09-23).** A stop that fills after the last prompt of a pass is
+    # built, and before the pass is recorded, was in no prompt at all.
+    since = (getattr(runs[0], "looked_at", None) or getattr(runs[0], "ran_at", None)) if runs else None
     if since is None:
         since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)
     if since.tzinfo is None:
@@ -3819,6 +3842,9 @@ class AgentRun:
     # reads this after the pass to wake the agent early; see
     # _run_agent_pass_locked.
     unguarded: list[str] = field(default_factory=list)
+    # When the last prompt of this pass was built. The next pass shows the
+    # alerts raised after it — see _recent_alerts. None on a skipped pass.
+    looked_at: datetime.datetime | None = None
     # What the agent asked us for: a tool it lacks, data it cannot see, a rule
     # it finds contradictory. Nothing reads these automatically and nothing
     # acts on them — they are evidence about the prompt and the tool set, which
@@ -4043,18 +4069,26 @@ def _place(
     stop, target = usable_levels(ticker, stops.get(ticker), targets.get(ticker), price)
     if stop is None and price:
         stop = atr_stop(ticker, price)
+    refused_because = None
     if price and (stop or target):
         try:
             return sandbox_broker.place_bracket_order(
                 ticker, order["quantity"], price, stop, target
             )
         except Exception as exc:
+            refused_because = str(exc)[:200]
             log.warning(
                 "Bracket refused for %s (%s) — buying at market and arming separately",
-                ticker, str(exc)[:200],
+                ticker, refused_because,
             )
 
-    return sandbox_broker.place_market_order(ticker, "BUY", order["quantity"])
+    # **The levels go back with the fill (2026-09-23)**, so the separate arming
+    # rests the same stop the bracket carried. It re-read the signal table
+    # instead, and NVDA's analysis was older than the table's window: the
+    # bracket had a 2×ATR stop, the broker refused it for unsettled cash, and
+    # the fallback armed nothing.
+    result = sandbox_broker.place_market_order(ticker, "BUY", order["quantity"])
+    return {**result, "levels": (stop, target), "bracket_refused": refused_because}
 
 
 def _record_unguarded(
@@ -4440,7 +4474,9 @@ def _arm_exits(
     stop_price, target_price = usable_levels(order["ticker"], stop_price, target_price, price)
 
     if not stop_price and not target_price:
-        why = "the analysis gave no usable stop or target"
+        # Not "the analysis gave none": until 2026-09-23 it said that for a
+        # buy whose analysis had levels but was older than the signal table.
+        why = "no usable stop or target was available to rest"
         _record_unguarded(order["ticker"], order["quantity"], why, run=run)
         return f"{order['ticker']}: {why}"
 
@@ -4520,6 +4556,8 @@ def settle_pending() -> list[dict]:
                 "quantity": filled_qty,
                 "price": price,
                 "was_stop": trade.is_stop,
+                "exit_kind": getattr(trade, "exit_kind", None),
+                "client_order_id": trade.client_order_id,
                 "reason": trade.reason,
                 "status": "filled",
                 # Set only on a not-yet-filled *entry* order placed as a
@@ -4776,10 +4814,11 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
             elif is_limit:
                 pass  # _describe_fill already said this isn't armed yet.
             else:
+                stop, target = result.get("levels") or (
+                    stops.get(order["ticker"]), targets.get(order["ticker"])
+                )
                 unguarded = _arm_exits(
-                    order,
-                    stops.get(order["ticker"]),
-                    targets.get(order["ticker"]),
+                    order, stop, target,
                     client_order_id=result["client_order_id"],
                     run=run,
                 )
@@ -4853,18 +4892,29 @@ def _describe_fill(order, result, prices, stops, targets) -> str:
         under = "The broker took the stop and target with it."
         placed = {leg["kind"]: leg["price"] for leg in result["exits"]}
     else:
+        # The levels _place resolved, a 2×ATR stop included. The signal's own
+        # levels are the fallback for a caller that does not pass them.
+        armed_stop, armed_target = result.get("levels") or (stop, target)
         placed = {
-            k: v for k, v in (("stop", stop), ("target", target)) if v and k not in refused
+            k: v for k, v in (("stop", armed_stop), ("target", armed_target))
+            if v and not (k in refused and v == (stop if k == "stop" else target))
         }
-        if stop or target:
-            under = "The broker refused the bracket, so the exits were armed separately."
+        why = result.get("bracket_refused")
+        if placed:
+            under = (
+                f"The broker refused the bracket ({why}), so the exits are armed separately, after the fill."
+                if why else "The exits are armed separately, after the fill."
+            )
         else:
-            under = "NOTHING is resting under it — no usable stop or target was on the signal."
+            under = (
+                "NOTHING is resting under it — no signal in the table gave a usable stop "
+                "or target, and no volatility stop could be derived."
+            )
     notes = [f" Not placed: {r}." for r in refused.values()]
     if "stop" in placed and (not stop or abs(placed["stop"] - stop) >= 0.005):
         notes.append(
             f" A volatility stop of ${placed['stop']:,.2f} was placed"
-            + (" instead." if stop else ", because the signal had no stop.")
+            + (" instead." if stop else ", because no signal in the table gave a stop.")
         )
     levels = [f"{k} ${placed[k]:,.2f}" for k in ("stop", "target") if k in placed]
     tail = f" ({', '.join(levels)})" if levels else ""
@@ -4983,6 +5033,9 @@ def run_once(woke_because: str | None = None) -> AgentRun:
         # vendor screen of several calls, and running it on every turn was the
         # old prompt's cost. See ToolContext.
         menu = _candidate_menu() if research.is_charging() and not answers_by_tool() else None
+        # Read before _decide collects the alerts, so an alert that lands while
+        # the model thinks is after this time and the next pass shows it.
+        looked_at = datetime.datetime.now(datetime.timezone.utc)
         decision = _decide(
             book, signals, prices, closed=closed,
             regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
@@ -5006,6 +5059,7 @@ def run_once(woke_because: str | None = None) -> AgentRun:
                            turns=list(getattr(decision, "turns", []) or []))
         else:
             _fold_in(run, decision, reasoning, rejected, book)
+        run.looked_at = looked_at
         # What it asked for and what it got, kept apart. `next_wakeup` is the
         # clamped, usable instant the scheduler acts on; `wakeup_asked` is the raw
         # request. When they differ the agent aimed somewhere the market is shut,
@@ -5297,6 +5351,7 @@ def _record_run(run: "AgentRun") -> None:
             # Set on the first turn and never folded over, so this is the one
             # wake that started the pass however many turns it ran to.
             woke_because=run.woke_because,
+            looked_at=run.looked_at,
         )
     except Exception:
         log.exception("Could not record the agent run")
@@ -5318,6 +5373,35 @@ def format_stop_fill(fill: dict) -> str:
         f"at ${fill['price']:,.2f}. The thesis level from the analysis was reached, "
         "so the paper position is closed."
     )
+
+
+def record_exit_fill(fill: dict) -> None:
+    """Write a filled stop or target as an alert, so the next prompt says what
+    happened under "What was noticed since your last pass".
+
+    **Until 2026-09-23 the agent was told only that a fill occurred.** The wake
+    reason said "A resting stop or target closed one of your positions", and
+    no part of the prompt said which. Pass 81 used its first turn to find the
+    fill, and its last two turns called the wake a misfire.
+    """
+    target = fill.get("exit_kind") == "target" or (fill.get("reason") or "").startswith("take-profit")
+    level = fill.get("limit_price")
+    at_level = f" at ${level:,.2f}" if level else ""
+    what = f"your resting target{at_level} was reached" if target else f"your resting stop{at_level} fired"
+    try:
+        db.record_alert(
+            ticker=fill["ticker"],
+            alert_type="target_fill" if target else "stop_fill",
+            # One alert for each exit order, however often it is settled.
+            dedupe_key=f"exit_fill:{fill.get('client_order_id') or fill['ticker']}",
+            message=(
+                f"{fill['quantity']:g} share(s) of {fill['ticker']} were sold at "
+                f"${fill['price']:,.2f}: {what}. No pass ordered this sale."
+            ),
+        )
+    except Exception:
+        # A second settle of the same order hits the unique dedupe key.
+        log.exception("Couldn't record the exit-fill alert for %s", fill["ticker"])
 
 
 def format_limit_fill(fill: dict) -> str:
@@ -5546,6 +5630,15 @@ def process_queued_arms() -> list[dict]:
     return results
 
 
+def _moved_text(kind: str, level: float, olds: list, shares: float | None) -> str:
+    """"moved stop from $94.36 to $119.50", or with every old level and the
+    shares when more than one lot moved."""
+    known = sorted({o for o in olds if o is not None})
+    source = f" from {' and '.join(f'${o:,.2f}' for o in known)}" if known else ""
+    on = f" on {shares:g} shares" if shares else ""
+    return f"moved {kind}{on}{source} to ${level:,.2f}"
+
+
 def adjust_exits(
     ticker: str, stop: float | None, target: float | None, run: "AgentRun | None" = None
 ) -> dict:
@@ -5579,29 +5672,42 @@ def adjust_exits(
         why = "".join(f" Refused {r}." for r in refused.values())
         return {"ok": False, "message": f"No usable level for {ticker} — nothing was changed.{why}"}
 
-    resting = {t.exit_kind: t for t in db.get_resting_exits(ticker) if t.exit_kind}
+    # **Every lot, not one (2026-09-23).** Each buy rests its own bracket, so
+    # a ticker bought three times has three stops. This was a dict keyed by
+    # kind, which kept one of them: INTC's "stop to $120" moved the exit on
+    # 37 of 71 shares, and the other 34 stayed at $94.36 and $95.46.
+    resting: dict[str, list] = {}
+    for t in db.get_resting_exits(ticker):
+        if t.exit_kind:
+            resting.setdefault(t.exit_kind, []).append(t)
     moved, armed, failed = [], [], []
     for kind, level in (("stop", stop), ("target", target)):
         if level is None:
             continue
-        existing = resting.get(kind)
-        if existing is None:
+        legs = resting.get(kind)
+        if not legs:
             armed.append((kind, level))
             continue
-        if existing.limit_price is not None and abs(existing.limit_price - level) < 0.005:
-            continue  # already there; a replace would be a round trip for nothing
-        try:
-            sandbox_broker.replace_exit(existing.client_order_id, kind, level)
-        except Exception as exc:
-            log.exception("Couldn't move the %s on %s", kind, ticker)
-            failed.append(f"{kind} ({exc})")
-            continue
-        db.move_resting_exit(existing.id, level)
-        # The level it was at is carried alongside the new one: "moved stop to
-        # $334.16" never said what it moved from, so neither the next prompt
-        # nor the Decisions page could tell a stop being raised from a stop
-        # being loosened. NULL on a resting exit with no recorded price.
-        moved.append((kind, level, existing.limit_price))
+        olds, shares = [], 0.0
+        for existing in legs:
+            if existing.limit_price is not None and abs(existing.limit_price - level) < 0.005:
+                continue  # already there; a replace would be a round trip for nothing
+            try:
+                sandbox_broker.replace_exit(existing.client_order_id, kind, level)
+            except Exception as exc:
+                log.exception("Couldn't move the %s on %s", kind, ticker)
+                failed.append(f"{kind} on {existing.quantity:g} shares ({exc})")
+                continue
+            db.move_resting_exit(existing.id, level)
+            olds.append(existing.limit_price)
+            shares += existing.quantity
+        if olds:
+            # The level it was at is carried alongside the new one: "moved stop
+            # to $334.16" never said what it moved from, so neither the next
+            # prompt nor the Decisions page could tell a stop being raised from
+            # a stop being loosened. None on a resting exit with no recorded
+            # price. The share count is said only when more than one lot moved.
+            moved.append((kind, level, olds, shares if len(olds) > 1 else None))
 
     # Whatever had nothing resting yet is placed now, in one call so a pair
     # still goes out as a pair.
@@ -5628,10 +5734,7 @@ def adjust_exits(
                 armed = [(k, v) for k, v in armed if k not in levels]
                 failed.append(unguarded)
 
-    parts = [
-        f"moved {k} from ${old:,.2f} to ${v:,.2f}" if old is not None else f"moved {k} to ${v:,.2f}"
-        for k, v, old in moved
-    ]
+    parts = [_moved_text(k, v, olds, shares) for k, v, olds, shares in moved]
     parts += [f"placed {k} at ${v:,.2f}" for k, v in armed]
     if failed:
         parts += [f"could not move {f}" for f in failed]
