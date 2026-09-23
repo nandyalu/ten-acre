@@ -174,7 +174,7 @@ journalctl -u ten-acre -f
 |---|---|---|
 | `AGENT_BUDGET` | `10000` | What the agent starts with |
 | `RESEARCH_PRICE_USD` | `0.05` | What one analysis costs it. `0` makes research free |
-| `EXPERIMENT_START_DATE` | — | **Leave it empty.** The date is stamped automatically the first time the agent is switched on |
+| `EXPERIMENT_START_DATE` | — | **Leave it empty.** The date is stamped automatically the first time the agent is switched on. Set it only to correct that date: it wins over the stamp |
 
 **You do not normally set the start date.** Switching the agent on is a deliberate act by a person on a date they chose, so that day is written down and never overwritten afterwards. Everything on the site that says "since" or "day N" reads it, and so does the floor for the 1-minute bar backfill — without that, a deployment started next year would page back a year of minute bars to reach a date belonging to somebody else's run. Set the variable only to state a date the stamp cannot know, such as a deployment restored from a backup.
 

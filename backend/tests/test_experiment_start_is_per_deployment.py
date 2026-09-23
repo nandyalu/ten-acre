@@ -117,11 +117,21 @@ def test_the_stamp_is_written_once_and_never_moves(stored):
     assert experiment.start_date() == datetime.date(2027, 1, 15)
 
 
-def test_a_stored_date_beats_the_env_var(stored, monkeypatch):
-    monkeypatch.setenv("EXPERIMENT_START_DATE", "2026-09-09")
-    experiment.record_start(datetime.date(2027, 1, 15))
+def test_the_env_var_corrects_a_stamp_written_on_the_wrong_day(stored, monkeypatch):
+    """2026-09-23: a deployment running since the 3rd was stamped the day its
+    settings were next saved, and the variable could not correct it."""
+    experiment.record_start(datetime.date(2026, 9, 23))
+    monkeypatch.setenv("EXPERIMENT_START_DATE", "2026-09-03")
 
-    assert experiment.start_date() == datetime.date(2027, 1, 15)
+    assert experiment.start_date() == datetime.date(2026, 9, 3)
+
+
+def test_switching_on_stamps_the_stated_date_not_today(stored, monkeypatch):
+    monkeypatch.setenv("EXPERIMENT_START_DATE", "2026-09-03")
+    experiment.record_start()
+    monkeypatch.delenv("EXPERIMENT_START_DATE")
+
+    assert experiment.start_date() == datetime.date(2026, 9, 3)
 
 
 def test_the_live_deployment_is_untouched(stored, monkeypatch):

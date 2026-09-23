@@ -50,11 +50,11 @@ Two copies of the compose config exist and are **not synced automatically**:
 | Data on the host | `/opt/stacks/trading-experiment/data` | `/var/appdata/ten-acre/data` |
 | Dashboard port | 8125 | 8126 |
 | Webull account class | `INDIVIDUAL_CASH` | `INDIVIDUAL_MARGIN` |
-| Stamped start date | 2026-09-23 | 2026-09-10 |
+| Start date | 2026-09-03 (`EXPERIMENT_START_DATE`; stamp 2026-09-23) | 2026-09-10 (stamp) |
 
 Both mount their data directory at `/app/data`. **Both use the one Webull app key**, because Webull issues one per account and allows one account, so only one of them holds the trade stream; the other settles fills on the 15-minute poll. This machine's container was `trading-experiment` until 2026-09-17, and the old `trading-bot` and `analyst-bot` containers stopped on 2026-09-01.
 
-**The database stamps the experiment's start date** the first time the agent is switched on (`backend/services/experiment.py`). See the table above for each. **This machine's stamp is 2026-09-23 although its book began on 2026-09-03**: its database predates the stamp, so the first start of an image that writes it stamped the day of that start. `frontend/src/app/shared/experiment.ts` holds 2026-09-02 as the fallback for a site with no API behind it; everything on the site that says "since" or "day N" reads the stamped value.
+**The database stamps the experiment's start date** the first time the agent is switched on (`backend/services/experiment.py`). See the table above for each. **This machine's stamp says 2026-09-23 although its book began on 2026-09-03.** Its database predated the stamp, and a settings save that day called `set_enabled(True)`, which stamped today. `EXPERIMENT_START_DATE=2026-09-03` corrects it, because since the same day the variable wins over the stamp, and `record_start` stamps the variable's date when one is set. `frontend/src/app/shared/experiment.ts` holds 2026-09-02 as the fallback for a site with no API behind it; everything on the site that says "since" or "day N" reads the stamped value.
 
 Neither dashboard is on the 8080 the template defaults to. `docker ps` is the authority.
 

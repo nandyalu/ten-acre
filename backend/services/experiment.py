@@ -82,7 +82,10 @@ def record_start(today: datetime.date | None = None) -> datetime.date:
     existing = _parse(_stored(), _SETTING_KEY)
     if existing is not None:
         return existing
-    started = today or datetime.date.today()
+    # A stated date is what gets stamped. On 2026-09-23 a deployment that had
+    # run since 2026-09-03 with no stamp was stamped with the day its settings
+    # were next saved, which moved every "day N" its site had shown.
+    started = today or _configured() or datetime.date.today()
     db.set_setting(_SETTING_KEY, started.isoformat())
     log.info("Experiment start recorded as %s — the agent was switched on today", started)
     return started
@@ -91,22 +94,24 @@ def record_start(today: datetime.date | None = None) -> datetime.date:
 def start_date() -> datetime.date:
     """The day this deployment's experiment began.
 
-    Stored value first, then ``EXPERIMENT_START_DATE``, then the constant. The
-    stored value is written when the agent is first switched on, so a
-    self-hoster never has to know any of this exists; the variable stays as an
-    override for a deployment that wants to state a date the stamp cannot know
-    — one restored from a backup, say. The constant keeps the original
-    deployment answering what its own site has always shown.
+    ``EXPERIMENT_START_DATE`` first, then the stored value, then the constant.
+    The stored value is written when the agent is first switched on, so a
+    self-hoster never has to know any of this exists. The variable is an
+    override for a date the stamp cannot know: a deployment restored from a
+    backup, or one stamped late. **It beats the stamp since 2026-09-23**, when
+    a stamp written on the wrong day could not be corrected by it. The
+    constant keeps the original deployment answering what its own site has
+    always shown.
 
     Read per call rather than at import so a test can change it without
     reimporting, matching ``tradeable_account_class`` and
     ``configured_account`` in sandbox_broker.
     """
-    stored = _parse(_stored(), _SETTING_KEY)
-    if stored is not None:
-        return stored
-    configured = _parse(os.environ.get("EXPERIMENT_START_DATE"), "EXPERIMENT_START_DATE")
-    return configured or DEFAULT_START
+    return _configured() or _parse(_stored(), _SETTING_KEY) or DEFAULT_START
+
+
+def _configured() -> datetime.date | None:
+    return _parse(os.environ.get("EXPERIMENT_START_DATE"), "EXPERIMENT_START_DATE")
 
 
 def day_number(today: datetime.date | None = None) -> int:
