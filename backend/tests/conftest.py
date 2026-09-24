@@ -88,11 +88,17 @@ def isolated_request_count(monkeypatch):
     """
     from backend.services import llm_throttle
 
-    store: dict[str, int] = {}
+    # Keyed by bucket as well as day, like the real settings: the decision
+    # model keeps its own count since 2026-09-23.
+    store: dict[tuple[str | None, str], int] = {}
 
-    monkeypatch.setattr(llm_throttle, "_load_day_count", lambda day: store.get(day, 0))
     monkeypatch.setattr(
-        llm_throttle, "_save_day_count", lambda day, count: store.__setitem__(day, count)
+        llm_throttle, "_load_day_count",
+        lambda day, bucket=None: store.get((bucket, day), 0),
+    )
+    monkeypatch.setattr(
+        llm_throttle, "_save_day_count",
+        lambda day, count, bucket=None: store.__setitem__((bucket, day), count),
     )
     return store
 
@@ -126,6 +132,43 @@ def isolated_research_charges(monkeypatch):
 
     monkeypatch.setattr(research.db, "record_research_charge", record)
     monkeypatch.setattr(research.db, "get_research_charges", lambda: list(rows))
+    return rows
+
+
+@pytest.fixture(autouse=True)
+def isolated_agent_runs(monkeypatch):
+    """Keep the agent's pass records in memory for every test.
+
+    **The prompt reads earlier passes**: the last note, the recent wakeups
+    and the broker failures of the last three passes. So a test of the
+    prompt read the developer's `data/trading.db`. On 2026-09-24 that copy
+    had no `agentrun.looked_at` column yet, and 22 tests failed on a
+    migration that had nothing to do with them. On a copy of the live book
+    they would pass, with real failures and notes in every prompt. Same
+    reasoning as `isolated_ticker_status` above. A test that sets its own
+    runs still patches `get_agent_runs` itself, after this.
+    """
+    import itertools
+
+    from backend.database import db
+    from backend.database.models import AgentRun
+
+    rows: list = []
+    ids = itertools.count(1)
+
+    def record(*args, **kwargs):
+        if args:
+            kwargs["ran_at"] = args[0]
+        row = AgentRun(id=next(ids), **kwargs)
+        rows.append(row)
+        return row.id
+
+    def get(limit=None):
+        newest = sorted(rows, key=lambda row: row.ran_at, reverse=True)
+        return newest if limit is None else newest[:limit]
+
+    monkeypatch.setattr(db, "record_agent_run", record)
+    monkeypatch.setattr(db, "get_agent_runs", get)
     return rows
 
 
