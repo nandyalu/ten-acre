@@ -63,6 +63,15 @@ _client_lock = threading.Lock()
 # day's limit (2026-09-23: five requests counted for four calls).
 http_options: types.HttpOptions | None = None
 
+# How long one request to Google may wait for a reply before it fails. The
+# SDK's default is no limit, and on 2026-09-24 one decide call never returned:
+# the pass held _pass_lock for ten hours and every pass after it was skipped.
+# A timeout makes the call fail, so the pass falls back to the text channel.
+# This bounds a hang. It is not a ration: an analysis request averaged 7.5 to
+# 38.8 seconds (llm-providers.md). TRADINGAGENTS_LLM_TIMEOUT (seconds) overrides it, and
+# analysis._build_graph gives the graph's Google clients the same value.
+REQUEST_TIMEOUT_SECONDS = float(DEFAULT_CONFIG.get("llm_timeout") or 300)
+
 # What a fetch is told when it was asked for and could not run.
 ALLOWANCE_SPENT = "Not run: the fetch allowance for this pass is spent. Decide with what you have."
 DECIDE_WITH_FETCH = (
@@ -117,7 +126,14 @@ def client() -> genai.Client:
     global _client
     with _client_lock:
         if _client is None:
-            made = genai.Client(http_options=http_options) if http_options else genai.Client()
+            # The timeout goes into any options a caller set, too: the probe
+            # sets its own retry options, and those must not remove the limit.
+            options = http_options or types.HttpOptions()
+            if options.timeout is None:
+                options = options.model_copy(
+                    update={"timeout": int(REQUEST_TIMEOUT_SECONDS * 1000)}
+                )
+            made = genai.Client(http_options=options)
             # attach() looks for ``.client.models.generate_content``, the shape
             # of the graph's LangChain wrapper. A holder gives this bare client
             # the same shape, so one throttle serves both.

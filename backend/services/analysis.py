@@ -18,7 +18,7 @@ from tradingagents.llm_clients.openai_client import OPENAI_COMPATIBLE_PROVIDERS
 
 from backend.database import db
 from backend.database.models import Signal
-from backend.services import bars, llm_throttle, llm_usage, research, watchdog
+from backend.services import bars, llm_gemini, llm_throttle, llm_usage, research, watchdog
 from backend.services import llm_traces
 from backend.services.positions import get_current_price
 from backend.services.signals import (
@@ -394,6 +394,16 @@ def _build_graph(
     config["deep_think_llm"] = config["quick_think_llm"] = model or get_model()
     if provider:
         config["llm_provider"] = provider
+    # A Google request that never answers must fail, not wait forever. The
+    # decision pass's text fallback uses this graph's client, so without this
+    # a hung decide call could fall back into a second hang. Other providers
+    # keep their own defaults: the local pool queues a request for up to ten
+    # minutes on purpose. See llm_gemini.REQUEST_TIMEOUT_SECONDS.
+    if (
+        str(config.get("llm_provider") or "").strip().lower() == "google"
+        and config.get("llm_timeout") in (None, "")
+    ):
+        config["llm_timeout"] = llm_gemini.REQUEST_TIMEOUT_SECONDS
     graph = TradingAgentsGraph(config=config)
     # Stay inside whatever rate limit the vendor is enforcing. Unconditional
     # because it only ever waits when a vendor asks it to: the local pool
