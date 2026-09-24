@@ -3858,6 +3858,12 @@ class AgentRun:
     # reads this after the pass to wake the agent early; see
     # _run_agent_pass_locked.
     unguarded: list[str] = field(default_factory=list)
+    # Orders this pass found already filled, in the settle at the head of each
+    # turn: a stop or target that fired, or a limit buy that landed. The
+    # scheduler announces them, because a fill the pass settles itself is one
+    # `_settle_agent_fills` will never see — the trade is no longer pending by
+    # the time it looks. See the 2026-09-24 JOURNEY.md entry.
+    fills_seen: list[dict] = field(default_factory=list)
     # When the last prompt of this pass was built. The next pass shows the
     # alerts raised after it — see _recent_alerts. None on a skipped pass.
     looked_at: datetime.datetime | None = None
@@ -4993,10 +4999,6 @@ def run_once(woke_because: str | None = None) -> AgentRun:
     # is refused by sandbox_broker and recorded as a broker failure, and the
     # last five failures appear in the next prompt — which is the loop the
     # rules already describe.
-    settled = settle_pending()
-    if settled:
-        log.info("Settled %d pending order(s) before deciding", len(settled))
-
     # **The pass is a loop now, not a single question (2026-09-12).** The agent
     # acts, sees what its own orders did, and is asked again — the way a person
     # placing an order watches it fill, and the way it already works for a read.
@@ -5024,7 +5026,29 @@ def run_once(woke_because: str | None = None) -> AgentRun:
     # 2 unless the model happened to repeat it. See the 2026-09-17 JOURNEY.md
     # entry.
     notes_this_pass: list[str] = []
+    # Fills found mid-pass, carried out to the scheduler to announce.
+    fills_seen: list[dict] = []
     for act_turn in range(_MAX_ACT_TURNS):
+        # **Every turn, not only before the first one (2026-09-24).** A pass
+        # runs for twenty-five minutes or more, and a resting stop fires on the
+        # market's schedule, not on the pass's. INTC's stop filled eleven
+        # seconds after this pass took the lock, so the one settle it did was
+        # correct and immediately stale: every later turn was shown a position
+        # the account no longer held, and the agent tried to move a stop that
+        # had already paid out. Settled here, the book each turn is built on is
+        # the book as it is now.
+        for fill in settle_pending():
+            log.info("Settled %s %s before deciding", fill["ticker"], fill["status"])
+            if fill["status"] != "filled":
+                continue
+            if fill["was_stop"]:
+                # The alert the next turn's prompt reads. record_exit_fill
+                # dedupes on the order, so settling twice writes one alert.
+                record_exit_fill(fill)
+            elif not (fill["side"] == "buy" and fill.get("limit_price")):
+                # An ordinary fill the pass that placed it already reported.
+                continue
+            fills_seen.append(fill)
         signals = _recent_signals()
         book = agent_book.build_book(price_lookup=get_current_price)
         # The full watchlist, not just signal/holding tickers — since 2026-09-08
@@ -5076,6 +5100,7 @@ def run_once(woke_because: str | None = None) -> AgentRun:
         else:
             _fold_in(run, decision, reasoning, rejected, book)
         run.looked_at = looked_at
+        run.fills_seen = fills_seen
         # What it asked for and what it got, kept apart. `next_wakeup` is the
         # clamped, usable instant the scheduler acts on; `wakeup_asked` is the raw
         # request. When they differ the agent aimed somewhere the market is shut,
@@ -5655,6 +5680,37 @@ def _moved_text(kind: str, level: float, olds: list, shares: float | None) -> st
     return f"moved {kind}{on}{source} to ${level:,.2f}"
 
 
+def _why_replace_failed(existing, exc: Exception) -> str:
+    """Why the broker refused to move a resting exit, in words the agent can
+    act on.
+
+    An exit that has already fired cannot be modified, and the broker says only
+    ``OPENAPI_ORDER_CANT_NOT_BE_REPLACE — Order can not be modified``. That
+    reads like a fault at the broker, and on 2026-09-24 the agent read it that
+    way: INTC's stop filled eleven seconds after the pass started, the book it
+    was shown still held the position, and it spent a turn guessing at unsettled
+    cash, pending orders and API limits. "Already filled" was not on its list,
+    because nothing it could see said so.
+
+    So ask the broker what the order is now. A finished order is an answer, not
+    an error. If the order cannot be read, the broker's own words stand — a
+    second failure here must not hide the first.
+    """
+    try:
+        detail = sandbox_broker.get_order_detail(existing.client_order_id) or {}
+    except Exception:
+        log.exception("Couldn't read %s after a failed replace", existing.client_order_id)
+        return str(exc)
+    status = str(detail.get("status") or detail.get("order_status") or "").upper()
+    if status in ("FILLED", "PARTIAL_FILLED"):
+        filled = _as_float(detail.get("filled_price") or detail.get("avg_fill_price"))
+        at = f" at ${filled:,.2f}" if filled else ""
+        return f"that exit already filled{at}, so there is nothing left to move"
+    if status in ("CANCELLED", "REJECTED", "FAILED", "EXPIRED"):
+        return f"that exit is no longer resting at the broker ({status.lower()})"
+    return str(exc)
+
+
 def adjust_exits(
     ticker: str, stop: float | None, target: float | None, run: "AgentRun | None" = None
 ) -> dict:
@@ -5712,7 +5768,10 @@ def adjust_exits(
                 sandbox_broker.replace_exit(existing.client_order_id, kind, level)
             except Exception as exc:
                 log.exception("Couldn't move the %s on %s", kind, ticker)
-                failed.append(f"{kind} on {existing.quantity:g} shares ({exc})")
+                failed.append(
+                    f"{kind} on {existing.quantity:g} shares "
+                    f"({_why_replace_failed(existing, exc)})"
+                )
                 continue
             db.move_resting_exit(existing.id, level)
             olds.append(existing.limit_price)

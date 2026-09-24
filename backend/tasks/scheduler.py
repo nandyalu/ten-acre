@@ -470,6 +470,24 @@ async def _run_agent_pass_locked(label: str) -> None:
         _replace_wakeup_alarm(market_clock.next_open())
         return
     _replace_wakeup_alarm(run.next_wakeup or market_clock.next_open())
+    # A fill the pass settled itself is one _settle_agent_fills will never
+    # find — the trade is no longer pending by the time it looks. Announced
+    # here instead, so a stop firing still reaches a person exactly once, and
+    # a limit buy that landed mid-pass still says its shares have nothing
+    # resting under them. getattr, the same reason `run.looked_at` is read
+    # that way below: a caller may hand back a stand-in run, and tests do.
+    limit_filled = False
+    for fill in getattr(run, "fills_seen", []):
+        if fill["was_stop"]:
+            await notify(agent.format_stop_fill(fill))
+        else:
+            await notify(agent.format_limit_fill(fill))
+            limit_filled = True
+    if limit_filled and not run.unguarded:
+        # Its shares landed with nothing resting under them, and if the fill
+        # came on the last turn the pass never saw them. Below, an unguarded
+        # position pulls the alarm forward anyway, so this does not double up.
+        wake_agent_now("Limit buy filled")
     if run.unguarded:
         # **Pulled forward after the alarm above is set, never during the
         # pass (2026-09-16).** Calling this from inside run_once itself is

@@ -623,9 +623,12 @@ def test_a_placed_order_is_settled_before_the_run_is_reported(monkeypatch):
     run = agent.run_once()
 
     assert run.placed
-    # Settled at both ends: once before deciding so the book is current, once
+    # Turn 0 settles, builds its book, places, and settles again. Turn 1
+    # settles and builds its book, then repeats its answer and ends the pass.
+    # Three settles: one at the head of each turn so the book is current — a
+    # resting stop fires on the market's schedule, not the pass's — and one
     # after placing so what is reported is what happened.
-    assert calls.count("settle") == 2
+    assert calls.count("settle") == 3
     assert calls.index("settle") < calls.index("book")
 
 
