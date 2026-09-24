@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-24
+
+- **Repository** — The notes for each release are now in `docs/releases.md`, and a new `release` skill gives the steps to cut one. Before this, the notes were only on GitHub, and v0.2.0 and v0.2.1 had generated notes only.
+
 ## 2026-09-23
 
 - **Setup** — A new optional setting, `AGENT_DECISION_MODEL`, lets the agent decide with a different Gemini model than the analyses. Google limits each model on its own, so the decision model has its own limits in `AGENT_LLM_REQUESTS_PER_MINUTE`, `AGENT_LLM_TOKENS_PER_MINUTE` and `AGENT_LLM_REQUESTS_PER_DAY`, and its own stored day's count. The text fallback asks the same model, so a failed call cannot put a second decision-maker in the record. Unset, nothing changes. A deployment that turns it on needs a [journey](journey.md) entry that day, because the model that decides is the experiment.

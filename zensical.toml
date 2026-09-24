@@ -20,6 +20,7 @@ nav = [
   { "Home" = "index.md" },
   { "The journey" = "journey.md" },
   { "Changelog" = "changelog.md" },
+  { "Releases" = "releases.md" },
   { "Contributing" = "contributing.md" },
   { "Using AI on this project" = "ai-policy.md" },
   { "The two-book experiment" = "two-book-experiment.md" },
