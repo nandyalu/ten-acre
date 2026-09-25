@@ -4,6 +4,17 @@
 
 For each change by date, see [the changelog](changelog.md) and [the journey](journey.md).
 
+## v0.4.0 — 2026-09-25
+
+- **A wake that comes during a pass now gets a pass after it.** Before, a watchdog alert, an earnings wake or a fill that came while a pass ran was dropped, and the agent heard of it only at its next own wakeup. Now it is kept, and it is dropped only when the running pass built its last prompt after the event. A pass that comes due during the evening review now waits for the review, where before it was skipped.
+- **A stop that the trade stream catches now wakes the agent and reaches its prompt.** The stream settled the fill and posted it to Discord only, so the agent got no `stop_fill` alert and no wake. It now goes through `scheduler.announce_fills`, the same path as the 15-minute poll. A limit buy that filled was missed the same way and is fixed too.
+- **The account line gives the equity first.** It started with "Your account is $10,000.00 in total", and pass 88 sized its risk on $10,000 when the book was worth $10,942.50. The stop-fill alert no longer says "No pass ordered this sale", which was false: a pass placed the stop.
+- **The scheduler's jobs run on quiv's threads, and quiv's job history is now true.** Every job used to hand its work to the main loop with `run_on_main` and return, so each one showed a one-millisecond success. With quiv 1.2.0 only `notify` and the analyses go to the main loop, through `call_on_main`. The alarm, the five-minute backstop and the final pass are now one task, `agent_pass`, so the jobs page lists 7 tasks.
+- **Set `stop_grace_period: 20s` on the `ten-acre` service.** At shutdown the app gives the scheduler 10 seconds to stop its jobs and 3 more for work queued on its loop, and Docker's default of 10 seconds would kill it first. `compose.example.yaml` has the line; a deployed compose file needs it added by hand. A pass that is running stops between turns, never between an order and its record.
+- **The Decisions page can show the system prompt**, the rules every pass gets, behind a "Show the system prompt" button. `GET /api/agent/system-prompt` serves it, and the static site reads `agent_system-prompt.json`.
+- **The site's tables, the Journal and the Decisions transcript are redesigned.** The trade log, the positions and the analysis list filter and page in the browser. The Journal shows each day's parts on their own, a closed day carries a one-line summary, and one "Show the transcript" button opens the prompt and the model's answer side by side.
+- **A test runs the agent task against a real quiv** and checks that the time a pass chooses is kept, and `quiv_findings.md` records how the app uses quiv.
+
 ## v0.3.0 — 2026-09-24
 
 - **The agent reviews its own day each evening.** After the close and the grading, it is shown every pass since its last review, what its trades did, and the analyses it bought with what the price did since. It answers two forced calls in one conversation: `report`, notes for whoever maintains it, each naming the pass where a tool or a fact was missing; then `revise`, a new note for the next pass and changes to its memory notes. It can place no order, commission nothing, and cannot move its alarm. The review runs on the tool channel only, so a deployment on the JSON channel skips it with a log line.

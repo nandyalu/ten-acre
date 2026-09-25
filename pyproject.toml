@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ten-acre"
-version = "0.3.0"
+version = "0.4.0"
 description = "Discord bot + web dashboard delegating stock analysis to TradingAgents"
 requires-python = ">=3.14"
 # PolyForm Noncommercial 1.0.0 has no SPDX identifier — it isn't an
