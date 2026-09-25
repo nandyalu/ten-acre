@@ -5089,13 +5089,18 @@ def _fold_in(run, decision, reasoning, rejected, book) -> None:
     run.book = book
 
 
-def run_once(woke_because: str | None = None) -> AgentRun:
+def run_once(woke_because: str | None = None, should_stop=None) -> AgentRun:
     """One decision pass: settle fills, build the book, ask the model, screen
     the answer, place what survives.
 
     Refuses to run outside the sandbox. sandbox_broker would refuse each order
     anyway, but failing here means the model is never even asked, so a
     misconfigured deployment costs nothing instead of a full analysis.
+
+    ``should_stop`` is quiv's stop event, set when the app shuts down. It is
+    read between turns only, after a turn's orders have been placed and
+    settled, and never between an order and its record. A pass that stops
+    there is recorded like any other.
     """
     # Skipped passes are recorded too. Four days of "switched off" is part of
     # the story — a journey that showed only the days something happened would
@@ -5293,6 +5298,9 @@ def run_once(woke_because: str | None = None) -> AgentRun:
             # people who maintain this app, not an order with a result.
             break
         outcomes = outcomes + did
+        if should_stop is not None and should_stop():
+            log.info("The app is shutting down; the pass ends after this turn")
+            break
         log.info(
             "Asking again after acting (%d of %d act-turns used)",
             act_turn + 1, _MAX_ACT_TURNS,

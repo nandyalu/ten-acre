@@ -14,7 +14,15 @@ from backend.services import trade_stream
 @pytest.fixture(autouse=True)
 def not_started(monkeypatch):
     monkeypatch.setattr(trade_stream, "_thread", None)
-    monkeypatch.setattr(trade_stream, "_loop", None)
+
+
+@pytest.fixture
+def announced(monkeypatch):
+    from backend.tasks import scheduler
+
+    batches = []
+    monkeypatch.setattr(scheduler, "announce_fills", batches.append)
+    return batches
 
 
 def _deliver(payload):
@@ -46,37 +54,30 @@ def test_an_event_settles_through_the_verified_path(monkeypatch):
     assert called == [1]
 
 
-def test_a_filled_stop_is_announced(monkeypatch):
+def test_a_filled_stop_is_announced(monkeypatch, announced):
+    """Through the watchdog's own path, so the agent gets the alert row and
+    the wake too. See test_a_filled_exit_is_told_to_the_agent.py."""
     from backend.services import agent
 
-    posted = []
     monkeypatch.setattr(
         agent, "settle_pending",
         lambda: [{"ticker": "ZBH", "quantity": 10, "price": 95.3,
                   "was_stop": True, "status": "filled", "reason": "stop-loss resting at $95.30"}],
     )
-    monkeypatch.setattr(trade_stream, "_notify_from_thread", lambda fill: posted.append(fill))
 
     _deliver("payload")
 
-    assert posted and posted[0]["ticker"] == "ZBH"
+    assert announced and announced[0][0]["ticker"] == "ZBH"
 
 
-def test_an_ordinary_fill_is_not_announced(monkeypatch):
-    """The run that placed it already reported it."""
+def test_nothing_settled_announces_nothing(monkeypatch, announced):
     from backend.services import agent
 
-    posted = []
-    monkeypatch.setattr(
-        agent, "settle_pending",
-        lambda: [{"ticker": "ZBH", "quantity": 10, "price": 97.8,
-                  "was_stop": False, "status": "filled"}],
-    )
-    monkeypatch.setattr(trade_stream, "_notify_from_thread", lambda fill: posted.append(fill))
+    monkeypatch.setattr(agent, "settle_pending", lambda: [])
 
     _deliver("payload")
 
-    assert posted == []
+    assert announced == []
 
 
 def test_a_settle_failure_does_not_kill_the_stream(monkeypatch):
@@ -92,10 +93,17 @@ def test_a_settle_failure_does_not_kill_the_stream(monkeypatch):
     _deliver("payload")  # must not raise
 
 
-def test_notifying_without_a_loop_is_a_no_op(monkeypatch):
-    """Started outside the app there is no loop to hand the post back to."""
-    monkeypatch.setattr(trade_stream, "_loop", None)
-    trade_stream._notify_from_thread({"ticker": "AAA", "quantity": 1, "price": 1.0})
+def test_an_announce_failure_does_not_kill_the_stream(monkeypatch):
+    from backend.services import agent
+    from backend.tasks import scheduler
+
+    def boom(settled):
+        raise RuntimeError("main loop gone")
+
+    monkeypatch.setattr(agent, "settle_pending", lambda: [{"was_stop": True, "status": "filled"}])
+    monkeypatch.setattr(scheduler, "announce_fills", boom)
+
+    _deliver("payload")  # must not raise
 
 
 def test_the_stream_does_not_start_outside_the_sandbox(monkeypatch):

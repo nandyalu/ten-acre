@@ -138,8 +138,6 @@ def test_a_fill_the_pass_settled_itself_is_still_announced(monkeypatch):
     to carry it out. A limit buy is the case that also needs a fresh decision:
     it never brackets, so its shares land with nothing resting under them, and
     a fill on the pass's last turn is one the pass never saw."""
-    import asyncio
-
     from backend.tasks import scheduler
 
     posted, woken = [], []
@@ -153,12 +151,11 @@ def test_a_fill_the_pass_settled_itself_is_still_announced(monkeypatch):
     }
     monkeypatch.setattr(
         scheduler.agent, "run_once",
-        lambda woke_because=None: types.SimpleNamespace(
+        lambda woke_because=None, should_stop=None: types.SimpleNamespace(
             next_wakeup=None, fills_seen=[stop, buy], unguarded=[],
             acted=False, rejected=[], failed=[], notes=[], looked_at=None,
         ),
     )
-    monkeypatch.setattr(scheduler, "_replace_wakeup_alarm", lambda when: None)
     monkeypatch.setattr(scheduler, "wake_agent_now", lambda label=None: woken.append(label))
 
     async def posts(*a, **kw):
@@ -166,7 +163,7 @@ def test_a_fill_the_pass_settled_itself_is_still_announced(monkeypatch):
 
     monkeypatch.setattr(scheduler, "notify", posts)
 
-    asyncio.run(scheduler._run_agent_pass_locked("test"))
+    scheduler._run_agent_pass_locked("test")
 
     assert any("INTC" in str(p) for p in posted)
     assert any("CRWV" in str(p) for p in posted)

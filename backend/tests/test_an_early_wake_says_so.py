@@ -1,7 +1,7 @@
 """An early wake tells the agent what woke it, and what it replaces.
 
 A sharp move, the earnings check, a stop filling and a position left unguarded
-all wake the agent by firing its pending alarm early. A restart with new change
+all wake the agent early (`scheduler.wake_agent_now`). A restart with new change
 notes did too, until the change-note mechanism was removed on 2026-09-21. The alarm always said "You asked
 to be woken now". On 2026-09-13 a restart woke the agent on a Saturday night,
 and the prompt told it that it had asked for that.
@@ -10,13 +10,11 @@ The note it had left was for a wakeup still two days away. The prompt now says
 so, and asks the agent to choose its wakeup and note again, because the early
 pass replaces the planned alarm.
 """
-import asyncio
 import datetime
 import types
 from zoneinfo import ZoneInfo
 
 import pytest
-from quiv.exceptions import TaskNotFoundError
 
 from backend.services import agent, agent_book
 from backend.tasks import scheduler
@@ -27,71 +25,52 @@ PLANNED = datetime.datetime(2026, 9, 14, 9, 25, tzinfo=ET)
 
 
 @pytest.fixture(autouse=True)
-def no_label(monkeypatch):
-    monkeypatch.setattr(scheduler, "_early_wake_label", None)
-    monkeypatch.setattr(scheduler, "_wakeup_task_id", None)
+def no_wake(monkeypatch):
+    monkeypatch.setattr(scheduler, "_pending_wake", None)
+    monkeypatch.setattr(scheduler, "_agent_task_id", None)
+    monkeypatch.setattr(scheduler, "_final_pass_at", None)
 
 
 def _book():
     return agent_book.Book(budget=1000.0, cash=500.0, realized_pnl=0.0, holdings=[])
 
 
-def _run_alarm(monkeypatch) -> list[str]:
+def _run_task(monkeypatch) -> list[str]:
     seen = []
-
-    async def fake_pass(label):
-        seen.append(label)
-
-    monkeypatch.setattr(scheduler, "_run_agent_pass", fake_pass)
+    monkeypatch.setattr(scheduler, "_run_agent_pass", lambda label, stop_event=None: seen.append(label))
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
-    asyncio.run(scheduler._alarm_job())
+    monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: now)
+    scheduler.agent_pass()
     return seen
 
 
-# --- the label travels with the alarm -------------------------------------------
+# --- the label travels with the wake --------------------------------------------
 
 
-def test_an_alarm_fired_early_carries_what_fired_it(monkeypatch):
-    monkeypatch.setattr(scheduler, "_wakeup_task_id", "task-1")
-    monkeypatch.setattr(scheduler.scheduler, "run_task_immediately", lambda tid: None)
+def test_an_early_wake_carries_what_asked_for_it(monkeypatch):
+    scheduler.wake_agent_now("Stop fill")
 
-    assert scheduler.wake_agent_now("Stop fill") is True
-
-    assert _run_alarm(monkeypatch) == ["Stop fill"]
+    assert _run_task(monkeypatch) == ["Stop fill"]
 
 
-def test_an_alarm_on_time_says_the_agent_asked(monkeypatch):
-    assert _run_alarm(monkeypatch) == ["Alarm"]
+def test_a_pass_at_its_own_time_says_the_agent_asked(monkeypatch):
+    assert _run_task(monkeypatch) == ["Alarm"]
 
 
 def test_the_label_does_not_outlive_its_wake(monkeypatch):
-    monkeypatch.setattr(scheduler, "_wakeup_task_id", "task-1")
-    monkeypatch.setattr(scheduler.scheduler, "run_task_immediately", lambda tid: None)
     scheduler.wake_agent_now("Earnings")
-    _run_alarm(monkeypatch)
+    _run_task(monkeypatch)
 
-    assert _run_alarm(monkeypatch) == ["Alarm"]
-
-
-def test_a_pull_that_fails_leaves_no_label(monkeypatch):
-    monkeypatch.setattr(scheduler, "_wakeup_task_id", "task-1")
-
-    def gone(tid):
-        raise TaskNotFoundError(tid)
-
-    monkeypatch.setattr(scheduler.scheduler, "run_task_immediately", gone)
-
-    assert scheduler.wake_agent_now("Stop fill") is False
-    assert scheduler._early_wake_label is None
+    assert _run_task(monkeypatch) == ["Alarm"]
 
 
 def test_a_trigger_passes_its_own_label(monkeypatch):
     asked = []
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
     monkeypatch.setattr(scheduler, "_last_agent_run", None)
-    monkeypatch.setattr(scheduler, "wake_agent_now", lambda label=None: asked.append(label) or True)
+    monkeypatch.setattr(scheduler, "wake_agent_now", asked.append)
 
-    asyncio.run(scheduler._maybe_run_agent("Earnings"))
+    scheduler._maybe_run_agent("Earnings")
 
     assert asked == ["Earnings"]
 

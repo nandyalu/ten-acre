@@ -132,7 +132,7 @@ def test_every_wake_path_has_a_reason_the_agent_can_read():
 def test_the_reason_reaches_run_once(monkeypatch):
     seen = {}
 
-    def fake_run_once(woke_because=None):
+    def fake_run_once(woke_because=None, should_stop=None):
         seen["why"] = woke_because
         return types.SimpleNamespace(
             acted=False, rejected=[], failed=[], notes=[], next_wakeup=None, skipped=None,
@@ -140,11 +140,9 @@ def test_the_reason_reaches_run_once(monkeypatch):
         )
 
     monkeypatch.setattr(scheduler.agent, "run_once", fake_run_once)
-    monkeypatch.setattr(scheduler, "_replace_wakeup_alarm", lambda when: None)
+    monkeypatch.setattr(scheduler, "_pending_wake", None)
 
-    import asyncio
-
-    asyncio.run(scheduler._run_agent_pass_locked("Event-driven"))
+    scheduler._run_agent_pass_locked("Event-driven")
 
     assert seen["why"] == scheduler._WOKE_BECAUSE["Event-driven"]
 

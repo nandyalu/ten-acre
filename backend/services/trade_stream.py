@@ -19,7 +19,6 @@ correctness guarantee, never a replacement for it.
 The subscription is blocking, so it runs on its own daemon thread; callbacks
 arrive on that thread and must not touch the event loop directly.
 """
-import asyncio
 import logging
 import os
 import sys
@@ -75,7 +74,6 @@ class _MuteThisThread:
 
 _STREAM_THREAD_NAME = "webull-trade-events"
 _thread: threading.Thread | None = None
-_loop: asyncio.AbstractEventLoop | None = None
 _client = None
 
 
@@ -116,27 +114,17 @@ def _on_event(event_type, subscribe_type, payload, response) -> None:
     if not settled:
         return
     log.info("Settled %d order(s) from a trade event", len(settled))
-    for fill in settled:
-        if fill.get("was_stop") and fill.get("status") == "filled":
-            _notify_from_thread(fill)
-
-
-def _notify_from_thread(fill: dict) -> None:
-    """Hand a Discord post back to the main loop.
-
-    The callback runs on the gRPC thread. notify() touches the Discord client,
-    which belongs to the loop the app started on, so it has to be scheduled
-    there rather than awaited here.
-    """
-    if _loop is None or _loop.is_closed():
-        return
-    from backend.notifications.notify import notify
-    from backend.services import agent
-
+    # **The same announcement the watchdog makes (2026-09-25).** Whoever
+    # settles a fill has to announce it, because no later settle finds it.
+    # This used to post a stop fill to Discord and do nothing else, so the
+    # agent got no alert row and no wake. announce_fills posts through quiv's
+    # call_on_main, which waits on the main loop from this gRPC thread.
     try:
-        asyncio.run_coroutine_threadsafe(notify(agent.format_stop_fill(fill)), _loop)
+        from backend.tasks import scheduler
+
+        scheduler.announce_fills(settled)
     except Exception:
-        log.exception("Couldn't post a fill notification from the stream thread")
+        log.exception("Couldn't announce the fills from a trade event")
 
 
 def _on_connect(client, payload, response) -> None:
@@ -188,7 +176,7 @@ def start() -> bool:
     if (os.environ.get("TRADE_STREAM") or "").strip().lower() in ("0", "false", "no", "off"):
         log.info("Trade event stream disabled by TRADE_STREAM — the 15-minute poll still runs")
         return False
-    global _thread, _loop
+    global _thread
     if is_running():
         return True
     if not quotes.is_sandbox():
@@ -206,10 +194,6 @@ def start() -> bool:
     if not account_id:
         return False
 
-    try:
-        _loop = asyncio.get_running_loop()
-    except RuntimeError:
-        _loop = None
     _stop.clear()
     if not isinstance(sys.stdout, _MuteThisThread):
         sys.stdout = _MuteThisThread(sys.stdout, _STREAM_THREAD_NAME)

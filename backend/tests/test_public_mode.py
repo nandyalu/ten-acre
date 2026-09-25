@@ -164,7 +164,7 @@ def test_the_private_copy_starts_everything(monkeypatch):
     started = []
     monkeypatch.setattr("backend.app.register_jobs", lambda: started.append("jobs"))
     monkeypatch.setattr("backend.app.scheduler.start", lambda: started.append("scheduler"))
-    monkeypatch.setattr("backend.app.scheduler.shutdown", lambda: None)
+    monkeypatch.setattr("backend.app.scheduler.shutdown", lambda timeout=None: None)
     monkeypatch.setattr("backend.app.trade_stream.start", lambda: started.append("stream"))
     monkeypatch.setattr("backend.app.trade_stream.stop", lambda: None)
 

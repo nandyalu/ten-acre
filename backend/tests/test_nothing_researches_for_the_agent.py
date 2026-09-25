@@ -41,15 +41,15 @@ def test_an_alert_carries_no_analysis_flag():
 def test_the_alert_job_wakes_the_agent_instead_of_analysing(monkeypatch):
     woken = []
 
-    async def fake_maybe_run_agent():
+    def fake_maybe_run_agent():
         woken.append(True)
 
     async def nothing():
         return None
 
     monkeypatch.setattr(scheduler.watchdog, "is_us_market_hours", lambda: True)
-    monkeypatch.setattr(scheduler, "_settle_agent_fills", nothing)
-    monkeypatch.setattr(scheduler, "_place_queued_exits", nothing)
+    monkeypatch.setattr(scheduler, "_settle_agent_fills", lambda: None)
+    monkeypatch.setattr(scheduler, "_place_queued_exits", lambda: None)
     monkeypatch.setattr(
         scheduler.watchdog, "scan_for_alerts",
         lambda: [types.SimpleNamespace(message="ORCL moved -5.4% today")],
@@ -57,7 +57,7 @@ def test_the_alert_job_wakes_the_agent_instead_of_analysing(monkeypatch):
     monkeypatch.setattr(scheduler, "notify", lambda *a, **kw: nothing())
     monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
 
-    asyncio.run(scheduler._alert_watchdog_job())
+    scheduler.alert_watchdog()
 
     assert woken == [True]
 
@@ -73,7 +73,7 @@ def test_the_earnings_check_records_and_wakes(monkeypatch):
     stored = {}
     woken = []
 
-    async def fake_maybe_run_agent(label="Event-driven"):
+    def fake_maybe_run_agent(label="Event-driven"):
         woken.append(label)
 
     monkeypatch.setattr(scheduler.watchdog, "earnings_due", lambda: [("NVDA", datetime.date(2026, 9, 16))])
@@ -87,7 +87,7 @@ def test_the_earnings_check_records_and_wakes(monkeypatch):
 
     monkeypatch.setattr(scheduler.datetime, "datetime", Thursday)
 
-    asyncio.run(scheduler._earnings_check_job())
+    scheduler.earnings_check()
 
     assert stored["up"] == [("NVDA", datetime.date(2026, 9, 16))]
     # Its own reason, not the alert one: the earnings path reaches the same

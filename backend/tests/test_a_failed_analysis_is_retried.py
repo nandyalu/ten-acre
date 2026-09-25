@@ -236,12 +236,9 @@ def test_the_bridge_returns_the_failures(monkeypatch):
         failures["SMR"] = "reason"
         return []
 
-    async def drive():
-        monkeypatch.setattr(scheduler, "_main_loop", asyncio.get_running_loop())
-        monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
-        return await asyncio.to_thread(scheduler._research_for_agent, ["INTC", "SMR"])
+    monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
 
-    assert asyncio.run(drive()) == {"SMR": "reason"}
+    assert scheduler._research_for_agent(["INTC", "SMR"]) == {"SMR": "reason"}
 
 
 def test_the_agent_is_told_a_failed_analysis_did_not_finish(monkeypatch):

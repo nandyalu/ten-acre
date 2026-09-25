@@ -5,6 +5,7 @@ the optional Discord client, both started/stopped in the lifespan. This is
 the process now; backend/main.py just runs it via uvicorn. Replaces
 backend/app.py and the old discord.py-owns-the-loop model entirely.
 """
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,6 +32,11 @@ from backend.services import publish, trade_stream
 from backend.tasks.scheduler import register_jobs, scheduler
 
 log = logging.getLogger("ten-acre.app")
+
+# Seconds. Both fit inside the stop grace period the compose file sets (20 s),
+# with room left for uvicorn itself.
+_SHUTDOWN_TIMEOUT = 10
+_DRAIN_TIMEOUT = 3
 
 # The built dashboard and the built docs live inside the package, at
 # backend/web and backend/site. A checkout, the container and an installed
@@ -76,7 +82,21 @@ async def lifespan(app: FastAPI):
     trade_stream.start()
     yield
     trade_stream.stop()
-    scheduler.shutdown()  # mandatory per quiv's own docs — cancels jobs, deletes its temp DB
+    # Mandatory per quiv's own docs: it sets every job's stop event, waits for
+    # the jobs, and deletes its temp DB. In a thread, so this loop keeps
+    # running meanwhile: a job waiting in call_on_main needs the loop to
+    # cancel its coroutine. The timeout keeps the stop inside the container's
+    # grace period. A pass stops between turns, but a model call already in
+    # flight does not, and it is left behind.
+    await asyncio.to_thread(scheduler.shutdown, _SHUTDOWN_TIMEOUT)
+    # Work a job handed to this loop can still be queued here. Give it a
+    # moment to finish before the loop closes and cancels it.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _DRAIN_TIMEOUT
+    while scheduler.pending_main_loop_work() and loop.time() < deadline:
+        await asyncio.sleep(0.05)
+    if scheduler.pending_main_loop_work():
+        log.warning("%d scheduler callables still queued at shutdown", scheduler.pending_main_loop_work())
 
 
 # FastAPI's own interactive API reference moves under /api, because /docs

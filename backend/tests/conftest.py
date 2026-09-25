@@ -285,3 +285,24 @@ def never_reach_the_live_broker(monkeypatch):
             monkeypatch.setattr(f"{module}.get_api_client", refuse, raising=False)
         except Exception:
             pass
+
+
+@pytest.fixture(autouse=True)
+def main_loop_work_runs_inline(monkeypatch):
+    """Run what a job hands to the main loop right here, in the test.
+
+    Jobs send ``notify`` and the analyses to the app's loop with quiv's
+    ``call_on_main``, which needs a started ``Quiv`` and a running loop. A
+    test has neither. This runs a coroutine function to completion and calls
+    a plain one, which is what ``call_on_main`` returns in the app.
+    """
+    import asyncio
+    import inspect
+
+    from backend.tasks import scheduler
+
+    def inline(func, *args, **kwargs):
+        result = func(*args, **kwargs)
+        return asyncio.run(result) if inspect.isawaitable(result) else result
+
+    monkeypatch.setattr(scheduler, "call_on_main", inline)

@@ -16,6 +16,9 @@ services:
     pull_policy: never
     container_name: ten-acre
     restart: unless-stopped
+    # The app gives the scheduler 10 s to stop its jobs and 3 s more for work
+    # queued on its event loop. Docker's default of 10 s would kill it first.
+    stop_grace_period: 20s
     # Lets the container reach a model server running on the host itself.
     extra_hosts:
       - host.docker.internal:host-gateway

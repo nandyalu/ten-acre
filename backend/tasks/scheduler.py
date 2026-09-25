@@ -1,11 +1,23 @@
-"""Scheduled jobs, on quiv. quiv's real job here is the interval/delay timer
-(replacing discord.ext.tasks.loop) — each registered handler is a trivial
-sync function that hops straight back to the main event loop via quiv's
-run_on_main(). That hop is required, not optional: quiv runs a handler on
-its own worker thread with a fresh, isolated event loop, but the actual job
-bodies below touch main-loop-bound resources (the Discord client, the
-analysis semaphore/asyncio.to_thread machinery in backend/services/analysis.py) that
-aren't safe to touch from any other loop.
+"""Scheduled jobs, on quiv. quiv runs each job on its own worker thread, and
+the job does its work there. The FastAPI app only registers the tasks, moves
+the agent's task when something asks for a pass, and reads quiv's record.
+
+**Since 2026-09-25 the work runs inside the quiv job.** Until then every
+handler handed a coroutine to the main loop with ``run_on_main`` and returned
+at once, so quiv recorded a one-millisecond success whatever the work did, and
+a task ``timeout`` could never fire. Now a job is synchronous, quiv records its
+real duration and its real failure, and only the parts that belong to the main
+loop go back to it, with ``call_on_main``, which waits for the result:
+
+- ``notify``, because it is async and posts on the main loop.
+- ``analysis.run_analyses``, because ``_analysis_semaphore`` is an
+  ``asyncio.Semaphore`` bound to the main loop.
+
+**One quiv task runs every decision pass**, ``agent_pass``. quiv never runs a
+task beside itself, so two passes cannot overlap, and ``_pass_lock`` only
+keeps a pass apart from the evening review, which is a different task. The
+agent's chosen time, the final pass before the close, and every early wake
+all move that one task. See ``agent_pass``.
 
 quiv has no cron/calendar scheduling (interval, plus an absolute or relative
 start) — the four daily jobs below approximate a fixed UTC time via
@@ -13,12 +25,12 @@ interval=86400 plus run_at set to the next occurrence of that time, keeping
 each job's existing internal weekday/Friday-only gate. alert_watchdog is a
 true interval and maps over 1:1.
 """
-import asyncio
 import datetime
 import logging
 import os
+import threading
 
-from quiv import Quiv, TaskNotActiveError, TaskNotFoundError, run_on_main
+from quiv import Event, Quiv, QuivError, TaskNotFoundError, TaskStatus, call_on_main
 
 from backend.database import db
 from backend.services import (
@@ -62,6 +74,16 @@ def _next_utc_time(hour: int, minute: int) -> datetime.datetime:
     return target
 
 
+def _utc(when: datetime.datetime) -> datetime.datetime:
+    """``when`` with a zone. The database hands back naive UTC."""
+    return when.replace(tzinfo=datetime.timezone.utc) if when.tzinfo is None else when
+
+
+def _notify(message: str | None = None, embed=None) -> None:
+    """Post from a job thread. ``notify`` is async and runs on the main loop."""
+    call_on_main(notify, message, embed=embed)
+
+
 def _format_outcome_line(signal, evaluation: SignalEvaluation, price_now: float) -> str:
     verdict = "PASS" if evaluation.outcome == "pass" else "FAIL"
     line = (
@@ -81,7 +103,7 @@ def _format_outcome_line(signal, evaluation: SignalEvaluation, price_now: float)
     return line
 
 
-async def _evaluate_pending_signals() -> None:
+def _evaluate_pending_signals() -> None:
     spy_windows: dict[datetime.date, PriceWindow | None] = {}  # per-run cache, keyed by signal_date
     for signal in db.get_pending_signals(datetime.date.today()):
         window = get_price_window(signal.ticker, signal.signal_date)
@@ -114,14 +136,7 @@ async def _evaluate_pending_signals() -> None:
             outcome_vs_benchmark=evaluation.outcome_vs_benchmark,
             price_target_hit=evaluation.price_target_hit,
         )
-        await notify(_format_outcome_line(signal, evaluation, window.last_close))
-
-
-# The loop every async job runs on. Captured in register_jobs, which app.py
-# calls from inside its lifespan coroutine, so a worker thread can hand work
-# back to it and wait for the answer. None outside a running app — a script or
-# a test — and _research_for_agent says so rather than hanging.
-_main_loop: asyncio.AbstractEventLoop | None = None
+        _notify(_format_outcome_line(signal, evaluation, window.last_close))
 
 
 def _research_for_agent(tickers: list[str]) -> dict[str, str]:
@@ -132,35 +147,31 @@ def _research_for_agent(tickers: list[str]) -> dict[str, str]:
     the pass told the agent a failed analysis had finished.
 
     **This is what lets a synchronous pass wait for its own research.**
-    `agent.run_once` is sync and runs on a worker thread; an analysis is async
-    work owned by the main loop. Installed on the agent at startup so that
-    module stays synchronous, with no import of this one.
+    `agent.run_once` is sync and runs on the agent task's quiv thread; an
+    analysis is async work owned by the main loop. ``call_on_main`` runs it
+    there and waits. When the app shuts down, quiv sets the job's stop event,
+    the wait ends with ``JobCancelledError`` and the analysis is cancelled;
+    the agent reports that as research that did not finish. Installed on the
+    agent at startup so that module stays synchronous, with no import of this
+    one.
 
     It does not ask the agent again afterwards, and must not: the pass that
     ordered this is still running and is about to be shown the result itself.
     That is the whole point of chaining — see the 2026-09-12 entry in
-    JOURNEY.md — and it also retires a bug. The old path asked the agent again
-    from inside `_pass_lock`, which the very pass that ordered the research
-    still held, so every one of those wakes was dropped by
-    `if _pass_lock.locked(): return`.
+    JOURNEY.md.
     """
-    if _main_loop is None:
-        raise RuntimeError("No event loop is running; research cannot be dispatched here")
     for ticker in tickers:
         log.info("Running the analysis the agent asked for: %s", ticker)
     failures: dict[str, str] = {}
-    future = asyncio.run_coroutine_threadsafe(
-        analysis.run_analyses(
-            list(tickers),
-            on_failure=lambda ticker: notify(
-                f"Analysis failed for {ticker} — check the logs."
-            ),
-            trigger="commissioned",
-            failures=failures,
+    call_on_main(
+        analysis.run_analyses,
+        list(tickers),
+        on_failure=lambda ticker: notify(
+            f"Analysis failed for {ticker} — check the logs."
         ),
-        _main_loop,
+        trigger="commissioned",
+        failures=failures,
     )
-    future.result()
     return failures
 
 
@@ -172,17 +183,29 @@ _AGENT_COOLDOWN = datetime.timedelta(minutes=30)
 _last_agent_run: datetime.datetime | None = None
 
 
-async def _settle_agent_fills() -> None:
+def _settle_agent_fills() -> None:
     """Bring the agent's ledger up to date with the broker, and say so when a
     stop fired or a limit buy filled. Cheap — one request per still-open
     order, usually none."""
     if not agent.is_enabled():
         return
     try:
-        settled = await asyncio.to_thread(agent.settle_pending)
+        settled = agent.settle_pending()
     except Exception:
         log.exception("Couldn't settle agent orders")
         return
+    announce_fills(settled)
+
+
+def announce_fills(settled: list[dict]) -> None:
+    """Say what the fills that were just settled mean, to a person and to the
+    agent. Called by whatever settled them: the watchdog, or the trade stream.
+
+    **Once, by whoever settled the fill (2026-09-25).** A settled order is no
+    longer pending, so no later settle finds it again. The trade stream used
+    to settle a stop fill and only post it to Discord, so the watchdog then
+    found nothing: no alert row for the next prompt, and no wake.
+    """
     stopped = False
     limit_filled = False
     for fill in settled:
@@ -190,10 +213,10 @@ async def _settle_agent_fills() -> None:
         # the one worth interrupting for. Ordinary fills already showed up in
         # the run that placed them.
         if fill["was_stop"] and fill["status"] == "filled":
-            await notify(agent.format_stop_fill(fill))
+            _notify(agent.format_stop_fill(fill))
             # What the next prompt says happened. The wake reason alone
             # names no ticker (2026-09-23).
-            await asyncio.to_thread(agent.record_exit_fill, fill)
+            agent.record_exit_fill(fill)
             stopped = True
         # A limit buy is the other case an ordinary fill doesn't cover: it
         # never brackets (see agent._place), so it can land with nothing
@@ -202,7 +225,7 @@ async def _settle_agent_fills() -> None:
         # limit_price, so "not was_stop" is what actually says "this is an
         # entry order, not a protective one."
         elif fill["side"] == "buy" and fill.get("limit_price") and fill["status"] == "filled":
-            await notify(agent.format_limit_fill(fill))
+            _notify(agent.format_limit_fill(fill))
             limit_filled = True
     if stopped or limit_filled:
         # **Told to the agent, not only to Discord (2026-09-16).** A stop or
@@ -212,17 +235,14 @@ async def _settle_agent_fills() -> None:
         # sharp move or an earnings date already uses.
         # **A stop fill ignores the cooldown (2026-09-23).** The second INTC
         # stop filled 30 minutes after a pass and was skipped, so the agent
-        # slept until the next open with a book it did not know it had. A
-        # pass that is running now is not interrupted: the fill is an alert,
-        # and _run_agent_pass_locked wakes the agent again if that pass
-        # ended without seeing it.
+        # slept until the next open with a book it did not know it had.
         if stopped:
-            await _maybe_run_agent("Stop fill", cooldown=False)
+            _maybe_run_agent("Stop fill", cooldown=False)
         else:
-            await _maybe_run_agent("Limit buy filled")
+            _maybe_run_agent("Limit buy filled")
 
 
-async def _maybe_run_agent(label: str = "Event-driven", *, cooldown: bool = True) -> None:
+def _maybe_run_agent(label: str = "Event-driven", *, cooldown: bool = True) -> None:
     """Let the agent act on fresh intraday signals, but only when it could
     actually trade on them.
 
@@ -239,37 +259,22 @@ async def _maybe_run_agent(label: str = "Event-driven", *, cooldown: bool = True
     wakeup. The earnings check is the clearest case: it runs pre-market and,
     with the gate in place, could never have woken anybody at all.
 
-    The morning sweep this docstring used to describe is gone (2026-09-08).
-    Analyses now arrive because the agent paid for them, one at a time, so
-    there is no batch of signals waiting to be weighed against each other.
-
+    **Stamped when the wake is queued (2026-09-25).** Until then a wake that
+    came while a pass ran was dropped, and the stamp waited for a pass that
+    really started, so a dropped wake could not spend the cooldown. A wake is
+    now kept until the pass after the running one, unless the running pass
+    already saw it (``_forget_wakes_seen_by``), so a queued wake always has a
+    pass that answers it.
     """
     global _last_agent_run
     if not agent.is_enabled():
         return
     now = datetime.datetime.now(datetime.timezone.utc)
-    if _pass_lock.locked() and not cooldown:
-        log.info("%s while a pass is running; that pass or the next one is told", label)
-        return
     if cooldown and _last_agent_run is not None and now - _last_agent_run < _AGENT_COOLDOWN:
         log.info("Agent ran %s ago — inside the cooldown, skipping", now - _last_agent_run)
         return
-    # **Stamped only once a pass is really going to happen.** It used to be set
-    # here, before the two calls below, so a pass that was then skipped — by the
-    # lock, or by an alarm that had already fired — still spent the full thirty
-    # minutes. On a busy morning that silently suppressed every later trigger.
-    #
-    # Pull the pending alarm forward rather than running beside it. Firing a
-    # one-off also deletes it, so the time the agent is about to supersede
-    # cannot arrive later and ask a question it has already answered.
-    if wake_agent_now(label):
-        _last_agent_run = now
-        return
-    if _pass_lock.locked():
-        log.info("A pass is already running; not spending the cooldown on a skip")
-        return
     _last_agent_run = now
-    await _run_agent_pass(label)
+    wake_agent_now(label)
 
 
 # The last calendar date a final pass ran, so it happens once a session. Held in
@@ -278,152 +283,263 @@ async def _maybe_run_agent(label: str = "Event-driven", *, cooldown: bool = True
 # only to guard against that.
 _last_final_pass: datetime.date | None = None
 
-# The pending alarm for the agent's next chosen time, if one is set.
-#
-# In memory because quiv's own task table is in memory: a restart deletes both,
-# and _restore_wakeup_alarm rebuilds them together from the database.
-_wakeup_task_id: str | None = None
+# When the next final pass is due. In memory because quiv's task table is in
+# memory: a restart deletes both, and restore_agent_task sets both again.
+_final_pass_at: datetime.datetime | None = None
 
-# What is firing the pending alarm early, when something is. Set by
-# wake_agent_now and read by _alarm_job, so the pass tells the agent the real
-# reason. None means the alarm fired at the agent's own time.
-_early_wake_label: str | None = None
+# The id of the one task that runs every decision pass. See agent_pass.
+_agent_task_id: str | None = None
 
-# Two paths can decide a pass is due at the same moment. The alarm fires, and a
-# second later the tick reads a next_wakeup the running pass has not replaced
-# yet. Without this the agent answers the same question twice and the second
-# answer overwrites the first.
-_pass_lock = asyncio.Lock()
+# A wake that something asked for and no pass has answered yet: its label and
+# when it was asked for, in UTC. Guarded by _wake_guard, because the watchdog,
+# the trade stream and the agent task each run on their own thread.
+_pending_wake: tuple[str, datetime.datetime] | None = None
+_wake_guard = threading.Lock()
 
-WAKEUP_TASK_NAME = "agent_wakeup_alarm"
-FINAL_PASS_TASK_NAME = "agent_final_pass"
+# When the agent task last ran. A wakeup that was already past then, and is
+# still the stored one, was not served: the pass failed, or the agent is
+# switched off. Without this the task would run again at once, in a loop. With
+# it, the backstop asks again, as the old five-minute tick did.
+_agent_task_ran_at: datetime.datetime | None = None
 
-# The pending one-off for the next session's final pass. In memory for the same
-# reason as _wakeup_task_id; _arm_final_pass rebuilds it at startup.
-_final_pass_task_id: str | None = None
+# Keeps a pass apart from the evening review, which is a different quiv task.
+# quiv keeps two passes apart by itself. Waited for, never skipped: a pass that
+# finds the review running starts when the review ends, and the other way round.
+_pass_lock = threading.Lock()
+
+AGENT_TASK_NAME = "agent_pass"
+
+# How often the agent task runs when nothing asks for it sooner. A run with
+# nothing due does nothing. It guards the restore: if restore_agent_task ever
+# set a wrong time, a pass that is due waits five minutes at most.
+_BACKSTOP_SECONDS = 300
 
 
-def _replace_wakeup_alarm(when: datetime.datetime | None) -> None:
-    """Set the alarm for the agent's next chosen time, replacing any pending one.
+def wake_agent_now(label: str) -> None:
+    """Ask for a pass as soon as possible, for the reason ``label`` names.
 
-    **Replacing, not merely adding.** A ``run_once`` task deletes itself when it
-    fires, so an alarm that has done its job needs no cleanup. But not every
-    pass consumes an alarm — the last pass before the close does not, and nor
-    does the first pass after a restore. One of those would set a second alarm
-    while the first was still pending, and both would fire. Removing first makes
-    "at most one alarm" true without having to know which path ran.
+    Used when something else makes a pass worth running early — a watchdog
+    trigger, the earnings check, a stop that filled, a position left with
+    nothing under it. ``label`` is a key of ``_WOKE_BECAUSE``, and the pass
+    gives the agent that reason. Until 2026-09-13 every early wake told the
+    agent "You asked to be woken now".
 
-    A time already past fires at once — quiv's own guarantee for ``run_at``
-    now, not a clamp we compute. That covers the container having been down
-    when the wakeup came due: the answer is to ask the agent now, not to drop
-    the wakeup it chose.
-
-    **Passes ``when`` straight through as ``run_at`` rather than converting it
-    to a delay ourselves** (quiv >=0.10.0, github.com/nandyalu/quiv#66, filed
-    from this exact call site). The old form read the clock twice — once here,
-    once inside quiv when it computed the deadline — and the gap between the
-    two reads was a small, real error nothing here could remove. ``run_at``
-    also needs no ``interval`` for a one-off any more (quiv >=0.9.0, #65); the
-    ``interval=1`` used to exist only because quiv rejected a non-positive one
-    even though a run-once task never reads it.
+    **Recorded first, then the task is moved.** quiv discards a ``run_at``
+    written while the task is running: when the job ends, it computes the next
+    run from the interval. So the wake is stored in ``_pending_wake``, and the
+    listener ``_after_agent_job`` moves the task once the running pass ends.
+    When no pass is running, ``_reschedule`` moves it now. The first reason
+    asked for is kept until a pass answers it.
     """
-    global _wakeup_task_id
-    if _wakeup_task_id is not None:
-        try:
-            scheduler.remove_task(_wakeup_task_id)
-        except Exception:
-            # Already fired and deleted itself, which is the ordinary case.
-            log.debug("No pending wakeup alarm to remove")
-        _wakeup_task_id = None
-    if when is None:
+    global _pending_wake
+    with _wake_guard:
+        if _pending_wake is None:
+            _pending_wake = (label, datetime.datetime.now(datetime.timezone.utc))
+    _reschedule()
+
+
+def _forget_wakes_seen_by(looked_at: datetime.datetime | None) -> None:
+    """Drop a pending wake that was asked for before the pass last looked.
+
+    That pass built its last prompt after the event, so it has already seen
+    it, and a second pass would answer the same question again.
+    """
+    global _pending_wake
+    if looked_at is None:
         return
-    _wakeup_task_id = scheduler.add_task(
-        task_name=WAKEUP_TASK_NAME,
-        func=agent_wakeup_alarm,
-        run_at=when,
-        run_once=True,
-    )
-    # For the log line only — quiv reads its own clock for the actual
-    # scheduling decision, so a few milliseconds of drift here costs nothing.
-    minutes = max(0.0, (when - market_clock.now_et()).total_seconds()) / 60
-    log.info("Wakeup alarm set for %s (in %.0f min)", when.strftime("%a %-I:%M %p"), minutes)
+    with _wake_guard:
+        if _pending_wake is not None and _pending_wake[1] <= _utc(looked_at):
+            log.info("%s came before the pass last looked; that pass saw it", _pending_wake[0])
+            _pending_wake = None
 
 
-def restore_wakeup_alarm() -> None:
-    """Rebuild the alarm from the database when the app starts.
+def _stored_wakeup() -> datetime.datetime:
+    """The agent's chosen time, from the last stored run, the same way
+    ``agent.wakeup_due`` reads it: the next open when the run named none."""
+    runs = agent.db.get_agent_runs(limit=1)
+    if not runs:
+        return market_clock.next_open()
+    wanted = runs[0].next_wakeup
+    if wanted is None:
+        ran_at = runs[0].ran_at
+        return market_clock.next_open(_utc(ran_at) if ran_at is not None else None)
+    return _utc(wanted)
+
+
+def _next_pass_time() -> datetime.datetime:
+    """When the agent task should run next: the soonest of a pending wake
+    (now), the agent's chosen time, the final pass, and the backstop.
+
+    A time already past runs at once — quiv's own guarantee for ``run_at``.
+    That covers the container having been down when the wakeup came due: the
+    answer is to ask the agent now, not to drop the wakeup it chose.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if _pending_wake is not None:
+        return now
+    times = [now + datetime.timedelta(seconds=_BACKSTOP_SECONDS)]
+    wanted = _stored_wakeup()
+    if _agent_task_ran_at is None or wanted > _agent_task_ran_at:
+        times.append(wanted)
+    if _final_pass_at is not None:
+        times.append(_final_pass_at)
+    return min(times)
+
+
+def _reschedule() -> None:
+    """Point the agent task at ``_next_pass_time()``.
+
+    Skipped while a pass runs, because quiv would discard the time when the
+    job ends. ``_after_agent_job`` calls this again then. Under
+    ``_wake_guard``, so a listener that read the state before a wake came in
+    cannot write its older time after the wake has written a newer one.
+    """
+    if _agent_task_id is None:
+        return
+    try:
+        with _wake_guard:
+            if scheduler.get_task(_agent_task_id).status == TaskStatus.RUNNING:
+                return
+            when = _next_pass_time()
+            scheduler.update_task(_agent_task_id, run_at=when)
+    except QuivError as exc:
+        # A task that is gone or a scheduler that has stopped. The backstop
+        # and the restore at the next start cover both.
+        log.warning("Could not move the agent task: %s", exc)
+        return
+    log.debug("Agent task set for %s", when.astimezone(market_clock.US_MARKET_TZ).strftime("%a %-I:%M:%S %p"))
+
+
+def _after_agent_job(event, task, job) -> None:
+    """quiv listener: move the agent task once a pass has ended.
+
+    quiv calls it after it has finalised the job, so the task is active again
+    and a ``run_at`` written now is kept. This is what makes the time the pass
+    just chose, and any wake that came while it ran, take effect.
+    """
+    if task.id == _agent_task_id:
+        _reschedule()
+
+
+def restore_agent_task() -> None:
+    """Add the agent task, and point it at the next pass.
 
     **This is the one step that can end the experiment.** quiv keeps its tasks
-    in a temporary file that a restart deletes, so without this the agent has no
-    alarm and nothing else schedules it.
+    in a temporary file that a restart deletes, so without this the agent has
+    no task and nothing else schedules it. The agent's chosen time lives in
+    the database, on the run that asked for it, and ``_stored_wakeup`` reads
+    it back. The final pass comes from the market calendar.
+    """
+    global _agent_task_id, _final_pass_at
+    _final_pass_at = market_clock.next_final_pass()
+    when = _next_pass_time()
+    _agent_task_id = scheduler.add_task(
+        task_name=AGENT_TASK_NAME,
+        func=agent_pass,
+        interval=_BACKSTOP_SECONDS,
+        fixed_interval=False,
+        run_at=when,
+    )
+    for event in (Event.JOB_COMPLETED, Event.JOB_FAILED, Event.JOB_CANCELLED):
+        scheduler.add_listener(event, _after_agent_job)
+    minutes = max(0.0, (when - datetime.datetime.now(datetime.timezone.utc)).total_seconds()) / 60
+    log.info(
+        "Agent task set for %s (in %.0f min); final pass %s",
+        when.astimezone(market_clock.US_MARKET_TZ).strftime("%a %-I:%M %p"),
+        minutes,
+        _final_pass_at.strftime("%a %-I:%M %p"),
+    )
 
-    ``agent.wakeup_due`` supplies the fallback when the stored wakeup is missing
-    or unreadable, so an agent with no usable time still gets asked at the next
-    open. The five-minute tick is the second guard: if this ever fails silently,
-    it notices within five minutes.
+
+def _ran_recently(now: datetime.datetime, within=datetime.timedelta(minutes=30)) -> bool:
+    """True when a pass has already run in the last half hour.
+
+    Guards the end-of-day pass. An agent that asked to be woken at 3:45 has
+    reviewed the day; waking it again at 3:55 spends a prompt to be told the
+    same thing.
     """
     runs = agent.db.get_agent_runs(limit=1)
-    wanted = runs[0].next_wakeup if runs else None
-    if wanted is not None and wanted.tzinfo is None:
-        wanted = wanted.replace(tzinfo=datetime.timezone.utc)
-    if wanted is None:
-        wanted = market_clock.next_open()
-        log.info("No stored wakeup; the agent will be asked at the next open")
-    _replace_wakeup_alarm(wanted.astimezone(market_clock.US_MARKET_TZ))
+    if not runs:
+        return False
+    ran_at = runs[0].ran_at
+    if ran_at is None:
+        return False
+    return (now - _utc(ran_at).astimezone(now.tzinfo)) < within
 
 
-def wake_agent_now(label: str | None = None) -> bool:
-    """Pull the pending alarm forward instead of letting it fire stale.
+def _take_final_pass(now: datetime.datetime) -> bool:
+    """True when the final pass is due now and should run.
 
-    Used when something else makes a pass worth running early — an analysis the
-    agent asked to see today, or a watchdog trigger. Because the alarm is a
-    one-off, firing it now also deletes it, so the time the agent has just
-    superseded cannot arrive later and ask a question it has already answered.
+    Due or not, a final pass that has come round is moved to the next session,
+    so it never fires twice. Skipped when the agent has just had a pass: it
+    used to run whatever the agent asked, which on 2026-09-04 meant two passes
+    eleven minutes apart. Skipped too when the session is already over, which
+    can only mean the task ran late after a stall — a "final" pass after the
+    close reviews nothing. The date guard is belt to ``_ran_recently``'s
+    braces: one final pass a session.
 
-    ``label`` names what woke the agent early, as a key of ``_WOKE_BECAUSE``.
-    The alarm job reads it, so the pass gives the real reason. Until 2026-09-13
-    every early wake told the agent "You asked to be woken now". None means the
-    agent's own time, which is what the alarm means when it fires on schedule.
-
-    Returns False when there is no alarm to pull, which leaves the caller to run
-    the pass itself.
-
-    **Catches the two specific errors this race can raise, not every
-    exception** (quiv >=0.9.0, github.com/nandyalu/quiv#67, filed from this
-    exact call site). Before that fix, an already-fired one-off raised
-    ``HandlerNotRegisteredError`` — a name that means something else — instead
-    of ``TaskNotFoundError``. A genuine ``HandlerNotRegisteredError`` here
-    would mean the handler was never registered at all, which is a real bug
-    and should not be swallowed alongside the two harmless races.
+    The time comes from ``market_clock.next_final_pass``: five minutes before
+    that session's close, so a 1:00 PM half-day gets a 12:55 pass.
     """
-    global _wakeup_task_id, _early_wake_label
-    if _wakeup_task_id is None:
+    global _final_pass_at, _last_final_pass
+    if _final_pass_at is None or now < _final_pass_at:
         return False
-    _early_wake_label = label
-    try:
-        scheduler.run_task_immediately(_wakeup_task_id)
-    except (TaskNotFoundError, TaskNotActiveError):
-        # Already fired (deleted itself) or already running. Either way a
-        # pass is happening, and it is not the one this label describes.
-        _early_wake_label = None
-        log.debug("Could not pull the wakeup alarm forward")
+    _final_pass_at = market_clock.next_final_pass(now)
+    if not watchdog.is_us_market_hours():
+        log.info("Final pass skipped — the session is over")
         return False
-    _wakeup_task_id = None
+    if _last_final_pass == now.date() or _ran_recently(now):
+        log.info("Final pass skipped — the agent has just had a pass")
+        return False
+    _last_final_pass = now.date()
     return True
 
 
-def agent_wakeup_alarm() -> None:
-    """quiv's entry point for the alarm. Runs on a worker thread."""
-    run_on_main(_alarm_job)
+def agent_pass(stop_event: threading.Event | None = None) -> None:
+    """quiv's entry point for every decision pass. Runs on a quiv thread.
 
+    **One task, moved, never a second one added.** The task runs at the
+    soonest of four times (``_next_pass_time``), and on each run this decides
+    which one came:
 
-async def _alarm_job() -> None:
-    global _wakeup_task_id, _early_wake_label
-    _wakeup_task_id = None  # it has fired; quiv has deleted its row
-    # Read and cleared together, so a label never outlives the wake it names.
-    label, _early_wake_label = _early_wake_label or "Alarm", None
+    1. The final pass before the close, when it is due.
+    2. A wake something asked for (``wake_agent_now``).
+    3. The time the agent chose, read from its last run
+       (``agent.wakeup_due``).
+    4. None of them: the backstop run. It does nothing.
+
+    **No cooldown on the agent's own time.** The cooldown exists to stop the
+    watchdog re-planning a book that has barely moved. The agent choosing its
+    own time is the opposite case: it named that moment, and overriding it
+    would make the tool a suggestion.
+
+    **No market-hours gate either.** The agent sets its own times, and a pass
+    outside the session can still read, research and plan. Webull rejects a
+    market order outside the session outright
+    (``CAN_NOT_TRADING_FOR_FIXGW_NOT_READY_NIGHT``), so an order sent then
+    comes back as a broker failure, which the next prompt shows the agent.
+    """
+    global _pending_wake, _agent_task_ran_at
+    now = market_clock.now_et()
+    _agent_task_ran_at = now
+    with _wake_guard:
+        wake, _pending_wake = _pending_wake, None
+    # Before the switch, so a final pass that comes due while the agent is
+    # off still moves to the next session instead of staying due.
+    final = _take_final_pass(now)
     if not agent.is_enabled():
         return
-    await _run_agent_pass(label)
+    if final:
+        label = "Final"
+        log.info("Final pass of the session")
+    elif wake is not None:
+        label = wake[0]
+    elif agent.wakeup_due(now) is not None:
+        label = "Alarm"
+        log.info("Agent asked to be woken now")
+    else:
+        return
+    _run_agent_pass(label, stop_event)
 
 
 # What each wake path means in the agent's own reading. The labels were log
@@ -446,67 +562,63 @@ _WOKE_BECAUSE = {
 # line that promised something the prompt did not contain.
 
 
-async def _run_agent_pass(label: str) -> None:
+def _run_agent_pass(label: str, stop_event: threading.Event | None = None) -> None:
     """One decision pass, and everything that follows from it.
 
     Shared by every path that wakes the agent, so a pass behaves the same
-    however it was triggered — the notification, the immediate research
-    dispatch, the next alarm, and the failure handling are one implementation.
+    however it was triggered — the notification, the research, the next
+    wakeup, and the failure handling are one implementation.
     """
-    if _pass_lock.locked():
-        log.info("%s pass skipped — one is already running", label)
-        return
-    async with _pass_lock:
-        await _run_agent_pass_locked(label)
+    with _pass_lock:
+        _run_agent_pass_locked(label, stop_event)
 
 
-async def _run_agent_pass_locked(label: str) -> None:
+def _run_agent_pass_locked(label: str, stop_event: threading.Event | None = None) -> None:
     try:
-        run = await asyncio.to_thread(agent.run_once, _WOKE_BECAUSE.get(label))
+        run = agent.run_once(
+            _WOKE_BECAUSE.get(label),
+            should_stop=stop_event.is_set if stop_event is not None else None,
+        )
     except Exception:
         log.exception("%s agent run failed", label)
-        # Without an alarm the agent never runs again, so a failed pass still
-        # has to leave one behind. The next open is the honest fallback: the
-        # pass produced no answer, so the agent chose nothing.
-        _replace_wakeup_alarm(market_clock.next_open())
+        # The pass produced no answer, so the wakeup it was serving stays in
+        # the past. _next_pass_time skips it, and the backstop asks again.
         return
-    _replace_wakeup_alarm(run.next_wakeup or market_clock.next_open())
+    # A wake asked for while this pass ran is kept for the next pass, unless
+    # this pass built its last prompt after it and so has already seen it.
+    # getattr, because a caller may hand back a stand-in run, and tests do.
+    looked_at = getattr(run, "looked_at", None)
+    _forget_wakes_seen_by(looked_at)
     # A fill the pass settled itself is one _settle_agent_fills will never
     # find — the trade is no longer pending by the time it looks. Announced
     # here instead, so a stop firing still reaches a person exactly once, and
     # a limit buy that landed mid-pass still says its shares have nothing
-    # resting under them. getattr, the same reason `run.looked_at` is read
-    # that way below: a caller may hand back a stand-in run, and tests do.
+    # resting under them.
     limit_filled = False
     for fill in getattr(run, "fills_seen", []):
         if fill["was_stop"]:
-            await notify(agent.format_stop_fill(fill))
+            _notify(agent.format_stop_fill(fill))
         else:
-            await notify(agent.format_limit_fill(fill))
+            _notify(agent.format_limit_fill(fill))
             limit_filled = True
     if limit_filled and not run.unguarded:
         # Its shares landed with nothing resting under them, and if the fill
         # came on the last turn the pass never saw them. Below, an unguarded
-        # position pulls the alarm forward anyway, so this does not double up.
+        # position asks for a pass anyway, so this does not double up.
         wake_agent_now("Limit buy filled")
     if run.unguarded:
-        # **Pulled forward after the alarm above is set, never during the
-        # pass (2026-09-16).** Calling this from inside run_once itself is
-        # the mistake "Never ask the agent again from inside a pass" already
-        # warns about — the pass's own _replace_wakeup_alarm call would just
-        # overwrite it. Here the pass has already finished and chosen its own
-        # time; this only pulls that choice forward, the same way a new
-        # change note already does.
+        # **Asked for after the pass, never during it (2026-09-16).** The
+        # pass has finished and chosen its own time; this only brings the
+        # next pass forward.
         wake_agent_now("Unguarded position")
-    elif _fill_after(getattr(run, "looked_at", None)):
+    elif _fill_after(looked_at):
         # A stop filled after this pass built its last prompt, so the pass
-        # never saw it, and the wake it would have caused was skipped because
-        # this pass was running. See _settle_agent_fills.
+        # never saw it. See _settle_agent_fills.
         wake_agent_now("Stop fill")
     # A note is worth posting even on a day it did nothing else: it is the
     # agent saying it is short of something, which is the point of having it.
     if run.acted or run.rejected or run.failed or run.notes:
-        await notify(embed=agent.format_run_embed(run))
+        _notify(embed=agent.format_run_embed(run))
 
 
 def _fill_after(looked_at: datetime.datetime | None) -> bool:
@@ -516,142 +628,12 @@ def _fill_after(looked_at: datetime.datetime | None) -> bool:
     for alert in agent.db.get_recent_alerts(limit=20):
         if alert.alert_type not in ("stop_fill", "target_fill"):
             continue
-        raised = alert.created_at
-        if raised.tzinfo is None:
-            raised = raised.replace(tzinfo=datetime.timezone.utc)
-        if raised > looked_at:
+        if _utc(alert.created_at) > _utc(looked_at):
             return True
     return False
 
 
-async def _agent_wakeup_job() -> None:
-    """The backstop for the alarm, every five minutes. Not the mechanism.
-
-    **The alarm is the mechanism.** The agent's chosen time goes to quiv as a
-    one-off task, ``_replace_wakeup_alarm``, and it fires to the second. But
-    quiv keeps its tasks in a temporary SQLite file that a shutdown deletes,
-    by design — durable persistence was reviewed again for quiv 1.0.0 on
-    2026-09-17 and stays out — so nothing it holds survives a restart. The
-    wakeup therefore lives in the database, on the run that asked for it, and
-    ``restore_wakeup_alarm`` rebuilds the alarm from that row at startup.
-
-    This tick re-reads the same row. If the restore ever set nothing, or set a
-    wrong time, nothing else would wake the agent again, and it would look like
-    one choosing to sit still. In normal operation it finds nothing: the alarm
-    has already run the pass and written the next wakeup, so ``wakeup_due``
-    returns None.
-
-    **Five minutes since 2026-09-18; it was one.** quiv's 24-hour soak test
-    before 1.0.0 covers the case where it holds a task and never fires it,
-    which leaves our own restore as the only thing this guards. A missed
-    restore now costs at most five minutes, on a failure that has not happened,
-    and the log lost three lines a minute. Until the same date this job also
-    ran the last pass before the close, from a fixed 3:55 PM; that is its own
-    one-off now, ``_arm_final_pass``, so it fires on the second and a half-day
-    gets one too.
-
-    **No cooldown on this path.** The cooldown exists to stop the watchdog
-    re-planning a book that has barely moved. The agent choosing its own time
-    is the opposite case: it named that moment, and overriding it would make
-    the tool a suggestion.
-
-    **No market-hours gate either.** The agent sets its own times, and a pass
-    outside the session can still read, research and plan. The one fact the
-    old gate's docstring carried is worth keeping: Webull rejects a market
-    order outside the session outright
-    (``CAN_NOT_TRADING_FOR_FIXGW_NOT_READY_NIGHT``), so an order sent then
-    comes back as a broker failure, which the next prompt shows the agent.
-    """
-    if not agent.is_enabled():
-        return
-    due = agent.wakeup_due(market_clock.now_et())
-    if due is not None:
-        log.info("Agent asked to be woken at %s", due.strftime("%a %-I:%M %p"))
-        await _run_agent_pass("Wakeup")
-
-
-def _ran_recently(now: datetime.datetime, within=datetime.timedelta(minutes=30)) -> bool:
-    """True when a pass has already run in the last half hour.
-
-    Guards the end-of-day pass. An agent that asked to be woken at 3:45 has
-    reviewed the day; waking it again at 3:55 spends a prompt to be told the
-    same thing.
-    """
-    runs = agent.db.get_agent_runs(limit=1)
-    if not runs:
-        return False
-    ran_at = runs[0].ran_at
-    if ran_at is None:
-        return False
-    if ran_at.tzinfo is None:
-        ran_at = ran_at.replace(tzinfo=datetime.timezone.utc)
-    return (now - ran_at.astimezone(now.tzinfo)) < within
-
-
-def agent_wakeup() -> None:
-    run_on_main(_agent_wakeup_job)
-
-
-def _arm_final_pass() -> None:
-    """Set the one-off for the next session's final pass, replacing any pending
-    one — the same shape as ``_replace_wakeup_alarm``, for the same reasons.
-
-    The time comes from ``market_clock.next_final_pass``: five minutes before
-    that session's close, so a 1:00 PM half-day gets a 12:55 pass where the
-    fixed 3:55 PM inside the old tick gave it none. Called at startup, because
-    a restart deletes quiv's copy, and again by ``_final_pass_job`` once it has
-    fired, whether or not it ran a pass.
-    """
-    global _final_pass_task_id
-    if _final_pass_task_id is not None:
-        try:
-            scheduler.remove_task(_final_pass_task_id)
-        except Exception:
-            # Already fired and deleted itself, which is the ordinary case.
-            log.debug("No pending final-pass task to remove")
-        _final_pass_task_id = None
-    when = market_clock.next_final_pass()
-    _final_pass_task_id = scheduler.add_task(
-        task_name=FINAL_PASS_TASK_NAME, func=agent_final_pass, run_at=when, run_once=True
-    )
-    log.info("Final pass set for %s", when.strftime("%a %-I:%M %p"))
-
-
-def agent_final_pass() -> None:
-    """quiv's entry point for the final pass. Runs on a worker thread."""
-    run_on_main(_final_pass_job)
-
-
-async def _final_pass_job() -> None:
-    """A last look before the close, then re-arm for the next session.
-
-    Skipped, but still re-armed, when the agent has just had a pass: it used to
-    run whatever the agent asked, which on 2026-09-04 meant two passes eleven
-    minutes apart. Skipped too when the session is already over, which can only
-    mean the one-off fired late after a stall — a "final" pass after the close
-    reviews nothing. The date guard is belt to ``_ran_recently``'s braces: one
-    final pass a session, however the one-off came to fire twice.
-    """
-    global _final_pass_task_id, _last_final_pass
-    _final_pass_task_id = None  # it has fired; quiv has deleted its row
-    try:
-        if not agent.is_enabled():
-            return
-        now = market_clock.now_et()
-        if not watchdog.is_us_market_hours():
-            log.info("Final pass skipped — the session is over")
-            return
-        if _last_final_pass == now.date() or _ran_recently(now):
-            log.info("Final pass skipped — the agent has just had a pass")
-            return
-        _last_final_pass = now.date()
-        log.info("Final pass of the session")
-        await _run_agent_pass("Final")
-    finally:
-        _arm_final_pass()
-
-
-async def _daily_signals_job() -> None:
+def daily_signals() -> None:
     """21:30 UTC (17:30 ET): grade what matured, then write the journal.
 
     Stays after the close because grading reads the day's closing price. The
@@ -662,50 +644,46 @@ async def _daily_signals_job() -> None:
     # Weekday-only: US markets are closed Sat/Sun, running would just waste a GPU pass.
     if datetime.datetime.now(datetime.timezone.utc).weekday() >= 5:
         return
-    await _evaluate_pending_signals()
+    _evaluate_pending_signals()
     # Written every evening, after grading, so the day's verdicts are in the
     # story rather than a day behind. Each run regenerates the month files
     # from the book, so today lands in the current month's file beside
     # yesterday — a timeline, not a folder of one-day notes.
     try:
-        written = await asyncio.to_thread(journey.write_month_files)
+        written = journey.write_month_files()
         if written:
             log.info("Journey written: %s", ", ".join(written))
     except Exception:
         log.exception("Could not write the journey")
     # Last, after the grading, so the day's verdicts are in front of the
     # agent when it reads its own day.
-    await _evening_review_job()
+    _evening_review()
 
 
-async def _evening_review_job() -> None:
+def _evening_review() -> None:
     """The agent reads its own day and speaks twice: to the maintainer, then
     to itself. See ``reflection``.
 
     Under ``_pass_lock``, and waiting for it rather than skipping: a pass
     still running at this hour is researching, and the review must see that
-    pass whole, not half of it. Nothing can start a pass while the review
-    holds the lock, so the note it rewrites is the one the next pass reads.
-    Posted only when it said something — a note to the maintainer, or a
-    change to memory — because most days it says nothing, and that is the
+    pass whole, not half of it. A pass that comes due while the review holds
+    the lock waits for it, so the note it rewrites is the one the next pass
+    reads. Posted only when it said something — a note to the maintainer, or
+    a change to memory — because most days it says nothing, and that is the
     expected answer, not news.
     """
     if not agent.is_enabled():
         return
-    async with _pass_lock:
+    with _pass_lock:
         try:
-            review = await asyncio.to_thread(reflection.run_once)
+            review = reflection.run_once()
         except Exception:
             log.exception("The evening review failed")
             return
     if review is None or review.skipped:
         return
     if review.notes or review.memory_changed:
-        await notify(embed=reflection.format_embed(review))
-
-
-def daily_signals() -> None:
-    run_on_main(_daily_signals_job)
+        _notify(embed=reflection.format_embed(review))
 
 
 # morning_sweep (11:00 UTC, the whole watchlist analysed whether the agent
@@ -716,41 +694,40 @@ def daily_signals() -> None:
 # rows; it is simply never written again.
 
 
-async def _place_queued_exits() -> None:
+def _place_queued_exits() -> None:
     """Arm the positions someone queued while the market was shut, and say so."""
     try:
-        results = await asyncio.to_thread(agent.process_queued_arms)
+        results = agent.process_queued_arms()
     except Exception:
         log.exception("Could not process queued exit arming")
         return
     for result in results:
         icon = "🛡️" if result["ok"] else "⚠️"
-        await notify(f"{icon} {result['message']}")
+        _notify(f"{icon} {result['message']}")
 
 
-async def _alert_watchdog_job() -> None:
-    """Rule-based intraday scan (no LLM): move/volume/stop/target alerts,
-    plus event-triggered analyses. Long triggered runs just delay the next
-    tick, which doubles as backpressure on the shared GPU."""
+def alert_watchdog() -> None:
+    """Rule-based intraday scan (no LLM): move/volume/stop/target alerts.
+    quiv never runs it beside itself, so a slow tick delays the next one."""
     if not watchdog.is_us_market_hours():
         return
     # Before the scan: a resting stop can trigger at any moment, and it is the
     # one fill nobody is waiting for. Settled only when the agent next decided,
     # the book would show a position that had already been sold — for the rest
     # of the day, and into the next morning's decision.
-    await _settle_agent_fills()
+    _settle_agent_fills()
     # Then the exits someone asked for while the market was shut. First tick
     # after the open drains the queue, which is the whole promise of the button
     # — a request made in the evening and silently dropped would be worse than
     # not offering to remember it.
-    await _place_queued_exits()
+    _place_queued_exits()
     try:
-        alerts = await asyncio.to_thread(watchdog.scan_for_alerts)
+        alerts = watchdog.scan_for_alerts()
     except Exception:
         log.exception("Alert watchdog scan failed")
         return
     for alert in alerts:
-        await notify(alert.message)
+        _notify(alert.message)
     # **Tell the agent, do not act for it (2026-09-12).** A sharp move used to
     # commission an analysis on the spot — sixteen minutes of GPU and $0.05 of
     # the agent's own research budget, spent on a decision it was never asked
@@ -761,29 +738,21 @@ async def _alert_watchdog_job() -> None:
     # move is worth studying it can commission research itself, which now runs
     # inside that same pass.
     if alerts:
-        await _maybe_run_agent()
+        _maybe_run_agent()
 
 
-def alert_watchdog() -> None:
-    run_on_main(_alert_watchdog_job)
-
-
-async def _export_public_snapshot_job() -> None:
+def export_public_snapshot() -> None:
     """Regenerate the static files behind the public site. Runs only here —
     register_jobs() is never called under PUBLIC_MODE (see app.py's
     lifespan), so this job exists on the private container alone, the one
     with live data to export."""
     try:
-        await asyncio.to_thread(snapshot_export.export_all)
+        snapshot_export.export_all()
     except Exception:
         log.exception("Public snapshot export failed")
 
 
-def export_public_snapshot() -> None:
-    run_on_main(_export_public_snapshot_job)
-
-
-async def _earnings_check_job() -> None:
+def earnings_check() -> None:
     """Pre-market (13:00 UTC = 8/9am ET): find out who reports soon, and say so.
 
     **It used to commission an analysis for each one (until 2026-09-12)**, on
@@ -799,62 +768,46 @@ async def _earnings_check_job() -> None:
     if datetime.datetime.now(datetime.timezone.utc).weekday() >= 5:
         return
     try:
-        upcoming = await asyncio.to_thread(watchdog.earnings_due)
+        upcoming = watchdog.earnings_due()
     except Exception:
         log.exception("Earnings calendar check failed")
         return
-    await asyncio.to_thread(agent.store_earnings_dates, upcoming)
+    agent.store_earnings_dates(upcoming)
     if upcoming:
         log.info("Reporting soon: %s", ", ".join(f"{t} {d}" for t, d in upcoming))
-        await _maybe_run_agent("Earnings")
+        _maybe_run_agent("Earnings")
 
 
-def earnings_check() -> None:
-    run_on_main(_earnings_check_job)
-
-
-
-async def _morning_regime_job() -> None:
+def morning_regime() -> None:
     """Pre-market context post (12:45 UTC, before the earnings task): VIX,
     SPY vs 200-day, yield curve — rule-based, no LLM."""
     if datetime.datetime.now(datetime.timezone.utc).weekday() >= 5:
         return
     try:
-        message = regime.format_regime_message(await asyncio.to_thread(regime.fetch_regime))
+        message = regime.format_regime_message(regime.fetch_regime())
     except Exception:
         log.exception("Morning regime snapshot failed")
         return
-    await notify(message)
+    _notify(message)
 
 
-def morning_regime() -> None:
-    run_on_main(_morning_regime_job)
-
-
-async def _weekly_digest_job() -> None:
+def weekly_digest() -> None:
     """Friday 23:00 UTC — after the daily 21:30 sweep has had time to finish."""
     if datetime.datetime.now(datetime.timezone.utc).weekday() != 4:
         return
     try:
-        embed = await asyncio.to_thread(build_weekly_digest_embed)
+        embed = build_weekly_digest_embed()
     except Exception:
         log.exception("Weekly digest failed")
         return
-    await notify(embed=embed)
+    _notify(embed=embed)
     # Once a week, with the digest. Following a ticker costs about seven
     # minutes of GPU on every sweep from then on, so this is a decision to
     # make deliberately rather than a feed to skim daily.
     try:
-        found = await asyncio.to_thread(candidates.fetch_candidates)
+        candidates.fetch_candidates()
     except Exception:
         log.exception("Candidate screen failed")
-        return
-
-
-def weekly_digest() -> None:
-    run_on_main(_weekly_digest_job)
-
-
 
 
 def register_jobs() -> None:
@@ -863,18 +816,10 @@ def register_jobs() -> None:
     in-memory/temp-file affair (see quiv's own docs), nothing persists
     across restarts.
 
-    **That last sentence is why `restore_wakeup_alarm` and `_arm_final_pass`
-    are here.** The agent's next wakeup and the session's final pass are
-    one-off quiv tasks, so a restart deletes both. Rebuilding the first from
-    the database is what keeps the agent running across a redeploy, and
-    skipping it would leave an agent that never wakes and reports nothing
-    wrong; the second is recomputed from the market calendar."""
-    global _main_loop
-    # register_jobs is called from app.py's lifespan, which is a coroutine, so
-    # the running loop is the one every async job will use. A worker thread
-    # running a decision pass hands its research back to it — see
-    # _research_for_agent.
-    _main_loop = asyncio.get_running_loop()
+    **That last sentence is why `restore_agent_task` is here.** The agent's
+    next pass is a quiv task, so a restart deletes it. Rebuilding it from the
+    database is what keeps the agent running across a redeploy, and skipping
+    it would leave an agent that never wakes and reports nothing wrong."""
     agent.set_research_runner(_research_for_agent)
     scheduler.add_task(task_name="alert_watchdog", func=alert_watchdog, interval=900)
     # Same 15-minute cadence as alert_watchdog. The public site is a snapshot,
@@ -885,10 +830,6 @@ def register_jobs() -> None:
     scheduler.add_task(task_name="earnings_check", func=earnings_check, interval=86400, run_at=_next_utc_time(13, 0))
     scheduler.add_task(task_name="morning_regime", func=morning_regime, interval=86400, run_at=_next_utc_time(12, 45))
     scheduler.add_task(task_name="weekly_digest", func=weekly_digest, interval=86400, run_at=_next_utc_time(23, 0))
-    # The backstop for the alarm, not the alarm itself. See _agent_wakeup_job.
-    scheduler.add_task(task_name="agent_wakeup", func=agent_wakeup, interval=300)
-    # The last pass before the close, at its own time. See _arm_final_pass.
-    _arm_final_pass()
-    # Last, so the agent's alarm is rebuilt only once everything it may need is
+    # Last, so the agent's task is added only once everything it may need is
     # registered — a restored wakeup can be due immediately.
-    restore_wakeup_alarm()
+    restore_agent_task()

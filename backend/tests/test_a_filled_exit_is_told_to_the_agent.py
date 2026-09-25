@@ -5,7 +5,6 @@ prompt did not say so. A second stop filled inside the cooldown and woke
 nothing. INTC was three lots, and adjust had moved the stop on one of them.
 See the 2026-09-23 entry in JOURNEY.md.
 """
-import asyncio
 import datetime
 import types
 
@@ -20,39 +19,35 @@ UTC = datetime.timezone.utc
 @pytest.fixture(autouse=True)
 def enabled(monkeypatch):
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
-    monkeypatch.setattr(scheduler, "wake_agent_now", lambda label=None: False)
 
 
-def test_a_stop_fill_wakes_the_agent_inside_the_cooldown(monkeypatch):
-    ran = []
+@pytest.fixture
+def asked(monkeypatch):
+    labels = []
+    monkeypatch.setattr(scheduler, "wake_agent_now", labels.append)
+    return labels
 
-    async def runs(label):
-        ran.append(label)
 
-    monkeypatch.setattr(scheduler, "_run_agent_pass", runs)
+def test_a_stop_fill_wakes_the_agent_inside_the_cooldown(monkeypatch, asked):
     monkeypatch.setattr(scheduler, "_last_agent_run", datetime.datetime.now(UTC))
 
-    asyncio.run(scheduler._maybe_run_agent("Stop fill", cooldown=False))
-    asyncio.run(scheduler._maybe_run_agent("Event-driven"))
+    scheduler._maybe_run_agent("Stop fill", cooldown=False)
+    scheduler._maybe_run_agent("Event-driven")
 
-    assert ran == ["Stop fill"]
+    assert asked == ["Stop fill"]
 
 
-def test_a_stop_fill_during_a_pass_does_not_start_a_second_one(monkeypatch):
+def test_a_stop_fill_asks_for_a_pass_and_never_runs_one_itself(monkeypatch, asked):
+    """Since 2026-09-25 every pass runs in the one agent task, and quiv never
+    runs that task beside itself. A fill during a pass is kept for the pass
+    after it, unless the running pass already saw it."""
     ran = []
+    monkeypatch.setattr(scheduler, "_run_agent_pass", lambda label, stop_event=None: ran.append(label))
 
-    async def runs(label):
-        ran.append(label)
-
-    monkeypatch.setattr(scheduler, "_run_agent_pass", runs)
-
-    async def drive():
-        async with scheduler._pass_lock:
-            await scheduler._maybe_run_agent("Stop fill", cooldown=False)
-
-    asyncio.run(drive())
+    scheduler._maybe_run_agent("Stop fill", cooldown=False)
 
     assert ran == []
+    assert asked == ["Stop fill"]
 
 
 def _alert(kind, minutes_ago):
@@ -140,3 +135,28 @@ def test_a_refused_bracket_says_why_and_names_the_volatility_stop():
     assert "stop $214.02" in line
     assert "because no signal in the table gave a stop" in line
     assert "NOTHING" not in line
+
+
+def test_a_stop_the_trade_stream_settles_is_told_to_the_agent(monkeypatch, asked):
+    """The stream settles a fill within a second, and a settled order is not
+    pending any more, so the watchdog never finds it. Until 2026-09-25 the
+    stream only posted it to Discord: no alert row, and no wake."""
+    from backend.services import trade_stream
+
+    fill = {"ticker": "ZBH", "side": "sell", "quantity": 10.0, "price": 92.0,
+            "was_stop": True, "exit_kind": "stop", "limit_price": 92.10,
+            "client_order_id": "abc", "status": "filled"}
+    posted, alerts = [], []
+    monkeypatch.setattr(agent, "settle_pending", lambda: [fill])
+    monkeypatch.setattr(agent.db, "record_alert", lambda **kw: alerts.append(kw))
+
+    async def fake_notify(*args, **kwargs):
+        posted.append(args[0] if args else kwargs)
+
+    monkeypatch.setattr(scheduler, "notify", fake_notify)
+
+    trade_stream._on_event("ORDER", "trade", {}, None)
+
+    assert len(posted) == 1 and "ZBH" in posted[0]
+    assert [a["alert_type"] for a in alerts] == ["stop_fill"]
+    assert asked == ["Stop fill"]

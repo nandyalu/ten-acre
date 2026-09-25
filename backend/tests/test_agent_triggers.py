@@ -36,7 +36,7 @@ def agent_stub(monkeypatch):
         skipped = None
         unguarded = []
 
-    def run_once(woke_because=None):
+    def run_once(woke_because=None, should_stop=None):
         # The reason is threaded from the scheduler since 2026-09-12, so the
         # agent can tell its own chosen time from a move it slept through.
         runs.append((datetime.datetime.now(datetime.timezone.utc), woke_because))
@@ -44,15 +44,16 @@ def agent_stub(monkeypatch):
 
     monkeypatch.setattr(scheduler.agent, "run_once", run_once)
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
-    # The alarm is quiv's job and quiv is not running here. Stubbing it keeps
-    # these tests about which paths decide to run a pass.
-    #
-    # The reset matters as much as the stub: ``_wakeup_task_id`` is module
-    # state, so an id left by one test made the next one pull a non-existent
-    # alarm forward instead of running the pass, and the failure read as a
-    # missing run rather than as pollution.
-    monkeypatch.setattr(scheduler, "_replace_wakeup_alarm", lambda when: None)
-    monkeypatch.setattr(scheduler, "_wakeup_task_id", None)
+    # quiv is not running here. Moving the agent task runs it at once, as
+    # quiv would when the time it is moved to has come, so these tests stay
+    # about which paths decide to run a pass. The resets matter as much as the
+    # stub: this is module state, and a wake left by one test would name the
+    # next test's pass.
+    monkeypatch.setattr(scheduler, "_reschedule", scheduler.agent_pass)
+    monkeypatch.setattr(scheduler, "_pending_wake", None)
+    monkeypatch.setattr(scheduler, "_final_pass_at", None)
+    monkeypatch.setattr(scheduler, "_agent_task_ran_at", None)
+    monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: None)
     return runs
 
 
@@ -78,7 +79,7 @@ def _weekday(monkeypatch, when=datetime.datetime(2026, 8, 20, 13, 35, tzinfo=dat
 
 def test_a_trigger_during_market_hours_runs_the_agent(agent_stub, monkeypatch):
     _open(monkeypatch)
-    asyncio.run(scheduler._maybe_run_agent())
+    scheduler._maybe_run_agent()
     assert len(agent_stub) == 1
 
 
@@ -92,14 +93,14 @@ def test_a_trigger_outside_market_hours_still_wakes_the_agent(agent_stub, monkey
     The earnings check is the case that proves it: it runs pre-market, so with
     the gate in place it could never have woken anybody at all."""
     _open(monkeypatch, is_open=False)
-    asyncio.run(scheduler._maybe_run_agent())
+    scheduler._maybe_run_agent()
     assert len(agent_stub) == 1
 
 
 def test_a_disabled_agent_is_not_run_by_a_trigger(agent_stub, monkeypatch):
     _open(monkeypatch)
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: False)
-    asyncio.run(scheduler._maybe_run_agent())
+    scheduler._maybe_run_agent()
     assert agent_stub == []
 
 
@@ -108,15 +109,15 @@ def test_a_burst_of_triggers_produces_one_run(agent_stub, monkeypatch):
     minutes against a book that has barely moved."""
     _open(monkeypatch)
     for _ in range(4):
-        asyncio.run(scheduler._maybe_run_agent())
+        scheduler._maybe_run_agent()
     assert len(agent_stub) == 1
 
 
 def test_the_cooldown_expires(agent_stub, monkeypatch):
     _open(monkeypatch)
-    asyncio.run(scheduler._maybe_run_agent())
+    scheduler._maybe_run_agent()
     scheduler._last_agent_run -= scheduler._AGENT_COOLDOWN + datetime.timedelta(seconds=1)
-    asyncio.run(scheduler._maybe_run_agent())
+    scheduler._maybe_run_agent()
     assert len(agent_stub) == 2
 
 
@@ -125,11 +126,11 @@ def test_a_failing_run_does_not_escape_the_trigger_path(agent_stub, monkeypatch)
     the tick that was also delivering price alerts."""
     _open(monkeypatch)
 
-    def boom():
+    def boom(*args, **kwargs):
         raise RuntimeError("model down")
 
     monkeypatch.setattr(scheduler.agent, "run_once", boom)
-    asyncio.run(scheduler._maybe_run_agent())  # must not raise
+    scheduler._maybe_run_agent()  # must not raise
 
 
 # --- noticing a stop that fired ------------------------------------------------
@@ -143,7 +144,7 @@ def test_the_watchdog_settles_agent_fills(agent_stub, monkeypatch):
     monkeypatch.setattr(scheduler.agent, "settle_pending", lambda: called.append(1) or [])
     monkeypatch.setattr(scheduler, "notify", lambda *a, **kw: asyncio.sleep(0))
 
-    asyncio.run(scheduler._settle_agent_fills())
+    scheduler._settle_agent_fills()
 
     assert called == [1]
 
@@ -164,12 +165,12 @@ def test_a_triggered_stop_is_announced(monkeypatch):
     async def fake_notify(*args, **kwargs):
         posted.append(args[0] if args else kwargs)
 
-    async def fake_maybe_run_agent(label="Event-driven", cooldown=True):
+    def fake_maybe_run_agent(label="Event-driven", cooldown=True):
         woke.append((label, cooldown))
 
     monkeypatch.setattr(scheduler, "notify", fake_notify)
     monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
-    asyncio.run(scheduler._settle_agent_fills())
+    scheduler._settle_agent_fills()
 
     assert len(posted) == 1
     assert "Stop triggered" in posted[0]
@@ -200,7 +201,7 @@ def test_an_ordinary_fill_is_not_announced_again(monkeypatch):
         posted.append(args)
 
     monkeypatch.setattr(scheduler, "notify", fake_notify)
-    asyncio.run(scheduler._settle_agent_fills())
+    scheduler._settle_agent_fills()
 
     assert posted == []
 
@@ -210,7 +211,7 @@ def test_a_disabled_agent_is_not_polled(monkeypatch):
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: False)
     monkeypatch.setattr(scheduler.agent, "settle_pending", lambda: called.append(1) or [])
 
-    asyncio.run(scheduler._settle_agent_fills())
+    scheduler._settle_agent_fills()
 
     assert called == []
 
@@ -224,7 +225,7 @@ def test_a_settle_failure_does_not_kill_the_watchdog_tick(monkeypatch):
         raise RuntimeError("broker down")
 
     monkeypatch.setattr(scheduler.agent, "settle_pending", boom)
-    asyncio.run(scheduler._settle_agent_fills())  # must not raise
+    scheduler._settle_agent_fills()  # must not raise
 
 
 def test_a_filled_take_profit_is_announced_as_a_target_hit(monkeypatch):
@@ -242,13 +243,13 @@ def test_a_filled_take_profit_is_announced_as_a_target_hit(monkeypatch):
     async def fake_notify(*args, **kwargs):
         posted.append(args[0] if args else kwargs)
 
-    async def fake_maybe_run_agent(label="Event-driven", cooldown=True):
+    def fake_maybe_run_agent(label="Event-driven", cooldown=True):
         pass
 
     monkeypatch.setattr(scheduler.agent.db, "record_alert", lambda **kw: None)
     monkeypatch.setattr(scheduler, "notify", fake_notify)
     monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
-    asyncio.run(scheduler._settle_agent_fills())
+    scheduler._settle_agent_fills()
 
     assert "Target reached" in posted[0]
     assert "at a profit" in posted[0]
@@ -267,22 +268,14 @@ def test_research_the_agent_asked_for_runs_in_the_same_pass(monkeypatch):
     of it.
     """
     dispatched = {}
-    loop_holder = {}
 
     async def fake_run_analyses(tickers, on_failure=None, trigger=None, failures=None):
         dispatched["tickers"] = list(tickers)
         dispatched["trigger"] = trigger
         return []
 
-    async def drive():
-        loop_holder["loop"] = asyncio.get_running_loop()
-        monkeypatch.setattr(scheduler, "_main_loop", loop_holder["loop"])
-        monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
-        # The bridge blocks, so it has to be called off the loop's own thread —
-        # which is exactly where run_once runs.
-        await asyncio.to_thread(scheduler._research_for_agent, ["INTC", "PLTR"])
-
-    asyncio.run(drive())
+    monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
+    scheduler._research_for_agent(["INTC", "PLTR"])
 
     assert dispatched["tickers"] == ["INTC", "PLTR"]
     # Stored on every signal it produces, so the next prompt can say the
@@ -303,16 +296,12 @@ def test_the_in_pass_runner_does_not_ask_the_agent_again(monkeypatch):
     async def fake_run_analyses(tickers, on_failure=None, trigger=None, failures=None):
         return []
 
-    async def fake_maybe_run_agent():
+    def fake_maybe_run_agent():
         asked.append(True)
 
-    async def drive():
-        monkeypatch.setattr(scheduler, "_main_loop", asyncio.get_running_loop())
-        monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
-        monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
-        await asyncio.to_thread(scheduler._research_for_agent, ["INTC"])
-
-    asyncio.run(drive())
+    monkeypatch.setattr(scheduler.analysis, "run_analyses", fake_run_analyses)
+    monkeypatch.setattr(scheduler, "_maybe_run_agent", fake_maybe_run_agent)
+    scheduler._research_for_agent(["INTC"])
 
     assert asked == []
 
@@ -320,15 +309,14 @@ def test_the_in_pass_runner_does_not_ask_the_agent_again(monkeypatch):
 def test_the_runner_says_so_rather_than_hanging_with_no_loop(monkeypatch):
     """A script or a test has no running app. Raising is caught by the caller
     and reported to the model as a failed analysis; hanging would take the
-    whole pass with it."""
-    monkeypatch.setattr(scheduler, "_main_loop", None)
+    whole pass with it. quiv's ``call_on_main`` raises when no ``Quiv`` has
+    started, so the real one is put back here."""
+    import quiv
 
-    with pytest.raises(RuntimeError):
+    monkeypatch.setattr(scheduler, "call_on_main", quiv.call_on_main)
+
+    with pytest.raises(quiv.MainLoopUnavailableError):
         scheduler._research_for_agent(["INTC"])
-
-
-async def _noop():
-    return None
 
 
 # --- the agent's own cadence ---------------------------------------------------
@@ -339,39 +327,45 @@ def wakeup_stub(monkeypatch):
     """A pass that records it ran, with no LLM and no broker."""
     passes = []
 
-    async def fake_pass(label):
-        passes.append(label)
-
-    monkeypatch.setattr(scheduler, "_run_agent_pass", fake_pass)
+    monkeypatch.setattr(scheduler, "_run_agent_pass", lambda label, stop_event=None: passes.append(label))
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
     monkeypatch.setattr(scheduler.watchdog, "is_us_market_hours", lambda: True)
-    scheduler._last_final_pass = None
-    # The final pass re-arms itself through quiv, which is not running here.
-    monkeypatch.setattr(scheduler, "_arm_final_pass", lambda: None)
-    monkeypatch.setattr(scheduler, "_final_pass_task_id", None)
+    monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: None)
+    monkeypatch.setattr(scheduler, "_pending_wake", None)
+    monkeypatch.setattr(scheduler, "_agent_task_ran_at", None)
+    monkeypatch.setattr(scheduler, "_last_final_pass", None)
+    # Not due unless a test says so.
+    monkeypatch.setattr(scheduler, "_final_pass_at", _et(23, 59))
     return passes
 
 
-def _et(hour, minute):
+def _et(hour, minute, day=3):
     from zoneinfo import ZoneInfo
 
-    return datetime.datetime(2026, 9, 3, hour, minute, tzinfo=ZoneInfo("America/New_York"))
+    return datetime.datetime(2026, 9, day, hour, minute, tzinfo=ZoneInfo("America/New_York"))
+
+
+def _final_pass_comes_round(monkeypatch):
+    """Run the agent task at the time the final pass was set for."""
+    monkeypatch.setattr(scheduler, "_final_pass_at", scheduler.market_clock.now_et())
+    monkeypatch.setattr(scheduler.market_clock, "next_final_pass", lambda *a: _et(15, 55, day=4))
+    scheduler.agent_pass()
 
 
 def test_the_agent_is_woken_when_it_asked_to_be(wakeup_stub, monkeypatch):
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(11, 0))
     monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: _et(11, 0))
 
-    asyncio.run(scheduler._agent_wakeup_job())
+    scheduler.agent_pass()
 
-    assert wakeup_stub == ["Wakeup"]
+    assert wakeup_stub == ["Alarm"]
 
 
 def test_nothing_happens_before_the_time_it_chose(wakeup_stub, monkeypatch):
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(11, 0))
     monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: None)
 
-    asyncio.run(scheduler._agent_wakeup_job())
+    scheduler.agent_pass()
 
     assert wakeup_stub == []
 
@@ -384,9 +378,9 @@ def test_the_chosen_time_is_not_blocked_by_the_cooldown(wakeup_stub, monkeypatch
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(11, 0))
     monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: _et(11, 0))
 
-    asyncio.run(scheduler._agent_wakeup_job())
+    scheduler.agent_pass()
 
-    assert wakeup_stub == ["Wakeup"]
+    assert wakeup_stub == ["Alarm"]
 
 
 def test_a_final_pass_runs_before_the_close(wakeup_stub, monkeypatch):
@@ -394,7 +388,7 @@ def test_a_final_pass_runs_before_the_close(wakeup_stub, monkeypatch):
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 55))
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
 
-    asyncio.run(scheduler._final_pass_job())
+    _final_pass_comes_round(monkeypatch)
 
     assert wakeup_stub == ["Final"]
 
@@ -403,8 +397,8 @@ def test_the_final_pass_runs_once_a_session(wakeup_stub, monkeypatch):
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 55))
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
 
-    asyncio.run(scheduler._final_pass_job())
-    asyncio.run(scheduler._final_pass_job())
+    _final_pass_comes_round(monkeypatch)
+    _final_pass_comes_round(monkeypatch)
 
     assert wakeup_stub == ["Final"]
 
@@ -415,37 +409,36 @@ def test_the_final_pass_is_skipped_after_a_recent_pass(wakeup_stub, monkeypatch)
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 55))
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: True)
 
-    asyncio.run(scheduler._final_pass_job())
+    _final_pass_comes_round(monkeypatch)
 
     assert wakeup_stub == []
 
 
-def test_the_final_pass_re_arms_itself_whether_or_not_it_ran(wakeup_stub, monkeypatch):
-    """A one-off deletes itself when it fires. If the job only re-armed after a
-    pass it ran, one skipped session would be the last final pass ever."""
-    armed = []
-    monkeypatch.setattr(scheduler, "_arm_final_pass", lambda: armed.append(True))
+def test_the_final_pass_moves_to_the_next_session_whether_or_not_it_ran(wakeup_stub, monkeypatch):
+    """If it moved only after a pass it ran, one skipped session would leave
+    it due, and the agent task would run again at once, in a loop."""
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 55))
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: True)
 
-    asyncio.run(scheduler._final_pass_job())
+    _final_pass_comes_round(monkeypatch)
     assert wakeup_stub == []
-    assert len(armed) == 1
+    assert scheduler._final_pass_at == _et(15, 55, day=4)
 
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
-    asyncio.run(scheduler._final_pass_job())
+    _final_pass_comes_round(monkeypatch)
     assert wakeup_stub == ["Final"]
-    assert len(armed) == 2
+    assert scheduler._final_pass_at == _et(15, 55, day=4)
 
 
-def test_the_backstop_tick_no_longer_runs_the_final_pass(wakeup_stub, monkeypatch):
-    """Since 2026-09-18 the final pass is its own one-off, on the second and on
-    half-days too; the five-minute tick only re-reads the stored wakeup."""
+def test_a_backstop_run_is_not_a_final_pass(wakeup_stub, monkeypatch):
+    """The final pass runs at the time it was set for, from the market
+    calendar, half-days included. A backstop run near the close, with that
+    time not yet come, runs nothing."""
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 56))
     monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: None)
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
 
-    asyncio.run(scheduler._agent_wakeup_job())
+    scheduler.agent_pass()
 
     assert wakeup_stub == []
 
@@ -458,9 +451,9 @@ def test_the_agent_is_woken_outside_market_hours_when_it_asked(wakeup_stub, monk
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(7, 0))
     monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: _et(7, 0))
 
-    asyncio.run(scheduler._agent_wakeup_job())
+    scheduler.agent_pass()
 
-    assert wakeup_stub == ["Wakeup"]
+    assert wakeup_stub == ["Alarm"]
 
 
 def test_no_final_pass_while_the_market_is_shut(wakeup_stub, monkeypatch):
@@ -471,7 +464,7 @@ def test_no_final_pass_while_the_market_is_shut(wakeup_stub, monkeypatch):
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(16, 20))
     monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: False)
 
-    asyncio.run(scheduler._final_pass_job())
+    _final_pass_comes_round(monkeypatch)
 
     assert wakeup_stub == []
 
@@ -480,6 +473,6 @@ def test_nothing_wakes_while_the_agent_is_off(wakeup_stub, monkeypatch):
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: False)
     monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: _et(11, 0))
 
-    asyncio.run(scheduler._agent_wakeup_job())
+    scheduler.agent_pass()
 
     assert wakeup_stub == []
