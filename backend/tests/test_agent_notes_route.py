@@ -53,8 +53,13 @@ def test_a_note_comes_back_with_its_timestamp_and_reason(client, fake_runs):
     response = client.get("/api/agent/notes")
 
     assert response.status_code == 200
+    # A pass note carries none of the review-only fields (2026-09-24): it
+    # names no pass, no kind, and nothing it would have done.
     assert response.json() == [
-        {"id": 1, "ran_at": "2026-09-03T13:35:00Z", "reason": "I cannot see sector data."}
+        {
+            "id": 1, "ran_at": "2026-09-03T13:35:00Z", "reason": "I cannot see sector data.",
+            "source": "pass", "kind": None, "pass_id": None, "would_have_done": None,
+        }
     ]
 
 

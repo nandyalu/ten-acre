@@ -326,6 +326,62 @@ class AgentRun(SQLModel, table=True):
     seconds: float | None = None
 
 
+class AgentReflection(SQLModel, table=True):
+    """The agent's evening review of its own day, since 2026-09-24.
+
+    A decision pass sees prices, positions and the note the last pass left,
+    and never its own day. Once a trading day, after the close and the
+    grading, the agent is shown every pass since its last review, what its
+    trades did and the analyses it bought, and is asked two things in turn:
+    what stood between it and a better decision, for whoever maintains it;
+    and whether to rewrite the note for the next pass or change its memory
+    notes, for itself. It cannot trade, research or move its alarm here.
+
+    Its own table, not a row in ``agentrun``: a review is not a pass. The
+    passes table feeds "your recent wakeups" and the idle-pass count, and a
+    review must count in neither.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    ran_at: datetime.datetime = Field(index=True)
+    # The start of the window it reviewed: the previous review's ``ran_at``,
+    # or 24 hours before when there was none. Every pass after it is in, so
+    # nothing is reviewed twice and nothing is missed.
+    since: datetime.datetime
+    passes: int = 0
+    # Both prompts verbatim, and both answers as the JSON the function calls
+    # carried, for the reason ``agentrun`` keeps its words: the review is
+    # mostly prompt, and a change to it cannot be read apart afterwards
+    # without the text each review saw.
+    prompt: str | None = None
+    turn2_prompt: str | None = None
+    response: str | None = None
+    revision: str | None = None
+    thinking: str | None = None
+    # The notes to the maintainer, as a JSON list of ``{kind, pass_id,
+    # what_was_missing, what_you_would_have_done}``. An empty list is the
+    # expected answer on most days, and is stored as one.
+    notes: str | None = None
+    # The note the next pass is shown in place of the last pass's own, when
+    # the review wrote one. NULL when it kept the pass's note.
+    wakeup_note: str | None = None
+    # What it asked to change in memory, as JSON, and what was applied, as a
+    # JSON list of outcome lines. A change that named a note that does not
+    # exist applies nothing, and the line says so.
+    memory_changes: str | None = None
+    applied: str | None = None
+    model: str | None = None
+    # ``tool`` when both answers came as function calls, ``text`` when the
+    # model answered with prose despite the forced call, and NULL on a review
+    # that never asked.
+    channel: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    seconds: float | None = None
+    # Why the review produced nothing: the call failed. NULL on one that ran.
+    skipped: str | None = None
+
+
 class ResearchCharge(SQLModel, table=True):
     """What the agent paid to have one ticker analysed.
 

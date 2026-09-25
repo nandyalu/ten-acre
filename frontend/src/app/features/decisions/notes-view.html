@@ -5,7 +5,8 @@
       <p class="subtitle">
         <strong>What the agent says it is missing.</strong> Every note it has left for whoever
         maintains it — a tool it lacks, a number it cannot see, a rule that contradicts another —
-        pulled out of every decision pass and shown together, newest first.
+        pulled out of every decision pass and every <app-term key="evening-review" /> and shown
+        together, newest first.
       </p>
     </div>
   </header>
@@ -37,11 +38,23 @@
       <a routerLink="/journal">the journal</a> first.
     </p>
 
+    <!-- Tracked by position: two notes can share an id. See the class doc. -->
     <ul class="notes-list">
-      @for (note of notes(); track note.id) {
+      @for (note of notes(); track $index) {
         <li class="agent-note">
-          <p class="agent-note-label">{{ when(note.ran_at) }}</p>
+          <p class="agent-note-label">
+            {{ when(note.ran_at) }}
+            @if (fromReview(note)) {
+              · from the evening review · {{ kindLabel(note) }}
+              @if (note.pass_id !== null && note.pass_id !== undefined) {
+                · pass {{ note.pass_id }}
+              }
+            }
+          </p>
           <p class="agent-note-text">{{ note.reason }}</p>
+          @if (note.would_have_done) {
+            <p class="hint">It would have {{ note.would_have_done }}</p>
+          }
         </li>
       }
     </ul>

@@ -19,6 +19,7 @@ from backend.database.models import (
     WatchlistTicker,
     ExitArmRequest,
     AgentRun,
+    AgentReflection,
     ResearchCharge,
 )
 
@@ -902,3 +903,73 @@ def get_agent_runs_for_month(month: str) -> list[AgentRun]:
     normalizes it), so a date-range WHERE risks a silent off-by-timezone
     mismatch for an optimization this table does not need."""
     return [run for run in get_agent_runs() if _month_of(run.ran_at) == month]
+
+
+# --- The evening review ------------------------------------------------------
+
+
+@write_session
+def record_reflection(
+    ran_at: datetime.datetime,
+    since: datetime.datetime,
+    passes: int = 0,
+    prompt: str | None = None,
+    turn2_prompt: str | None = None,
+    response: str | None = None,
+    revision: str | None = None,
+    thinking: str | None = None,
+    notes: str | None = None,
+    wakeup_note: str | None = None,
+    memory_changes: str | None = None,
+    applied: str | None = None,
+    model: str | None = None,
+    channel: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    seconds: float | None = None,
+    skipped: str | None = None,
+    *,
+    _session: Session = None,
+) -> int:
+    row = AgentReflection(
+        ran_at=ran_at,
+        since=since,
+        passes=passes,
+        prompt=prompt,
+        turn2_prompt=turn2_prompt,
+        response=response,
+        revision=revision,
+        thinking=thinking,
+        notes=notes,
+        wakeup_note=wakeup_note,
+        memory_changes=memory_changes,
+        applied=applied,
+        model=model,
+        channel=channel,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        seconds=seconds,
+        skipped=skipped,
+    )
+    _session.add(row)
+    _session.commit()
+    _session.refresh(row)
+    return row.id
+
+
+@read_session
+def get_reflections(limit: int | None = None, *, _session: Session = None) -> list[AgentReflection]:
+    """The evening reviews, newest first.
+
+    Newest first, unlike ``get_agent_runs``: every reader wants the latest
+    one, and the Decisions page reads as a feed.
+    """
+    query = select(AgentReflection).order_by(AgentReflection.ran_at.desc())
+    if limit is not None:
+        query = query.limit(limit)
+    return list(_session.exec(query).all())
+
+
+def get_latest_reflection() -> AgentReflection | None:
+    rows = get_reflections(limit=1)
+    return rows[0] if rows else None

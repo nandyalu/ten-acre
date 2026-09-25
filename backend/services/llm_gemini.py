@@ -276,6 +276,75 @@ def decide(
         return Reply(text, thinking, prompt_tokens, completion_tokens, exchanges, cached_tokens)
 
 
+class Round(NamedTuple):
+    """One request in a forced-function conversation: what the model called,
+    what it said, and what it cost."""
+
+    function: str | None
+    args: dict | None
+    # The id of the call, to send back on the response to it.
+    call_id: str | None
+    # Prose the model wrote instead of, or beside, a call. Empty on a clean call.
+    text: str
+    thinking: str | None
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int
+    # The model's own turn, to append to the conversation verbatim.
+    content: object
+
+
+def one_round(
+    system: str,
+    contents: list,
+    declarations: list[dict] | tuple,
+    allowed: list[str],
+    model: str,
+    generate=None,
+) -> Round:
+    """One request, with ``allowed`` the only functions the model may call.
+
+    ``decide`` above runs its own loop, because a fetch round changes what
+    is allowed next. The evening review (``reflection.py``) asks two different
+    functions in turn, each once, so it composes this instead. The caller owns
+    ``contents`` and appends ``content`` and its own reply between rounds.
+    """
+    generate = generate or client().models.generate_content
+    declared = [types.FunctionDeclaration(**d) for d in declarations]
+    config = types.GenerateContentConfig(
+        system_instruction=system,
+        tools=[types.Tool(function_declarations=declared)],
+        tool_config=types.ToolConfig(
+            function_calling_config=types.FunctionCallingConfig(
+                mode=types.FunctionCallingConfigMode.ANY,
+                allowed_function_names=allowed,
+            )
+        ),
+        thinking_config=thinking_config(),
+    )
+    response = generate(model=model, contents=contents, config=config)
+    parts, content = _parts(response)
+    used = getattr(response, "usage_metadata", None)
+    thoughts = [p.text for p in parts if getattr(p, "thought", False) and getattr(p, "text", None)]
+    calls = [p.function_call for p in parts if getattr(p, "function_call", None) is not None]
+    picked = next((c for c in calls if getattr(c, "name", None) in allowed), None)
+    text = "\n".join(
+        p.text for p in parts if getattr(p, "text", None) and not getattr(p, "thought", False)
+    )
+    return Round(
+        function=getattr(picked, "name", None) if picked is not None else None,
+        args=plain(dict(getattr(picked, "args", None) or {})) if picked is not None else None,
+        call_id=getattr(picked, "id", None) if picked is not None else None,
+        text=text,
+        thinking="\n\n".join(thoughts) or None,
+        prompt_tokens=int(getattr(used, "prompt_token_count", 0) or 0),
+        completion_tokens=int(getattr(used, "candidates_token_count", 0) or 0)
+        + int(getattr(used, "thoughts_token_count", 0) or 0),
+        cached_tokens=int(getattr(used, "cached_content_token_count", 0) or 0),
+        content=content,
+    )
+
+
 def _parts(response) -> tuple[list, object]:
     """(parts, the model's content object) from one response."""
     candidates = getattr(response, "candidates", None) or []

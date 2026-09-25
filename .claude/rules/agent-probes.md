@@ -403,3 +403,44 @@ The last five real runs took 4.5 to 9.1 minutes, so the old figure understated i
 - Run 7 (named `2026-09-24T09:30`): *"The prompt tells me I'll be asked again at 3:55 PM today, before the close, and tomorrow at the open, 9:30 AM Eastern. I think it makes sense to schedule the next check for tomorrow at 9:30 AM Eastern..."* — a deliberate choice to skip the 15:55 pass, made with the pass named, not a run that forgot it exists.
 
 No run reasoned toward "my next look is tomorrow's open" without first passing through 15:55. **This is a clean 7 of 7 on the one thing the change set out to fix**, and it is the sample size for catching breakage, not for measuring a preference between naming 15:55 and naming tomorrow — six of seven still chose 15:55 outright, which the old line could never have produced since it never named that time at all.
+
+## The evening review, probed before it was built (2026-09-19)
+
+**What was probed:** the two-turn review the plan in `PLAN.md` describes, as a throwaway script against a `sqlite3 .backup` copy of the live book, on `gemini-3.5-flash-lite` at thinking level high, from a throwaway container on the deployed image. The window was the whole week of 2026-09-14 to 2026-09-19 rather than one day, so the model had a trade to look at: the INTC buy of 2026-09-15, stopped out in 100 minutes. Four samples, two forced calls each, `report` then `revise` in one conversation. The result is in `data/probe/reflection-20260920T020728.json` on nebula, beside the script that made it. The prompt then carried a "what the maintainers changed" section built from the change notes; the shipped prompt carries the decision pass's fixed rules in its place, because the change-note mechanism was removed on 2026-09-21.
+
+| Check | Result |
+|---|---|
+| Both calls made | 4 of 4 |
+| Turn-1 notes that name a real pass and a real moment | 1 note in 4 samples, on pass 28, the INTC pullback plan. No sample invented a tool. |
+| Turn-1 notes that asked for something already built | 1 of 1: limit orders, announced in a change note two days earlier. The other 3 samples reasoned from the change notes that every gap they felt was already answered, and reported nothing. |
+| Memory notes written as a rule from one trade | 0 of 3. All three carried the count, "stopped me out once". |
+| Memory notes that worked around a reported gap | 0 of 4. Sample 1 drafted one, quoted the rule, and dropped it: *"Didn't I report the absence of resting limit orders earlier? Yes, I did. The rule says not to circumvent a missing tool."* |
+| Notes for the morning rewritten to drop the restated cash balance | 4 of 4, each citing the rule: *"it's currently including cash on hand, which violates rule 5."* The decision pass has restated the balance since 2026-09-12 and no wording stopped it. |
+| Samples that read the "maintainers changed" section | 4 of 4, by their own reasoning. In the decision pass the same section was quoted by nobody. |
+| Cost per sample | 2 requests, about 20k prompt tokens and 2k to 3k completion, 13 to 17 seconds |
+
+**Three findings changed the design before it shipped.**
+
+- **The example in the memory rule primed the notes.** It read "INTC stopped me out once on a breakout entry", and all three memory notes opened with those words. The content was real, the $97.00 stop and the four shares, but the shape was copied. The shipped rule's example names `XMPL`, a ticker in no record.
+- **Two of three memory notes restated the sizing rule** the prompt already carries, "size positions based on distance to stop and ATR". A memory slot that repeats a rule is a slot lost. The shipped second turn says: memory is for what you learned, not for what you are told.
+- **An empty memory pulls an add.** Sample 2 called an empty memory "not ideal" and sample 4 weighed a note against "a blank memory". The shipped second turn says most reviews add nothing, and the churn count in `PLAN.md` is the measurement.
+
+**This week was weak evidence for turn 1.** Every gap the agent felt that week had a change note answering it, because the maintainer answered daily. An empty report is the honest answer for such a week, and it says nothing about whether the model finds a gap nobody has answered. Re-probe turn 1 on a week that has one.
+
+## The evening review, on the real prompt (2026-09-24)
+
+**What was probed:** the shipped `reflection.build_prompt`, through `probe_prompt.py --turn reflection --samples 4`, inside a throwaway container on nebula's image, against a `sqlite3 .backup` copy of that book migrated to head. The window was the real one, the two live passes of 2026-09-24 (49 and 50), a day that held a COIN position and commissioned one ORCL analysis. `gemini-3.5-flash-lite`, thinking level high. Result in `data/probe/reflection-20260925T021353.json` on nebula. The prompt was 13,304 characters; each sample cost 2 requests, 9.6k to 9.8k prompt tokens and 0.5k to 1.4k completion, in 5 to 10 seconds.
+
+| Check | Result |
+|---|---|
+| Both calls made | 4 of 4 |
+| Turn-1 notes | 0 in 4 samples. Every sample walked passes 49 and 50 by number and named what worked: *"In Pass 50, I was able to fetch my watchlist, the track_record, and read the ORCL data and analyst reports without any hitches."* |
+| Turn-1 notes that invented a tool | 0 |
+| Note for the next pass rewritten | 4 of 4 |
+| Rewritten notes that dropped the restated price and position | 3 of 4. Sample 4 kept "COIN held at $199.21". |
+| Memory notes added | 0 of 4. Sample 3: *"Repeating a rule given on every pass is a slot lost. It's too early to solidify any enduring lessons."* Sample 2 weighed the line itself: *"I think 'Most reviews add nothing.' as a memory. And I have no pressing need to do that."* |
+| Figures quoted that appear only in the analyses table | 3 of 4 named ORCL's stop or target from it. |
+
+**One prompt bug, found here and fixed before the release:** the opening line read "It is Thursday 24 September 2026, 10:13 PM Eastern. It is Thursday 24 September 2026, 10:13 PM Eastern. The market has closed…", because `market_clock.describe` already opens with the time. The line now carries the clock helper's sentence alone. The "Equity at your last review" label was also wrong on a first review, whose window is the last 24 hours and not a review; it says "24 hours ago" then.
+
+**What this does and does not show.** The three checks from the pre-build probe hold on the real prompt: nothing invented, no rule from one trade, no workaround. A day with no trade closed and no gap is the easy case for turn 1, and four samples resolve nothing smaller than a breakage. The measurements that decide the feature are the three counts in `PLAN.md`, two weeks after 2026-09-25.

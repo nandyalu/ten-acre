@@ -36,7 +36,8 @@ from concurrent.futures import ThreadPoolExecutor
 from backend import paths
 from backend.database import db
 from backend.services import (
-    agent, agent_book, analysis, analysis_reader, decision_schema, llm_gemini, positions, research,
+    agent, agent_book, analysis, analysis_reader, decision_schema, llm_gemini, positions,
+    reflection, research,
 )
 
 _OUT = paths.data_dir() / "probe"
@@ -420,6 +421,57 @@ def _ask_gemini_text(system: str, user: str) -> dict:
     }
 
 
+def _probe_reflection(samples: int) -> int:
+    """The evening review, out of the app: the real prompt from the database
+    as it stands, both forced calls, and nothing applied or recorded.
+
+    ``reflection.converse`` is the call the app makes; only ``apply`` and the
+    record are left out, so a probe changes no memory note and no wakeup
+    note. The window is the one the app would use, so run it after the
+    passes it should see. Gemini only: the review runs on the tool channel.
+    """
+    if not agent.answers_by_tool():
+        print("The evening review runs on the tool channel only (a Gemini deployment).")
+        return 1
+    day = reflection.gather()
+    if not day.passes:
+        print(f"No pass since {day.since.isoformat()}, so there is nothing to review.")
+        return 1
+    prompts = reflection.build_prompt(day)
+    model = analysis.decision_model()
+    print(f"reflection: {len(prompts['turn1']):,} characters over {len(day.passes)} pass(es); model {model}")
+
+    def one(sample: int) -> dict:
+        out = reflection.converse(prompts, model)
+        notes = (out.report or {}).get("notes") or []
+        revise = out.revise or {}
+        print(
+            f"  sample {sample}: {out.seconds:.0f}s  notes {len(notes)}  "
+            f"memory changes {len(revise.get('memory') or [])}  "
+            f"note {'rewritten' if revise.get('wakeup_note') else 'kept'}  "
+            f"thinking {len(out.thinking or '')}",
+            flush=True,
+        )
+        return {
+            "sample": sample, "seconds": round(out.seconds, 1), "channel": out.channel,
+            "prompt_tokens": out.prompt_tokens, "completion_tokens": out.completion_tokens,
+            "thinking": out.thinking or "", "report": out.report, "report_text": out.report_text,
+            "revise": out.revise, "revise_text": out.revise_text,
+        }
+
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=samples) as pool:
+        results = list(pool.map(one, range(1, samples + 1)))
+    print(f"wall clock for all {len(results)}: {time.monotonic() - started:.0f}s")
+    _OUT.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    path = _OUT / f"reflection-{stamp}.json"
+    path.write_text(json.dumps({"prompts": prompts, "runs": results}, indent=1))
+    print(f"\nwritten to {path}")
+    print("Read the reasoning, do not grep it — see .claude/skills/probe-the-prompt/SKILL.md")
+    return 0
+
+
 def _tools(prompts: dict):
     """A fresh fetch context per sample on Gemini, None elsewhere."""
     if not agent.answers_by_tool():
@@ -441,6 +493,9 @@ def main() -> int:
     from google.genai import types
 
     llm_gemini.http_options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
+
+    if args.turn == "reflection":
+        return _probe_reflection(args.samples)
 
     prompts = build_prompts()
     if args.turn not in prompts:

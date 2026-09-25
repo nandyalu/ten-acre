@@ -38,6 +38,8 @@ Read these four counts from the Decisions page and the `agentrun` table before y
 
 ## Step 2: the end-of-day reflection
 
+**Built 2026-09-24**, in `backend/services/reflection.py`, and shipped in v0.3.0 so it runs for the first time on 2026-09-25. The contract as built is in `.claude/rules/agent.md` under "The evening review". Two things differ from the design below, and both come from the removal of the change-note mechanism on 2026-09-21: the review is shown the decision pass's fixed rules under "if it is in these rules, you have it" instead of the last seven days of change notes, and the decision pass learns the review exists from one sentence added to the fixed rules, with the next prompt labelling a note that came from the review. The measurements two weeks out are unchanged.
+
 The agent reviews its own day once, after the close. It speaks to the maintainer first, then to itself. It cannot act.
 
 ### Decisions made
@@ -109,7 +111,7 @@ And in both turns: nothing to report is a valid answer.
 ### Before it ships
 
 1. **Two JOURNEY.md entries.** Turn 2 changes what the next pass is shown, which is the behavior test. Turn 1 is a new record type, which is the evidence test.
-2. **Somewhere to tell the decision pass an evening review exists**, so a morning pass does not find its note changed with nothing saying why. `backend/agent_changes.json` was that channel and was removed on 2026-09-21 with the rest of the change-note mechanism, so this step needs a new answer before the feature ships.
+2. **Somewhere to tell the decision pass an evening review exists**, so a morning pass does not find its note changed with nothing saying why. `backend/agent_changes.json` was that channel and was removed on 2026-09-21 with the rest of the change-note mechanism. **Answered 2026-09-24:** the fixed rule about the wakeup note ends "After the close you review your day, and that review may rewrite this note before the next pass; the next prompt says so when it does", the memory rule ends "Your evening review may rewrite or remove one", and the next prompt labels a revised note as the review's.
 3. **Probe it.** Build the reflection prompt from a copy of the live database, four samples, and read the reasoning. Three checks, one per guard:
    - Does every turn-1 note name a real pass and a real moment, or does it invent one?
    - Does turn 2 write a rule from the one INTC trade, or a hypothesis with a count?
@@ -187,6 +189,6 @@ Use the paraphrase test from the `probe-the-prompt` skill for the third count. A
 - [ ] Read the four counts from the week of watching. Write what they say in JOURNEY.md if any of them changes a rule.
 - [ ] Run the step 1 audit script and read its table.
 - [ ] Decide whether the sizing fact line is needed, from the live record.
-- [ ] Write the two JOURNEY.md entries for the reflection, then build it.
-- [ ] Probe the reflection with the three checks, and record the result in `.claude/rules/agent.md`.
-- [ ] Set the two-week measurement date from the ship date.
+- [x] Write the two JOURNEY.md entries for the reflection, then build it. Done 2026-09-24.
+- [x] Probe the reflection with the three checks, and record the result in `.claude/rules/agent-probes.md`. The pre-build probe is there; the real prompt was probed on 2026-09-24 before the release.
+- [ ] Set the two-week measurement date from the ship date: **2026-10-09**, two weeks after the first review on 2026-09-25.

@@ -172,6 +172,38 @@ def isolated_agent_runs(monkeypatch):
     return rows
 
 
+@pytest.fixture(autouse=True)
+def isolated_reflections(monkeypatch):
+    """Keep the evening reviews in memory for every test.
+
+    The prompt reads the latest review to find the note the next pass is
+    shown (`agent._review_note`), so a test of the prompt would otherwise
+    read the developer's database, which may not have the table yet. Same
+    reasoning as `isolated_agent_runs` above.
+    """
+    import itertools
+
+    from backend.database import db
+    from backend.database.models import AgentReflection
+
+    rows: list = []
+    ids = itertools.count(1)
+
+    def record(**kwargs):
+        row = AgentReflection(id=next(ids), **kwargs)
+        rows.append(row)
+        return row.id
+
+    def get(limit=None):
+        newest = sorted(rows, key=lambda row: row.ran_at, reverse=True)
+        return newest if limit is None else newest[:limit]
+
+    monkeypatch.setattr(db, "record_reflection", record)
+    monkeypatch.setattr(db, "get_reflections", get)
+    monkeypatch.setattr(db, "get_latest_reflection", lambda: get(limit=1)[0] if rows else None)
+    return rows
+
+
 @pytest.fixture
 def fake_bar_cache(monkeypatch):
     """In-memory stand-in for the ``dailybar`` table. Yields the backing store

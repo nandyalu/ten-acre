@@ -85,8 +85,8 @@ export function toSnapshotPath(urlWithParams: string): { path: string; chartDays
         if (month) return { path: `${SNAPSHOT_ROOT}/agent_events_${month.replace('-', '')}.json` };
         return { path: `${SNAPSHOT_ROOT}/agent_events.json` };
       }
-      // trades, performance, history, curve, unprotected, notes all follow the
-      // exporter's agent_<name>.json convention.
+      // trades, performance, history, curve, unprotected, notes, reflections
+      // all follow the exporter's agent_<name>.json convention.
       return {
         path: segments[1]
           ? `${SNAPSHOT_ROOT}/agent_${segments[1]}.json`

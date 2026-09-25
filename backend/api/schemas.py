@@ -496,6 +496,50 @@ class AgentNoteOut(Schema):
     id: int
     ran_at: datetime
     reason: str
+    # ``pass`` for a note left inside a decision pass, ``review`` for one the
+    # evening review sent (2026-09-24). A review note also says which pass it
+    # points at, what kind of gap it names, and what the agent would have
+    # done with the missing thing; a pass note carries none of those.
+    source: str = "pass"
+    kind: str | None = None
+    pass_id: int | None = None
+    would_have_done: str | None = None
+
+
+class ReflectionNoteOut(Schema):
+    kind: str = "other"
+    pass_id: int | None = None
+    what_was_missing: str = ""
+    what_you_would_have_done: str = ""
+
+
+class AgentReflectionOut(Schema):
+    """One evening review: the agent reading its own day, then speaking to
+    the maintainer and to itself. Both prompts and both answers are kept
+    verbatim, for the reason a pass keeps its words."""
+
+    id: int
+    ran_at: datetime
+    since: datetime
+    passes: int
+    notes: list[ReflectionNoteOut] = []
+    # The note the next pass was shown in place of the last pass's own, or
+    # null when the review kept that note.
+    wakeup_note: str | None = None
+    memory_changes: list[dict] = []
+    applied: list[str] = []
+    thinking: str | None = None
+    prompt: str | None = None
+    turn2_prompt: str | None = None
+    response: str | None = None
+    revision: str | None = None
+    model: str | None = None
+    channel: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    seconds: float | None = None
+    # Why the review produced nothing. Null on one that ran.
+    skipped: str | None = None
 
 
 class AgentEventOut(Schema):

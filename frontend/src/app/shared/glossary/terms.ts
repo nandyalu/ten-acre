@@ -148,6 +148,13 @@ export const TERMS: Term[] = [
       'The moment the agent reads its book and answers with orders. Not a fixed time — the agent names its own next one, so this happens whenever it asked to be woken.',
     long: 'Naming no time falls back to the following open, and a final pass always runs five minutes before the close whatever the agent asked for, so no position goes into the night unreviewed. Before 2026-09-05 this ran once a day at a fixed clock time; the agent now owns its own schedule entirely.',
   },
+  {
+    id: 'evening-review',
+    label: 'evening review',
+    short:
+      'Once a trading day, after the close, the agent reads every decision pass since its last review and writes two things: notes to whoever maintains it, and a revision of its own memory. It cannot trade, research or move its alarm from here.',
+    long: 'Most days it reports nothing, and that is the expected answer. A note names the pass where the gap was felt: a tool it lacked, information it could not see, a rule that contradicted another. It may also replace the note its last pass left for the next one. Nothing acts on a note automatically, and the review is shown inside the day it ran on, above that day’s passes.',
+  },
 ];
 
 export const TERMS_BY_ID = new Map(TERMS.map((t) => [t.id, t]));

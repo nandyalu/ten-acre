@@ -34,6 +34,7 @@ from backend.services import (
 )
 from backend.services.digest import build_weekly_digest_embed
 from backend.notifications.notify import notify
+from backend.services import reflection
 from backend.services.positions import PriceWindow, get_price_window
 from backend.services.signals import SignalEvaluation, evaluate_signal_window, horizon_params
 
@@ -672,6 +673,35 @@ async def _daily_signals_job() -> None:
             log.info("Journey written: %s", ", ".join(written))
     except Exception:
         log.exception("Could not write the journey")
+    # Last, after the grading, so the day's verdicts are in front of the
+    # agent when it reads its own day.
+    await _evening_review_job()
+
+
+async def _evening_review_job() -> None:
+    """The agent reads its own day and speaks twice: to the maintainer, then
+    to itself. See ``reflection``.
+
+    Under ``_pass_lock``, and waiting for it rather than skipping: a pass
+    still running at this hour is researching, and the review must see that
+    pass whole, not half of it. Nothing can start a pass while the review
+    holds the lock, so the note it rewrites is the one the next pass reads.
+    Posted only when it said something — a note to the maintainer, or a
+    change to memory — because most days it says nothing, and that is the
+    expected answer, not news.
+    """
+    if not agent.is_enabled():
+        return
+    async with _pass_lock:
+        try:
+            review = await asyncio.to_thread(reflection.run_once)
+        except Exception:
+            log.exception("The evening review failed")
+            return
+    if review is None or review.skipped:
+        return
+    if review.notes or review.memory_changed:
+        await notify(embed=reflection.format_embed(review))
 
 
 def daily_signals() -> None:

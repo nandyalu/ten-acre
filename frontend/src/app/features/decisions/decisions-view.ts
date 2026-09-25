@@ -1,16 +1,28 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
-import { AgentEvent } from '../../core/models/api.models';
+import { AgentEvent, AgentReflection } from '../../core/models/api.models';
 import { AgentService } from '../../core/services/agent.service';
+import { Term } from '../../shared/glossary/term';
 import { readerDateKey, readerDateLabel } from '../../shared/market-time';
 import { DecisionCard } from './decision-card';
+import { ReflectionCard } from './reflection-card';
 
-/** One calendar day's worth of passes, newest first, within a month. */
+/** One calendar day within a month: its evening review, when it had one,
+ * and its passes, newest first. */
 export interface DecisionDay {
   key: string;
   label: string;
+  /** The day's evening reviews. One a day at most, in practice. */
+  reviews: AgentReflection[];
   events: AgentEvent[];
+}
+
+/** "YYYY-MM" of the UTC instant. The backend files a pass into a month by
+ * its UTC time (`db._month_of`), so a review is filed the same way, and a
+ * review sits in the same month as the passes it read. */
+function utcMonth(instant: string): string {
+  return new Date(instant).toISOString().slice(0, 7);
 }
 
 /**
@@ -31,20 +43,29 @@ export interface DecisionDay {
 @Component({
   selector: 'app-decisions-view',
   standalone: true,
-  imports: [DecisionCard, RouterLink],
+  imports: [DecisionCard, ReflectionCard, RouterLink, Term],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './decisions-view.html',
 })
 export class DecisionsView {
   private readonly agent = inject(AgentService);
 
-  /** Every month with a decision pass, newest first — one dot each. */
+  /** Every month with a decision pass or an evening review, newest first —
+   * one dot each. */
   readonly months = signal<string[]>([]);
   readonly loadingMonths = signal(true);
   /** True when the month list itself could not be fetched. A single month
    * failing to load is tracked separately (failedMonths) — that is not the
    * whole page being down. */
   protected readonly failed = signal(false);
+
+  /** Every evening review, fetched once with the month list. One flat list
+   * rather than a per-month cache: a review is short beside a pass, and the
+   * page files each into the month it ran in itself. */
+  private readonly reviews = signal<AgentReflection[]>([]);
+  /** True when the reviews could not be fetched. The passes still show; the
+   * page says the reviews are missing rather than going down with them. */
+  protected readonly reviewsFailed = signal(false);
 
   private readonly eventsByMonth = signal<Map<string, AgentEvent[]>>(new Map());
   private readonly expandedMonths = signal<Set<string>>(new Set());
@@ -57,18 +78,41 @@ export class DecisionsView {
   private readonly collapsedDays = signal<Set<string>>(new Set());
 
   constructor() {
-    void this.agent
-      .getEventMonths()
-      .then((months) => {
-        this.months.set(months);
+    // The reviews ride alongside the month list rather than after it: a
+    // review's month may hold no pass, and the timeline needs to know that
+    // before it draws its dots. A failed reviews fetch is caught here on its
+    // own, so it costs the page its reviews and nothing else.
+    const reviews = this.agent.getReflections().catch((): AgentReflection[] => {
+      this.reviewsFailed.set(true);
+      return [];
+    });
+    void Promise.all([this.agent.getEventMonths(), reviews])
+      .then(([months, reviews]) => {
+        this.reviews.set(reviews);
+        const all = this.withReviewMonths(months, reviews);
+        this.months.set(all);
         // The newest month with any data at all is treated as "current" —
         // simpler and more robust than comparing against today's calendar
         // month, which would still show an empty section on the first day
         // of a new month with nothing recorded in it yet.
-        if (months.length) void this.expandMonth(months[0]);
+        if (all.length) void this.expandMonth(all[0]);
       })
       .catch(() => this.failed.set(true))
       .finally(() => this.loadingMonths.set(false));
+  }
+
+  /** The month list with every review's month in it, newest first. A review
+   * on a day the agent skipped every pass, or the first record of a fresh
+   * month, would otherwise have no dot to sit under. */
+  private withReviewMonths(months: string[], reviews: AgentReflection[]): string[] {
+    const all = new Set(months);
+    for (const review of reviews) all.add(utcMonth(review.ran_at));
+    return Array.from(all).sort().reverse();
+  }
+
+  /** One month's reviews, newest first, since the API sends them that way. */
+  reviewsFor(month: string): AgentReflection[] {
+    return this.reviews().filter((review) => utcMonth(review.ran_at) === month);
   }
 
   isExpanded(month: string): boolean {
@@ -87,23 +131,26 @@ export class DecisionsView {
     return this.eventsByMonth().get(month) ?? [];
   }
 
-  /** A month's passes, split into same-day groups — newest day first, and
-   * newest pass first within each day, since eventsFor() is already ordered
-   * that way and grouping only ever appends into whichever day a pass
-   * belongs to. */
+  /** A month's passes and reviews, split into same-day groups — newest day
+   * first, and newest pass first within each day, since eventsFor() and
+   * reviewsFor() are each already ordered that way and grouping only ever
+   * appends into whichever day an item belongs to. Sorted by key at the end
+   * because a review can open a day no pass did, so insertion order alone
+   * no longer says which day is newest. */
   daysFor(month: string): DecisionDay[] {
-    const groups = new Map<string, AgentEvent[]>();
-    for (const event of this.eventsFor(month)) {
-      const key = readerDateKey(event.ran_at);
-      const events = groups.get(key);
-      if (events) events.push(event);
-      else groups.set(key, [event]);
-    }
-    return Array.from(groups, ([key, events]) => ({
-      key,
-      label: readerDateLabel(events[0].ran_at),
-      events,
-    }));
+    const groups = new Map<string, DecisionDay>();
+    const dayOf = (instant: string): DecisionDay => {
+      const key = readerDateKey(instant);
+      let day = groups.get(key);
+      if (!day) {
+        day = { key, label: readerDateLabel(instant), reviews: [], events: [] };
+        groups.set(key, day);
+      }
+      return day;
+    };
+    for (const event of this.eventsFor(month)) dayOf(event.ran_at).events.push(event);
+    for (const review of this.reviewsFor(month)) dayOf(review.ran_at).reviews.push(review);
+    return Array.from(groups.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
   }
 
   /** "2026-09" -> "September 2026". */

@@ -3,7 +3,9 @@ import { RouterLink } from '@angular/router';
 
 import { AgentNote } from '../../core/models/api.models';
 import { AgentService } from '../../core/services/agent.service';
+import { Term } from '../../shared/glossary/term';
 import { readerDateTime } from '../../shared/market-time';
+import { noteKindLabel } from './reflection-card';
 
 /**
  * Every note the agent has ever left, in one place.
@@ -15,6 +17,15 @@ import { readerDateTime } from '../../shared/market-time';
  * experiment's gaps. Reading "everything it has ever asked for" meant
  * opening every month on the Decisions page and picking the note cards out
  * by eye. This pulls them into their own list instead.
+ *
+ * Since 2026-09-24 the evening review sends notes too: the same message, to
+ * the same reader, from the other place the agent can speak from. A review
+ * note also says which pass it points at and what kind of gap it names, and
+ * the list says which of the two places each note came from.
+ *
+ * The list is tracked by position, not by `id`. Two notes can share an id:
+ * a pass can leave two, and every note a review sends carries the review's
+ * own id.
  *
  * A drill-down from Decisions rather than a seventh link in the main nav —
  * the nav is deliberately six curated destinations (see app.ts), and a note
@@ -28,7 +39,7 @@ import { readerDateTime } from '../../shared/market-time';
 @Component({
   selector: 'app-notes-view',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, Term],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './notes-view.html',
 })
@@ -49,5 +60,15 @@ export class NotesView {
 
   when(instant: string): string {
     return readerDateTime(instant);
+  }
+
+  /** Whether the evening review sent this note. Absent `source` means a pass
+   * note: a snapshot written before 2026-09-24 has no such key. */
+  fromReview(note: AgentNote): boolean {
+    return note.source === 'review';
+  }
+
+  kindLabel(note: AgentNote): string {
+    return noteKindLabel(note.kind);
   }
 }

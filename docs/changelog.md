@@ -8,6 +8,10 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-24
 
+- **Data** — A new table, `agentreflection`, holds the agent's evening review: one row a trading day, with both prompts and both answers verbatim. The migration runs at startup like every other. What the review is and what it changes for the agent is in [the journey](journey.md).
+- **Infrastructure** — The daily 21:30 UTC job runs the evening review last, after the grading and the journey, under the pass lock, so a pass still running finishes first and none starts under it. The review posts to Discord only when it sent a note or changed memory; most days it says nothing, and that is the expected answer. It runs on the tool channel only, so a deployment on the JSON channel skips it with a log line.
+- **The site** — The Decisions page shows each evening review inside its day, above the passes, with the notes it sent, the memory it changed, the note it wrote for the next pass, and both prompts and answers behind a disclosure. The Notes page lists the review's notes beside the ones a pass leaves, each with the pass it names. `GET /api/agent/reflections` serves them, and `agent_reflections.json` on the static site.
+- **Tooling** — `probe_prompt.py --turn reflection` probes the review out of the app: the real prompt from the database as it stands, both calls, nothing applied and nothing recorded.
 - **Repository** — The notes for each release are now in `docs/releases.md`, and a new `release` skill gives the steps to cut one. Before this, the notes were only on GitHub, and v0.2.0 and v0.2.1 had generated notes only.
 
 ## 2026-09-23

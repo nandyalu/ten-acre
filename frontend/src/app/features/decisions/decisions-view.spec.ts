@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
-import { AgentEvent } from '../../core/models/api.models';
+import { AgentEvent, AgentReflection } from '../../core/models/api.models';
 import { AgentService } from '../../core/services/agent.service';
 import { DecisionsView } from './decisions-view';
 
@@ -31,13 +31,49 @@ function event(over: Partial<AgentEvent> = {}): AgentEvent {
   };
 }
 
+/** An evening review on the same day as `event()`, a few hours after it,
+ * and inside its UTC month. It ran and reported one gap. */
+function review(over: Partial<AgentReflection> = {}): AgentReflection {
+  return {
+    id: 7,
+    ran_at: '2026-09-01T20:30:00Z',
+    since: '2026-08-31T20:30:00Z',
+    passes: 3,
+    notes: [
+      {
+        kind: 'missing_information',
+        pass_id: 1,
+        what_was_missing: 'I could not see the sector of any holding.',
+        what_you_would_have_done: 'trimmed the second chip name.',
+      },
+    ],
+    wakeup_note: 'Watch INTC at the open.',
+    memory_changes: [{ action: 'add', text: 'Two chip names is one too many.' }],
+    applied: ['Memory: added "Two chip names is one too many."'],
+    thinking: 'the review thinking',
+    prompt: 'the review prompt, every pass of the day',
+    turn2_prompt: 'the second prompt, asking for the revision',
+    response: '{"notes": [...]}',
+    revision: '{"wakeup_note": "Watch INTC at the open."}',
+    model: 'gemini',
+    channel: 'tool',
+    prompt_tokens: 4000,
+    completion_tokens: 300,
+    seconds: 12.5,
+    skipped: null,
+    ...over,
+  };
+}
+
 /** The newest month is expanded (and fetched) as soon as the page loads —
  * every test seeds exactly that one month, since that is what a reader sees
  * without clicking anything. A separate spec covers opening an older one. */
 class AgentServiceStub {
   months: string[] = ['2026-09'];
   eventsByMonth: Record<string, AgentEvent[]> = { '2026-09': [] };
+  reviews: AgentReflection[] = [];
   failMonths = false;
+  failReviews = false;
 
   async getEventMonths(): Promise<string[]> {
     if (this.failMonths) throw new Error('network error');
@@ -46,6 +82,11 @@ class AgentServiceStub {
 
   async getEventsForMonth(month: string): Promise<AgentEvent[]> {
     return this.eventsByMonth[month] ?? [];
+  }
+
+  async getReflections(): Promise<AgentReflection[]> {
+    if (this.failReviews) throw new Error('network error');
+    return this.reviews;
   }
 }
 
@@ -882,6 +923,166 @@ describe('DecisionsView', () => {
       const el = await render();
 
       expect(el.textContent).toContain('Reducing overhead');
+    });
+  });
+
+  // --- the evening review ------------------------------------------------
+
+  describe('the evening review', () => {
+    /** Added 2026-09-24. Once a trading day, after the close, the agent reads
+     * every pass since its last review and speaks twice: to the maintainer,
+     * then to itself. It sits inside the day it ran on, above the passes it
+     * read. */
+
+    it('shows a review inside its day, above the passes', async () => {
+      service.eventsByMonth['2026-09'] = [event({ reasoning: 'the afternoon pass' })];
+      service.reviews = [review()];
+
+      const el = await render();
+
+      // One day, not a second one for the review.
+      expect(el.querySelectorAll('.tl-day').length).toBe(1);
+      const cards = Array.from(el.querySelectorAll('.day-cards > *'));
+      expect(cards[0]?.tagName.toLowerCase()).toBe('app-reflection-card');
+      expect(cards[0]?.textContent).toContain('Evening review');
+      expect(cards[1]?.textContent).toContain('the afternoon pass');
+    });
+
+    it('lists what it reported: the kind, the pass, the gap and what it would have done', async () => {
+      service.eventsByMonth['2026-09'] = [event()];
+      service.reviews = [review()];
+
+      const text = (await render()).querySelector('app-reflection-card')?.textContent ?? '';
+
+      expect(text).toContain('3 passes reviewed since');
+      expect(text).toContain('missing information');
+      expect(text).toContain('pass 1');
+      expect(text).toContain('I could not see the sector of any holding.');
+      expect(text).toContain('It would have trimmed the second chip name.');
+      expect(text).toContain('Memory: added "Two chip names is one too many."');
+      expect(text).toContain('Watch INTC at the open.');
+      expect(text).toContain('replaced the note the last pass left');
+    });
+
+    it('says there is nothing to report when the review reported nothing', async () => {
+      // Most days. The expected answer, and it must read as one rather than
+      // as an empty list.
+      service.eventsByMonth['2026-09'] = [event()];
+      service.reviews = [review({ notes: [], wakeup_note: null, applied: [] })];
+
+      const text = (await render()).querySelector('app-reflection-card')?.textContent ?? '';
+
+      expect(text).toContain('Nothing to report');
+      expect(text).toContain('was kept as it was');
+      expect(text).not.toContain('Memory:');
+    });
+
+    it('shows only the reason on a skipped review', async () => {
+      service.eventsByMonth['2026-09'] = [event()];
+      service.reviews = [
+        review({
+          skipped: 'no pass since the last review',
+          notes: [],
+          prompt: null,
+          response: null,
+          thinking: null,
+        }),
+      ];
+
+      const text = (await render()).querySelector('app-reflection-card')?.textContent ?? '';
+
+      expect(text).toContain('no pass since the last review');
+      expect(text).not.toContain('Nothing to report');
+      expect(text).not.toContain('passes reviewed');
+      expect(text).not.toContain('Show the prompts');
+    });
+
+    it('hides both prompts, both answers and the thinking until asked for', async () => {
+      service.eventsByMonth['2026-09'] = [event()];
+      service.reviews = [review()];
+      const fixture = TestBed.createComponent(DecisionsView);
+      await fixture.whenStable();
+      const el = fixture.nativeElement as HTMLElement;
+      const card = () => el.querySelector('app-reflection-card')?.textContent ?? '';
+
+      expect(card()).not.toContain('the review prompt');
+      expect(card()).not.toContain('the review thinking');
+
+      clickButtonContaining(el, 'Show the prompts');
+      await fixture.whenStable();
+      expect(card()).toContain('the review prompt, every pass of the day');
+      expect(card()).toContain('the second prompt, asking for the revision');
+
+      clickButtonContaining(el, 'Show the answers');
+      await fixture.whenStable();
+      expect(card()).toContain('{"notes": [...]}');
+      expect(card()).toContain('{"wakeup_note": "Watch INTC at the open."}');
+
+      clickButtonContaining(el, 'Show the thinking');
+      await fixture.whenStable();
+      expect(card()).toContain('the review thinking');
+    });
+
+    it('shows a review on a day with no pass in the month', async () => {
+      // A day the agent skipped every pass still gets its review.
+      service.eventsByMonth['2026-09'] = [event({ ran_at: '2026-09-08T13:35:00Z' })];
+      service.reviews = [review({ ran_at: '2026-09-01T20:30:00Z' })];
+      const fixture = TestBed.createComponent(DecisionsView);
+      await fixture.whenStable();
+      const el = fixture.nativeElement as HTMLElement;
+
+      expect(el.querySelectorAll('.tl-day').length).toBe(2);
+
+      // The older day starts collapsed, the same as a day of passes.
+      clickButtonContaining(el, 'Tuesday 1 September');
+      await fixture.whenStable();
+
+      expect(el.querySelector('app-reflection-card')?.textContent).toContain('Evening review');
+    });
+
+    it('adds a month to the timeline when only a review is in it', async () => {
+      service.months = ['2026-09'];
+      service.eventsByMonth = { '2026-09': [event()] };
+      service.reviews = [review(), review({ id: 9, ran_at: '2026-08-14T20:30:00Z' })];
+      const fixture = TestBed.createComponent(DecisionsView);
+      await fixture.whenStable();
+      const el = fixture.nativeElement as HTMLElement;
+
+      const months = Array.from(el.querySelectorAll('.tl-month')).map((m) => m.textContent);
+      expect(months).toEqual(['September 2026', 'August 2026']);
+      // Only September is open, so only its review shows yet.
+      expect(el.querySelectorAll('app-reflection-card').length).toBe(1);
+
+      clickButtonContaining(el, 'August 2026');
+      await fixture.whenStable();
+
+      expect(el.textContent).not.toContain('No decision passes in August 2026');
+      expect(el.querySelectorAll('app-reflection-card').length).toBe(2);
+    });
+
+    it('shows the review alone when nothing else is on record', async () => {
+      service.months = [];
+      service.eventsByMonth = {};
+      service.reviews = [review()];
+
+      const el = await render();
+
+      expect(el.querySelector('.empty')).toBeNull();
+      expect(el.querySelector('app-reflection-card')?.textContent).toContain('Evening review');
+    });
+
+    it('keeps the passes when the reviews cannot be read', async () => {
+      // The record a reader came for is the passes. A reviews fetch that
+      // fails costs the page its reviews and nothing else.
+      service.eventsByMonth['2026-09'] = [event()];
+      service.failReviews = true;
+
+      const el = await render();
+
+      expect(el.querySelector('.empty')).toBeNull();
+      expect(el.textContent).toContain('Reducing overhead');
+      expect(el.textContent).toContain('The evening reviews did not load');
+      expect(el.querySelector('app-reflection-card')).toBeNull();
     });
   });
 });

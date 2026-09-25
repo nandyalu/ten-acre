@@ -2525,6 +2525,33 @@ table {
   margin: 0;
 }
 
+/* The evening review's card, among the day's passes. The accent edge is the
+   one `.agent-note` carries, for the same reason: this is the agent speaking
+   to whoever maintains it, not a decision about a ticker. */
+.card--review {
+  border-left: 3px solid var(--accent);
+}
+
+/* The review's lists: the notes it sent and the memory lines it changed.
+   Stacked, no bullets, and an item may hold two lines, so not `.orders`,
+   whose rows are flex lines meant for one order each. */
+.review-list {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.review-list .agent-note-text {
+  margin: 0;
+}
+
+.review-list .hint {
+  margin: var(--sp-1) 0 0;
+}
+
 /* The Notes page: the same .agent-note block the Decisions page uses inline,
    one per note, stacked rather than embedded in a card — a note here has no
    decision pass around it, only its own timestamp. */

@@ -536,6 +536,85 @@ export interface AgentNote {
   id: number;
   ran_at: string;
   reason: string;
+  /** Where it was said: inside a decision pass, or by the evening review
+   * (2026-09-24). Absent on a snapshot written before that date, which
+   * means `pass`. Two notes can share an `id`: a pass can leave two, and a
+   * review's notes all carry the review's own id. */
+  source?: 'pass' | 'review';
+  /** What kind of gap a review note names: `missing_tool`,
+   * `missing_information`, `rule_conflict` or `other`. Null on a pass note. */
+  kind?: string | null;
+  /** The pass where a review note was felt. Null on a pass note, and on a
+   * review note the agent tied to no pass. */
+  pass_id?: number | null;
+  /** The decision the agent says it would have made with the missing thing.
+   * Null on a pass note, which never says. */
+  would_have_done?: string | null;
+}
+
+/** One gap the evening review reported, addressed to whoever maintains the
+ * agent. `pass_id` is the pass where it was felt; null when the review tied
+ * it to none. */
+export interface ReflectionNote {
+  kind: 'missing_tool' | 'missing_information' | 'rule_conflict' | 'other';
+  pass_id: number | null;
+  what_was_missing: string;
+  what_you_would_have_done: string;
+}
+
+/** One change the review made to the agent's memory notes. `index` names the
+ * note a rewrite or a remove touched; `text` is the wording of an add or a
+ * rewrite. `applied` on the review says what became of each. */
+export interface MemoryChange {
+  action: 'add' | 'rewrite' | 'remove';
+  index?: number;
+  text?: string;
+}
+
+/** One evening review, from GET /api/agent/reflections (2026-09-24).
+ *
+ * Once a trading day, after the close, the agent reads every decision pass
+ * since its last review and answers twice in one conversation: a report to
+ * whoever maintains it, then a revision of its own notes. It can trade,
+ * research and move its alarm from neither. Both prompts and both answers
+ * are kept verbatim, for the reason a pass keeps its words. */
+export interface AgentReflection {
+  id: number;
+  ran_at: string;
+  /** Where the review started reading: the last review, or the start of the
+   * record when there was none. */
+  since: string;
+  /** How many decision passes it read. */
+  passes: number;
+  /** What it reported. Empty most days, and that is the expected answer. */
+  notes: ReflectionNote[];
+  /** The note the next pass was shown in place of the last pass's own. Null
+   * means the review kept that note. */
+  wakeup_note: string | null;
+  memory_changes: MemoryChange[];
+  /** One outcome line per memory change, e.g. 'Memory: added "…".' */
+  applied: string[];
+  /** The model's reasoning across both turns. Null when the provider returned
+   * none. */
+  thinking: string | null;
+  /** The first prompt, which asked for the report. */
+  prompt: string | null;
+  /** The second prompt, which asked for the revision once the report was in. */
+  turn2_prompt: string | null;
+  /** The answer to the first prompt, verbatim. */
+  response: string | null;
+  /** The answer to the second prompt, verbatim. */
+  revision: string | null;
+  model: string | null;
+  /** How the answer arrived: `tool` (a function call) or `text`. Null on a
+   * review that never asked. */
+  channel: 'tool' | 'text' | null;
+  /** What the review cost the model. Null on one that never asked. */
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  seconds: number | null;
+  /** Why the review produced nothing. Null on one that ran. */
+  skipped: string | null;
 }
 
 /** One day of the generated journal, as markdown. */

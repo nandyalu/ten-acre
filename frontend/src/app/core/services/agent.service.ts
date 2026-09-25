@@ -12,6 +12,7 @@ import {
   UnprotectedPosition,
   AgentEvent,
   AgentNote,
+  AgentReflection,
   JourneyEntry,
 } from '../models/api.models';
 
@@ -79,6 +80,17 @@ export class AgentService {
    * fetches once on its own, the same way getEventMonths() does. */
   async getNotes(): Promise<AgentNote[]> {
     return firstValueFrom(this.http.get<AgentNote[]>('/api/agent/notes'));
+  }
+
+  /** Every evening review, newest first. One flat fetch like getNotes(), not
+   * the Decisions page's month-by-month paging: a review is short beside a
+   * pass, and one a day is a small payload for months. The limit matches the
+   * one the snapshot exporter uses, so the live page and the published copy
+   * show the same reviews. */
+  async getReflections(limit = 200): Promise<AgentReflection[]> {
+    return firstValueFrom(
+      this.http.get<AgentReflection[]>(`/api/agent/reflections?limit=${limit}`),
+    );
   }
 
   async loadJourney(days = 10): Promise<void> {

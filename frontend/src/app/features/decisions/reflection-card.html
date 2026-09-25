@@ -1,0 +1,137 @@
+<article class="card card--review">
+  <div class="card-head">
+    <div>
+      <strong>Evening review</strong>
+      <span class="muted"> — {{ when(review().ran_at) }}</span>
+      @if (!review().skipped) {
+        <span class="muted">
+          · {{ review().passes }} {{ review().passes === 1 ? 'pass' : 'passes' }} reviewed since
+          {{ sinceLabel(review()) }}
+        </span>
+      }
+    </div>
+    <!-- What the review cost the model. Null on one that never asked, so the
+         whole clause stays off rather than printing a zero that would read
+         as a free call. -->
+    @if (review().prompt_tokens) {
+      <span class="muted">
+        {{ review().prompt_tokens | number }} in / {{ review().completion_tokens | number }} out
+        @if (review().seconds) {
+          · {{ review().seconds | number: '1.0-1' }}s
+        }
+      </span>
+    }
+  </div>
+
+  <div class="card-body">
+    @if (review().skipped) {
+      <!-- The review stopped before the model was asked. The reason is the
+           whole record, so nothing else is drawn. -->
+      <p class="reasoning">{{ review().skipped }}</p>
+      <p class="hint">This review produced nothing, so there is no report and no prompt to show.</p>
+    } @else {
+      @if (notesIn(review()).length) {
+        <div class="agent-note">
+          <p class="agent-note-label">Notes to whoever maintains it</p>
+          <ul class="review-list">
+            @for (note of notesIn(review()); track $index) {
+              <li>
+                <p class="agent-note-text">
+                  <span class="side">{{ kindLabel(note.kind) }}</span>
+                  @if (note.pass_id !== null && note.pass_id !== undefined) {
+                    <span class="muted">pass {{ note.pass_id }}</span>
+                  }
+                  {{ note.what_was_missing }}
+                </p>
+                @if (note.what_you_would_have_done) {
+                  <p class="hint">It would have {{ note.what_you_would_have_done }}</p>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+      } @else {
+        <p class="reasoning">Nothing to report.</p>
+      }
+
+      @if (appliedIn(review()).length) {
+        <p class="turn-label">Memory</p>
+        <ul class="review-list">
+          @for (line of appliedIn(review()); track $index) {
+            <li>
+              <p class="agent-note-text">{{ line }}</p>
+            </li>
+          }
+        </ul>
+      }
+
+      @if (review().wakeup_note) {
+        <p class="turn-label">The note for the next pass</p>
+        <p class="reasoning">{{ review().wakeup_note }}</p>
+        <p class="hint">This replaced the note the last pass left for the next one.</p>
+      } @else {
+        <p class="hint">The note the last pass left for the next one was kept as it was.</p>
+      }
+
+      @if (asked(review())) {
+        <div class="transcript">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('prompts')">
+            {{ isOpen('prompts') ? 'Hide' : 'Show' }} the prompts
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('answers')">
+            {{ isOpen('answers') ? 'Hide' : 'Show' }} the answers
+          </button>
+          @if (review().thinking) {
+            <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('thinking')">
+              {{ isOpen('thinking') ? 'Hide' : 'Show' }} the thinking
+            </button>
+          }
+        </div>
+        @if (isOpen('prompts')) {
+          <!-- Two prompts in one conversation: the first asks for the report,
+               the second, once the report is in, asks for the revision. -->
+          <p class="hint">
+            The review takes two turns. The agent was asked to report, and then, with its report in
+            front of it, to revise its own notes.
+          </p>
+          <p class="turn-label">Turn 1 of 2 — asked to report</p>
+          <div class="verbatim-wrap">
+            <app-copy-button [text]="review().prompt" label="the first prompt" />
+            <pre class="verbatim">{{ review().prompt }}</pre>
+          </div>
+          @if (review().turn2_prompt) {
+            <p class="turn-label">Turn 2 of 2 — asked to revise</p>
+            <div class="verbatim-wrap">
+              <app-copy-button [text]="review().turn2_prompt" label="the second prompt" />
+              <pre class="verbatim">{{ review().turn2_prompt }}</pre>
+            </div>
+          }
+        }
+        @if (isOpen('answers')) {
+          <p class="turn-label">Turn 1 of 2 — the report</p>
+          <div class="verbatim-wrap">
+            <app-copy-button [text]="review().response" label="the report" />
+            <pre class="verbatim">{{ review().response }}</pre>
+          </div>
+          @if (review().revision) {
+            <p class="turn-label">Turn 2 of 2 — the revision</p>
+            <div class="verbatim-wrap">
+              <app-copy-button [text]="review().revision" label="the revision" />
+              <pre class="verbatim">{{ review().revision }}</pre>
+            </div>
+          }
+        }
+        @if (isOpen('thinking')) {
+          <p class="hint">
+            The model's reasoning on the way to its answers. Some providers return it in full;
+            Gemini returns a summary of it.
+          </p>
+          <div class="verbatim-wrap">
+            <app-copy-button [text]="review().thinking" label="the thinking" />
+            <pre class="verbatim">{{ review().thinking }}</pre>
+          </div>
+        }
+      }
+    }
+  </div>
+</article>

@@ -12,7 +12,9 @@
   </header>
 
   <p class="hint">
-    Some passes carry a note — the agent telling whoever maintains it what would help.
+    Some passes carry a note — the agent telling whoever maintains it what would help. After the
+    close it also reads its own day in an <app-term key="evening-review" />, shown inside that day
+    above the passes.
     <a routerLink="/decisions/notes">See every note it has left →</a>
   </p>
 
@@ -41,6 +43,15 @@
       Click a month, or a day inside it, to open or close it. A collapsed month is fetched only once
       you open it, so this page never loads more of the record than you asked to see.
     </p>
+    @if (reviewsFailed()) {
+      <!-- The passes are whole; only the reviews are missing. Said in a
+           hint rather than the page's down state, because the record a
+           reader came for is still here. -->
+      <p class="hint">
+        The evening reviews did not load. Every pass below is complete; the reviews are stored and
+        will appear inside their days once the API answers again.
+      </p>
+    }
 
     <!-- One continuous rule for months and days alike — a day is a sibling
          entry on the same line as its month, not a second nested rule
@@ -77,7 +88,7 @@
                 <span>The app is up but the API did not answer. Try opening it again.</span>
               </div>
             </li>
-          } @else if (!eventsFor(month).length) {
+          } @else if (!daysFor(month).length) {
             <li class="tl tl--done">
               <p class="hint">No decision passes in {{ monthLabel(month) }}.</p>
             </li>
@@ -106,6 +117,11 @@
 
                 @if (isDayExpanded(day.key)) {
                   <div class="day-cards">
+                    <!-- The review first: it is the agent reading the day
+                         below it, so it stands over the passes it read. -->
+                    @for (review of day.reviews; track review.id) {
+                      <app-reflection-card [review]="review" />
+                    }
                     @for (event of day.events; track event.id) {
                       <app-decision-card [event]="event" />
                     }

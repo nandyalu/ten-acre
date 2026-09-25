@@ -206,54 +206,114 @@ _MEMORY_NOTE_MAX_CHARS = 500
 _MAX_MEMORY_NOTES = 10
 
 
-def get_memory_notes() -> list[str]:
-    """Persistent memory notes stored across turns and passes by the agent."""
+def _memory_entry(value, source: str) -> dict | None:
+    """One stored note as ``{text, written, source}``.
+
+    **A note stored before 2026-09-24 is a bare string** with no date and no
+    source, and it reads as text with both unknown. Since that date each
+    note carries the day it was written and where it came from — ``pass``
+    for a memory order, ``reflection`` for the evening review — because the
+    review judges whether a note has earned its place, and it cannot without
+    the date. Same convention as ``_encode_wakeup_notes``: the old shape is
+    still read, nothing is migrated.
+    """
+    if isinstance(value, dict):
+        text = str(value.get("text") or "").strip()[:_MEMORY_NOTE_MAX_CHARS]
+        if not text:
+            return None
+        return {
+            "text": text,
+            "written": str(value.get("written") or "") or None,
+            "source": str(value.get("source") or "") or None,
+        }
+    text = str(value or "").strip()[:_MEMORY_NOTE_MAX_CHARS]
+    if not text:
+        return None
+    if source is None:
+        # Read back from storage: a bare string is an old note, date unknown.
+        return {"text": text, "written": None, "source": None}
+    return {"text": text, "written": _today_iso(), "source": source}
+
+
+def _today_iso() -> str:
+    return market_clock.now_et().date().isoformat()
+
+
+def get_memory_entries() -> list[dict]:
+    """Persistent memory notes with their date and source, oldest first."""
     stored = db.get_setting(_MEMORY_NOTES_KEY)
     if not stored:
         return []
     try:
         data = json.loads(stored)
-        if isinstance(data, list):
-            return [str(n).strip() for n in data if str(n).strip()][:_MAX_MEMORY_NOTES]
     except Exception:
         log.exception("Could not parse agent memory notes setting")
-    return []
+        return []
+    if not isinstance(data, list):
+        return []
+    entries = [_memory_entry(n, None) for n in data]
+    return [e for e in entries if e is not None][:_MAX_MEMORY_NOTES]
 
 
-def set_memory_notes(notes: list[str]) -> None:
-    """Overwrite the agent's persistent memory notes."""
-    cleaned = [str(n).strip()[:_MEMORY_NOTE_MAX_CHARS] for n in notes if str(n).strip()][:_MAX_MEMORY_NOTES]
-    db.set_setting(_MEMORY_NOTES_KEY, json.dumps(cleaned))
+def get_memory_notes() -> list[str]:
+    """Persistent memory notes stored across turns and passes by the agent."""
+    return [entry["text"] for entry in get_memory_entries()]
 
 
-def add_memory_note(text: str) -> None:
+def _store_memory(entries: list[dict]) -> None:
+    db.set_setting(_MEMORY_NOTES_KEY, json.dumps(entries[:_MAX_MEMORY_NOTES]))
+
+
+def set_memory_notes(notes: list, source: str = "pass") -> None:
+    """Overwrite the agent's persistent memory notes. A bare string is
+    stamped today with ``source``; a ``{text, written, source}`` dict keeps
+    its own."""
+    entries = [_memory_entry(n, source) for n in notes]
+    _store_memory([e for e in entries if e is not None])
+
+
+def add_memory_note(text: str, source: str = "pass") -> None:
     """Add a persistent memory note if not already present."""
     note = str(text or "").strip()[:_MEMORY_NOTE_MAX_CHARS]
     if not note:
         return
-    notes = get_memory_notes()
-    if note not in notes:
-        if len(notes) >= _MAX_MEMORY_NOTES:
-            notes.pop(0)  # FIFO cap eviction if max reached
-        notes.append(note)
-        set_memory_notes(notes)
+    entries = get_memory_entries()
+    if note in [e["text"] for e in entries]:
+        return
+    if len(entries) >= _MAX_MEMORY_NOTES:
+        entries.pop(0)  # FIFO cap eviction if max reached
+    entries.append({"text": note, "written": _today_iso(), "source": source})
+    _store_memory(entries)
+
+
+def rewrite_memory_note(index: int, text: str, source: str = "reflection") -> bool:
+    """Replace the note at a 0-based index, keeping its place in the list.
+    The date and source become today's and the caller's: a rewritten note is
+    a new judgement, and the review reads the date as its age."""
+    note = str(text or "").strip()[:_MEMORY_NOTE_MAX_CHARS]
+    entries = get_memory_entries()
+    if not note or not 0 <= index < len(entries):
+        return False
+    entries[index] = {"text": note, "written": _today_iso(), "source": source}
+    _store_memory(entries)
+    return True
 
 
 def remove_memory_note(text_or_index: str | int) -> bool:
     """Remove a persistent memory note by text or 0-based index."""
-    notes = get_memory_notes()
+    entries = get_memory_entries()
     if isinstance(text_or_index, int):
-        if 0 <= text_or_index < len(notes):
-            notes.pop(text_or_index)
-            set_memory_notes(notes)
+        if 0 <= text_or_index < len(entries):
+            entries.pop(text_or_index)
+            _store_memory(entries)
             return True
         return False
     target = str(text_or_index or "").strip()
-    if target in notes:
-        notes.remove(target)
-        set_memory_notes(notes)
-        return True
-    return False
+    kept = [e for e in entries if e["text"] != target]
+    if len(kept) == len(entries):
+        return False
+    _store_memory(kept)
+    return True
 
 
 def describe_memory_notes() -> list[str]:
@@ -1568,6 +1628,7 @@ def build_prompt(
     price_ranges: dict[str, tuple[float, float]] | None = None,
     day_ranges: dict[str, tuple[float, float]] | None = None,
     answer_by_tool: bool = False,
+    notes_revised: bool = False,
 ) -> str:
     """Everything the model gets, assembled from sections in a declared order.
 
@@ -1726,6 +1787,7 @@ def build_prompt(
              describe_wakeup(
                  woke_because, wakeup_note, has_news=bool(alerts), planned=planned_wakeup,
                  asked_again=asked_again, pass_notes=pass_notes, last_pass_notes=last_pass_notes,
+                 revised=notes_revised,
              )),
             # Directly under the wake block since 2026-09-21: the note the last
             # pass left and the notes the agent keeps permanently are both it
@@ -2571,11 +2633,16 @@ _FIXED_RULES = [
     "given. One format, so there is nothing to work out: no minute arithmetic, "
     "and no question of which day a bare clock time means. The minimum is 5 "
     "minutes from now and the maximum is 4 days.",
+    # **The evening review may rewrite this note (2026-09-24).** After the
+    # close the agent reads its own day and may replace the note for the next
+    # pass; the next prompt labels a note that came from the review. Said here
+    # so a pass that finds its note changed knows who changed it.
     "- **Write a note to your future self with \"next_wakeup_note\".** You will "
     "not remember this pass. Next time you are given the same kind of prompt "
     "you have now — the clock, your cash, your holdings, the signals, all of it "
     "current — plus why you were woken and this note, and nothing else from "
-    "today.",
+    "today. After the close you review your day, and that review may rewrite "
+    "this note before the next pass; the next prompt says so when it does.",
     "- **The note is for what the next prompt cannot tell you.** It will already "
     "show your cash, your positions and every price, so a note about those is a "
     "wasted one. Write down instead what you worked out and could not recover: "
@@ -2587,7 +2654,8 @@ _FIXED_RULES = [
     "- **Write long-term persistent notes with side \"memory\".** Unlike \"next_wakeup_note\" "
     "which only lasts until the next wakeup, a note written with side \"memory\" (e.g. "
     "{\"side\": \"memory\", \"reason\": \"your long-term note\"}) is saved permanently "
-    "and injected into every prompt until cleared with {\"side\": \"memory\", \"action\": \"clear\"}.",
+    "and injected into every prompt until cleared with {\"side\": \"memory\", \"action\": \"clear\"}. "
+    "Your evening review may rewrite or remove one.",
     "- You may ask for any time, including before the open, after the close and "
     "at the weekend. Research and planning work at any hour. Orders do not — "
     "the broker rejects one outright while the market is shut, and you will "
@@ -3194,6 +3262,9 @@ def _last_pass_notes() -> list[str]:
     restated in the final one was silently dropped. See the 2026-09-17
     JOURNEY.md entry.
     """
+    revised = _review_note()
+    if revised is not None:
+        return [revised]
     runs = db.get_agent_runs(limit=1)
     if not runs:
         return []
@@ -3208,6 +3279,39 @@ def _last_pass_notes() -> list[str]:
         if isinstance(notes, list):
             return [str(n).strip()[:_WAKEUP_NOTE_MAX_CHARS] for n in notes if str(n).strip()]
     return [raw[:_WAKEUP_NOTE_MAX_CHARS]]
+
+
+def _review_note() -> str | None:
+    """The note the evening review wrote for the next pass, when the review
+    came after the newest pass and wrote one; None otherwise.
+
+    **It replaces the last pass's note in the prompt rather than sitting
+    beside it (2026-09-24).** Two notes on one subject would be two copies,
+    and the model reconciles copies and keeps one — measured on the research
+    result that appeared twice. The record keeps both: the pass's note on
+    its own row, the review's on the review's. A review older than the
+    newest pass is history, and that pass's own note is what carries.
+    """
+    review = db.get_latest_reflection()
+    if review is None or not str(getattr(review, "wakeup_note", None) or "").strip():
+        return None
+    runs = db.get_agent_runs(limit=1)
+    if runs:
+        ran_at = runs[0].ran_at
+        reviewed_at = review.ran_at
+        if ran_at.tzinfo is None:
+            ran_at = ran_at.replace(tzinfo=datetime.timezone.utc)
+        if reviewed_at.tzinfo is None:
+            reviewed_at = reviewed_at.replace(tzinfo=datetime.timezone.utc)
+        if ran_at > reviewed_at:
+            return None
+    return str(review.wakeup_note).strip()[:_WAKEUP_NOTE_MAX_CHARS]
+
+
+def _last_notes_revised() -> bool:
+    """Whether the notes ``_last_pass_notes`` returns came from the evening
+    review, so the prompt can say so."""
+    return _review_note() is not None
 
 
 def _last_wakeup_note() -> str | None:
@@ -3248,8 +3352,13 @@ def describe_wakeup(
     asked_again: list[str] | None = None,
     pass_notes: list[str] | None = None,
     last_pass_notes: list[str] | None = None,
+    revised: bool = False,
 ) -> list[str]:
     """Why this pass is happening, and what the last pass left for this one.
+
+    ``revised`` says the note came from the evening review rather than from
+    the last pass (2026-09-24), and the label says so: a pass that finds its
+    note changed with nothing saying why would have to guess.
 
     **Four different things could start a pass and the agent was told none of
     them** until 2026-09-12 — its own chosen time, a move it slept through, the
@@ -3322,10 +3431,16 @@ def describe_wakeup(
             + '. All of it is under "What your last answer did" above.'
         )
     if note and early:
-        lines.append(f'**The note you left for your wakeup on {when}:** "{note}"')
+        who = "your evening review left" if revised else "you left"
+        lines.append(f'**The note {who} for your wakeup on {when}:** "{note}"')
         lines.append("That wakeup has not come yet. This pass is earlier than the one you planned.")
     elif last_pass_notes:
-        if len(last_pass_notes) == 1:
+        if revised:
+            lines.append(
+                "**A note you left yourself in your evening review, after your last "
+                f'pass:** "{last_pass_notes[0]}"'
+            )
+        elif len(last_pass_notes) == 1:
             lines.append(f'**A note you left yourself last pass:** "{last_pass_notes[0]}"')
         else:
             lines.append("**Notes you left yourself last pass, oldest first:**")
@@ -3422,6 +3537,9 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # planned time.
     last_pass_notes = _last_pass_notes()
     last_note = last_pass_notes[-1] if last_pass_notes else None
+    # Whether that note came from the evening review rather than the last
+    # pass, so the prompt can say so (2026-09-24).
+    notes_revised = _last_notes_revised()
     # The time that note was written for. When it is still ahead, this pass is
     # early and the prompt says so.
     planned_wakeup = _last_planned_wakeup()
@@ -3461,6 +3579,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
                              pass_notes=pass_notes, last_pass_notes=last_pass_notes,
+                             notes_revised=notes_revised,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
@@ -3551,6 +3670,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
                              pass_notes=pass_notes, last_pass_notes=last_pass_notes,
+                             notes_revised=notes_revised,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
@@ -3589,6 +3709,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              researched_now=researched_now,
                              woke_because=woke_because, wakeup_note=last_note,
                              pass_notes=pass_notes, last_pass_notes=last_pass_notes,
+                             notes_revised=notes_revised,
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,

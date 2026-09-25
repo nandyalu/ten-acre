@@ -18,6 +18,7 @@ from fastapi.responses import PlainTextResponse
 from backend.api.schemas import (
     AgentEventOut,
     AgentNoteOut,
+    AgentReflectionOut,
     JourneyEntryOut,
     AgentBookOut,
     AgentComparisonOut,
@@ -226,7 +227,60 @@ def get_notes():
         for order in (json.loads(run.orders) if run.orders else [])
         if order.get("side") == "note" and order.get("reason")
     ]
+    # The evening review's notes too (2026-09-24): the same message, to the
+    # same reader, sent from the other place the agent can speak from. Each
+    # carries the pass it points at, which a pass note never could.
+    for review in db.get_reflections():
+        for note in json.loads(review.notes) if review.notes else []:
+            if not isinstance(note, dict) or not note.get("what_was_missing"):
+                continue
+            notes.append(AgentNoteOut(
+                id=review.id,
+                ran_at=review.ran_at,
+                reason=str(note["what_was_missing"]),
+                source="review",
+                kind=note.get("kind"),
+                pass_id=note.get("pass_id"),
+                would_have_done=note.get("what_you_would_have_done") or None,
+            ))
+    notes.sort(key=lambda n: n.ran_at)
     return list(reversed(notes))
+
+
+@router.get("/reflections", response_model=list[AgentReflectionOut])
+def get_reflections(limit: int = 30):
+    """The evening reviews, newest first, with both prompts and both answers
+    verbatim. A review is the agent reading its own day: every pass since
+    its last review, what its trades did, the analyses it bought. It speaks
+    to the maintainer first and to itself second, and can act on nothing.
+    """
+    return [
+        AgentReflectionOut(
+            id=row.id,
+            ran_at=row.ran_at,
+            since=row.since,
+            passes=row.passes,
+            notes=[n for n in (json.loads(row.notes) if row.notes else []) if isinstance(n, dict)],
+            wakeup_note=row.wakeup_note,
+            memory_changes=[
+                c for c in (json.loads(row.memory_changes) if row.memory_changes else [])
+                if isinstance(c, dict)
+            ],
+            applied=json.loads(row.applied) if row.applied else [],
+            thinking=row.thinking,
+            prompt=row.prompt,
+            turn2_prompt=row.turn2_prompt,
+            response=row.response,
+            revision=row.revision,
+            model=row.model,
+            channel=row.channel,
+            prompt_tokens=row.prompt_tokens,
+            completion_tokens=row.completion_tokens,
+            seconds=row.seconds,
+            skipped=row.skipped,
+        )
+        for row in db.get_reflections(limit=limit)
+    ]
 
 
 @router.get("/events/months", response_model=list[str])
