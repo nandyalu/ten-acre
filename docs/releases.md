@@ -4,6 +4,15 @@
 
 For each change by date, see [the changelog](changelog.md) and [the journey](journey.md).
 
+## v0.3.0 — 2026-09-24
+
+- **The agent reviews its own day each evening.** After the close and the grading, it is shown every pass since its last review, what its trades did, and the analyses it bought with what the price did since. It answers two forced calls in one conversation: `report`, notes for whoever maintains it, each naming the pass where a tool or a fact was missing; then `revise`, a new note for the next pass and changes to its memory notes. It can place no order, commission nothing, and cannot move its alarm. The review runs on the tool channel only, so a deployment on the JSON channel skips it with a log line.
+- **The next pass sees the review's note in place of the last pass's own, labelled as the review's**, and the fixed rules now say the review exists and may rewrite the note and the memory. A memory note now carries the day it was written and whether a pass or a review wrote it. A note from before this release reads as undated.
+- **A new table, `agentreflection`, keeps each review**: both prompts, both answers, the notes, the memory changes and what was applied. The migration runs at startup like every other. `GET /api/agent/reflections` serves it, and the static site gets `agent_reflections.json`.
+- **The Decisions page shows each review in its day, above the passes, and the Notes page lists the review's notes with the pass each one names.** Discord gets a post only when a review sent a note or changed memory. Most days it says nothing, and that is the expected answer.
+- **`probe_prompt.py --turn reflection` probes the review out of the app**: the real prompt from the database as it stands, both calls, nothing applied and nothing recorded.
+- **The notes for each release live in `docs/releases.md`**, and a `release` skill gives the steps to cut one.
+
 ## v0.2.3 — 2026-09-24
 
 - **Every Gemini request now has a time limit.** A Google request fails after 300 seconds (`llm_gemini.REQUEST_TIMEOUT_SECONDS`), and `TRADINGAGENTS_LLM_TIMEOUT` can change this value. On 2026-09-24, one request that never returned stopped the agent for ten hours.
