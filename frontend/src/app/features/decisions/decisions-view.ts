@@ -5,6 +5,8 @@ import { AgentEvent, AgentReflection } from '../../core/models/api.models';
 import { AgentService } from '../../core/services/agent.service';
 import { Term } from '../../shared/glossary/term';
 import { readerDateKey, readerDateLabel } from '../../shared/market-time';
+import { CopyButton } from '../../shared/copy-button';
+import { Markdown } from '../../shared/markdown';
 import { DecisionCard } from './decision-card';
 import { ReflectionCard } from './reflection-card';
 
@@ -43,7 +45,7 @@ function utcMonth(instant: string): string {
 @Component({
   selector: 'app-decisions-view',
   standalone: true,
-  imports: [DecisionCard, ReflectionCard, RouterLink, Term],
+  imports: [CopyButton, DecisionCard, Markdown, ReflectionCard, RouterLink, Term],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './decisions-view.html',
 })
@@ -76,6 +78,22 @@ export class DecisionsView {
    * expand; a day defaults to open the first time its month does, and this
    * set only ever records the ones someone chose to close. */
   private readonly collapsedDays = signal<Set<string>>(new Set());
+
+  /** The system message, closed by default like a card's transcript, and
+   * fetched the first time it is opened. `undefined` until then, `null` when
+   * the fetch failed. */
+  readonly systemPromptOpen = signal(false);
+  readonly systemPrompt = signal<string | null | undefined>(undefined);
+
+  toggleSystemPrompt(): void {
+    this.systemPromptOpen.update((open) => !open);
+    if (this.systemPromptOpen() && this.systemPrompt() === undefined) {
+      this.agent
+        .getSystemPrompt()
+        .then((text) => this.systemPrompt.set(text))
+        .catch(() => this.systemPrompt.set(null));
+    }
+  }
 
   constructor() {
     // The reviews ride alongside the month list rather than after it: a

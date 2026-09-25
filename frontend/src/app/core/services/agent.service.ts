@@ -82,6 +82,13 @@ export class AgentService {
     return firstValueFrom(this.http.get<AgentNote[]>('/api/agent/notes'));
   }
 
+  /** The system message the next pass gets — the rules that never change
+   * between passes. The current one, not the one a past pass saw. */
+  async getSystemPrompt(): Promise<string> {
+    const reply = await firstValueFrom(this.http.get<{ text: string }>('/api/agent/system-prompt'));
+    return reply.text;
+  }
+
   /** Every evening review, newest first. One flat fetch like getNotes(), not
    * the Decisions page's month-by-month paging: a review is short beside a
    * pass, and one a day is a small payload for months. The limit matches the

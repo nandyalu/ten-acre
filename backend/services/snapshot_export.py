@@ -92,6 +92,7 @@ def export_all() -> None:
     _safe("agent_curve.json", agent_routes.get_curve)
     _safe("agent_unprotected.json", agent_routes.get_unprotected)
     _safe("agent_notes.json", agent_routes.get_notes)
+    _safe("agent_system-prompt.json", agent_routes.get_system_prompt)
     # One file, not one per month: a review is short beside a pass, and one a
     # day is a small payload for months.
     _safe("agent_reflections.json", lambda: agent_routes.get_reflections(limit=200))

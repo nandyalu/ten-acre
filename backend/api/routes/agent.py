@@ -283,6 +283,15 @@ def get_reflections(limit: int = 30):
     ]
 
 
+@router.get("/system-prompt")
+def get_system_prompt():
+    """The system message the agent's next pass gets: the rules that never
+    change between passes. The one in use now, not the one a past pass saw.
+    The provider picks which of the two is sent, so this asks the same
+    question the pass asks."""
+    return {"text": agent.SYSTEM_PROMPT_TOOL if agent.answers_by_tool() else agent.SYSTEM_PROMPT}
+
+
 @router.get("/events/months", response_model=list[str])
 def get_event_months():
     """Every month with at least one decision pass, newest first.

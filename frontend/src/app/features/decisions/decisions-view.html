@@ -53,6 +53,32 @@
       </p>
     }
 
+    <!-- The system message sits apart from the timeline because it is not
+         a pass: every pass gets it before its own prompt. Closed until
+         asked for, like a card's transcript. -->
+    <div class="transcript">
+      <button type="button" class="btn btn-ghost btn-sm" (click)="toggleSystemPrompt()">
+        {{ systemPromptOpen() ? 'Hide' : 'Show' }} the system prompt
+      </button>
+    </div>
+    @if (systemPromptOpen()) {
+      @let text = systemPrompt();
+      @if (text === undefined) {
+        <div class="skeleton" style="height: 10rem"></div>
+      } @else if (text === null) {
+        <p class="hint">The system prompt did not load. Try to open it again later.</p>
+      } @else {
+        <p class="hint">
+          Every pass gets this message before its own prompt. It holds the rules that do not change
+          from pass to pass. This is the text in use now. A past pass can have had an older text.
+        </p>
+        <div class="verbatim-wrap">
+          <app-copy-button [text]="text" label="the system prompt" />
+          <app-markdown class="markdown-block" [text]="text" />
+        </div>
+      }
+    }
+
     <!-- One continuous rule for months and days alike — a day is a sibling
          entry on the same line as its month, not a second nested rule
          offset beside it. Expanding a month reveals its days as more
