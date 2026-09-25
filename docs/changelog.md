@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-25
 
+- **Setup** — `compose.example.yaml`, the README and "Running it yourself" now use the published image, `ghcr.io/nandyalu/ten-acre:latest`, so a Docker deployment needs two files and no clone or build. The image is x86-64 only. Building the image yourself stays documented, for ARM and for your own changes, with `ten-acre:local` and `pull_policy: never`.
 - **Trade stream** — A fill the stream settles goes through `scheduler.announce_fills`, the same path the watchdog uses, so it posts to Discord, writes the alert row and wakes the agent. It used to post a stop fill to Discord and nothing else. See JOURNEY.md.
 - **Scheduler** — The jobs do their work on quiv's threads now, and quiv records each job's real duration and real failure. Until now every handler handed a coroutine to the main loop with `run_on_main` and returned, so quiv showed a one-millisecond success whatever the job did. Only `notify` and the analyses still go to the main loop, through quiv's `call_on_main`, which waits for the result. The alarm, the five-minute backstop and the final pass are one task, `agent_pass`. What this changes for the agent is in JOURNEY.md.
 - **Dependencies** — quiv moves from 1.0.0 to 1.2.0, for `call_on_main` and `update_task(run_at=...)`.

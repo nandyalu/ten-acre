@@ -81,13 +81,13 @@ It answers with a list of actions, and Python refuses what cannot be executed as
 
 ## Quick start
 
-1. `cp .env.example .env` and fill it in: `WEBULL_APP_KEY`, `WEBULL_APP_SECRET`, **`WEBULL_SANDBOX=1`**, **`WEBULL_ACCOUNT_ID`**, and your model settings. Optionally `DISCORD_WEBHOOK_URL` for notifications. The agent refuses to trade without the sandbox flag, and places no order without the account id. See [Credentials](docs/setup.md).
-2. Build the image. In VSCode, press **Ctrl+Shift+B**. Or run `docker build -t ten-acre:local .`
-3. `cp compose.example.yaml compose.yaml`, then `docker compose up -d`. Every setting in it is commented, and it reads its values from `.env`. The container applies its own database migrations at startup.
+1. Get two files: [`compose.example.yaml`](compose.example.yaml), saved as `compose.yaml`, and [`.env.example`](.env.example), saved as `.env`. No clone is needed.
+2. Fill in `.env`: `WEBULL_APP_KEY`, `WEBULL_APP_SECRET`, **`WEBULL_SANDBOX=1`**, **`WEBULL_ACCOUNT_ID`**, and your model settings. Optionally `DISCORD_WEBHOOK_URL` for notifications. The agent refuses to trade without the sandbox flag, and places no order without the account id. See [Credentials](docs/setup.md).
+3. `docker compose up -d`. It pulls the published image, `ghcr.io/nandyalu/ten-acre`, for x86-64. Every setting in the compose file is commented, and it reads its values from `.env`. The container applies its own database migrations at startup.
 4. Open the dashboard. If anything is missing it sends you to **`/setup`**, which names each requirement and shows the lines to paste for it.
 5. Switch the agent on in Settings. **That day becomes day one** — the start date is stamped then and never moves. It starts with an empty watchlist and buys its first research at the next decision pass.
 
-**[Running it yourself](docs/deploying.md) has the full version**, including two ways to run it without Docker (a direct install from a release zip with `uv tool install`, or build and run from a checkout), how to run without a GPU pool, and how to publish the site read-only.
+**[Running it yourself](docs/deploying.md) has the full version**, including how to build the image yourself (on ARM, or to run your own changes), two ways to run it without Docker (a direct install from a release zip with `uv tool install`, or build and run from a checkout), how to run without a GPU pool, and how to publish the site read-only.
 
 ## Honesty notes
 

@@ -4,16 +4,19 @@
 # then `docker compose up -d`. Every value below reads from .env, so this file
 # holds no secret and stays safe to commit.
 #
-# Build the image first — it is never pulled:
-#   docker build -t ten-acre:local .
+# The image is pulled from GitHub's registry. Every release publishes it with
+# its version tag and as `latest`, for x86-64 only. To upgrade:
+#   docker compose pull && docker compose up -d
+#
+# To build the image yourself instead (on ARM, or to run your own changes),
+# see "Build the image yourself" in docs/deploying.md.
 
 services:
   ten-acre:
-    image: ten-acre:local
-    # Never attempt a registry pull. The tag has no registry prefix, so Docker
-    # resolves it to Docker Hub and fails with "pull access denied". The image
-    # is built locally from this repo and exists only on this host.
-    pull_policy: never
+    # `latest` moves to each new release when you pull. A version tag such as
+    # :v0.4.0 holds one version until you change it, so a new release cannot
+    # change the experiment by surprise.
+    image: ghcr.io/nandyalu/ten-acre:latest
     container_name: ten-acre
     restart: unless-stopped
     # The app gives the scheduler 10 s to stop its jobs and 3 s more for work
@@ -156,8 +159,7 @@ services:
   # all. The guarantee is PUBLIC_MODE, not the mount flag.
   # ---------------------------------------------------------------------------
   # ten-acre-public:
-  #   image: ten-acre:local
-  #   pull_policy: never
+  #   image: ghcr.io/nandyalu/ten-acre:latest  # the same image as above
   #   container_name: ten-acre-public
   #   restart: unless-stopped
   #   ports:

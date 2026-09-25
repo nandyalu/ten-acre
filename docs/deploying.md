@@ -23,21 +23,48 @@ Nothing else in the design cares which you pick.
 
 ## Docker, the recommended way
 
+Every release publishes a ready image, `ghcr.io/nandyalu/ten-acre`, so you need two files and no clone:
+
 ```sh
-git clone --recurse-submodules https://github.com/nandyalu/ten-acre
-cd ten-acre
-docker build -t ten-acre:local .
-cp compose.example.yaml compose.yaml
-cp .env.example .env
+mkdir ten-acre && cd ten-acre
+curl -fsSLo compose.yaml https://raw.githubusercontent.com/nandyalu/ten-acre/main/compose.example.yaml
+curl -fsSLo .env https://raw.githubusercontent.com/nandyalu/ten-acre/main/.env.example
 # fill in .env, then:
 docker compose up -d
 ```
 
 `compose.example.yaml` has every setting commented, and reads every value from `.env`, so it holds no secret of its own.
 
+**The image is tagged with each release's version and with `latest`.** The example uses `latest`, which moves to each new release when you pull. To hold one version, change the tag to one such as `v0.4.0`. A new release can change what the agent is shown, and a pinned tag means that happens only when you choose. The notes for each version are in [Releases](releases.md).
+
+**To upgrade**, run `docker compose pull && docker compose up -d`.
+
+**The image is built for x86-64 only.** On an ARM machine, such as a Raspberry Pi or an Apple Silicon Mac, build it yourself.
+
 The container applies its own database migrations at startup. There is nothing to run by hand.
 
 **Then open the dashboard.** A deployment that is not ready sends you to `/setup`, which lists what is still missing and the exact lines to paste for each one. It reports whether a thing is configured and never what it is configured to, so nothing on that page can leak a key. Switching the agent on from the settings page is the last step, and the day you do it becomes day one of the experiment.
+
+### Build the image yourself
+
+Build it when you run on ARM, or when you want to run your own changes:
+
+```sh
+git clone --recurse-submodules https://github.com/nandyalu/ten-acre
+cd ten-acre
+docker build -t ten-acre:local .
+cp compose.example.yaml compose.yaml
+cp .env.example .env
+```
+
+Then change two lines in `compose.yaml`, under the `ten-acre` service:
+
+```yaml
+    image: ten-acre:local
+    pull_policy: never
+```
+
+`pull_policy: never` stops Docker from looking for the image in a registry. Without it, Docker resolves `ten-acre:local` to Docker Hub and fails with "pull access denied". Fill in `.env` and run `docker compose up -d`. To upgrade, pull the repository, run the build again, and run `docker compose up -d`.
 
 ## Without Docker
 
@@ -282,7 +309,9 @@ Mount the volume read-write for the public copy. SQLite writes its `-wal` and `-
 
 ## When something goes wrong
 
-**"pull access denied for ten-acre"** — the image tag has no registry prefix, so Docker resolves it to Docker Hub. Set `pull_policy: never`.
+**"pull access denied for ten-acre"** — you built the image yourself, and its tag has no registry prefix, so Docker resolves it to Docker Hub. Set `pull_policy: never` on the service. See [Build the image yourself](#build-the-image-yourself).
+
+**"no matching manifest for linux/arm64"** — the published image is x86-64 only. [Build the image yourself](#build-the-image-yourself).
 
 **`ten-acre: command not found` after a direct install** — uv put the command in `~/.local/bin`, which is not on every PATH. Run `uv tool update-shell` and open a new shell.
 
