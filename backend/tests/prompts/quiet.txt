@@ -6,9 +6,9 @@ You manage a small account of real money. Decide what to do with it now, if anyt
 
 ## Your account
 
-Your account is $10,000.00 in total. That is all you will ever have — there is no more money coming.
+Your account is worth $10,000.00 right now: your cash plus your holdings at current prices.
+It started with $10,000.00 (+0.0% since then). There is no more money coming.
 Of it, $10,000.00 is uninvested and available to spend right now.
-Total equity: $10,000.00 (+0.0% against the account)
 Realized profit so far: $0.00
 
 ---

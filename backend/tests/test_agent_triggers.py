@@ -182,8 +182,7 @@ def test_a_triggered_stop_is_announced(monkeypatch):
     # at what price. The wake reason alone named none of them.
     assert [a["alert_type"] for a in alerts] == ["stop_fill"]
     assert alerts[0]["message"] == (
-        "10 share(s) of ZBH were sold at $92.00: your resting stop at $92.10 fired. "
-        "No pass ordered this sale."
+        "10 share(s) of ZBH were sold at $92.00: your resting stop at $92.10 fired."
     )
 
 

@@ -956,10 +956,14 @@ def describe_account(book: agent_book.Book, unsettled_cash: float = 0.0) -> list
     reached the prompt the budget would mean nothing.
     """
     lines = [
-        f"Your account is ${book.budget:,.2f} in total. That is all you will ever have — "
-        "there is no more money coming.",
+        # The equity comes first (2026-09-25). The line opened with the
+        # $10,000 start, and pass 88 sized its risk on "my $10,000 account"
+        # while the book was worth $10,942.50.
+        f"Your account is worth ${book.equity:,.2f} right now: your cash plus your "
+        "holdings at current prices.",
+        f"It started with ${book.budget:,.2f} ({book.return_pct:+.1f}% since then). "
+        "There is no more money coming.",
         f"Of it, ${book.cash:,.2f} is uninvested and available to spend right now.",
-        f"Total equity: ${book.equity:,.2f} ({book.return_pct:+.1f}% against the account)",
         f"Realized profit so far: ${book.realized_pnl:,.2f}",
     ]
     # What a cash account actually restricts. The broker refuses a bracket
@@ -5558,7 +5562,7 @@ def record_exit_fill(fill: dict) -> None:
             dedupe_key=f"exit_fill:{fill.get('client_order_id') or fill['ticker']}",
             message=(
                 f"{fill['quantity']:g} share(s) of {fill['ticker']} were sold at "
-                f"${fill['price']:,.2f}: {what}. No pass ordered this sale."
+                f"${fill['price']:,.2f}: {what}."
             ),
         )
     except Exception:
