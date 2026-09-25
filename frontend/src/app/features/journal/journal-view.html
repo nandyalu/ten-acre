@@ -106,13 +106,61 @@
                        rendered on a local clock it shows the day before for
                        every reader west of UTC. -->
                   <span class="tl-day">{{ entry.date | date: 'EEEE d MMMM' : 'UTC' }}</span>
+                  @if (!isDayExpanded(entry.date)) {
+                    <span class="tl-summary">{{ entrySummary(entry) }}</span>
+                  }
                 </button>
 
                 @if (isDayExpanded(entry.date)) {
                   <div class="day-cards">
-                    <article class="card">
+                    <!-- The generated markdown, rendered as the parts it is
+                         written in (see shared/journal-entry.ts) rather than
+                         printed raw with its list markers and asterisks. -->
+                    <article class="card journal-entry">
                       <div class="card-body">
-                        <pre class="journey-body">{{ body(entry.markdown) }}</pre>
+                        @for (block of blocks(entry); track $index) {
+                          @switch (block.kind) {
+                            @case ('book') {
+                              <p class="journal-book">
+                                <span class="journal-book-value money">${{ block.equity }}</span>
+                                @if (block.changePct !== null) {
+                                  <span
+                                    class="money"
+                                    [class.money--pos]="block.changePct >= 0"
+                                    [class.money--neg]="block.changePct < 0"
+                                    >{{ signedPct(block.changePct) }}</span
+                                  >
+                                  <span class="muted">against the starting balance</span>
+                                }
+                              </p>
+                            }
+                            @case ('events') {
+                              <ul class="journal-events">
+                                @for (item of block.items; track $index) {
+                                  <li>{{ item }}</li>
+                                }
+                              </ul>
+                            }
+                            @case ('quote') {
+                              <figure class="journal-quote">
+                                <figcaption class="rationale-label">In its own words</figcaption>
+                                <blockquote class="quote">{{ block.text }}</blockquote>
+                              </figure>
+                            }
+                            @case ('milestone') {
+                              <p class="journal-milestone">
+                                <span class="rationale-label">Milestone</span>
+                                {{ block.text }}
+                              </p>
+                            }
+                            @case ('quiet') {
+                              <p class="journal-quiet">{{ block.text }}</p>
+                            }
+                            @default {
+                              <p class="journal-text">{{ block.text }}</p>
+                            }
+                          }
+                        }
                       </div>
                     </article>
                   </div>
@@ -138,7 +186,9 @@
     <li class="tl tl--done">
       <div class="card">
         <div class="card-head">
-          <h2>The week to {{ d.week_start }}</h2>
+          <!-- Same UTC rule as the day labels: a date-only string is UTC
+               midnight, and a local clock west of UTC shows the day before. -->
+          <h2>The week to {{ d.week_start | date: 'EEEE d MMMM' : 'UTC' }}</h2>
         </div>
         <div class="card-body stack">
           <dl class="scoreboard-facts">
@@ -166,8 +216,14 @@
           @if (d.book_lines?.length) {
             <div>
               <p class="muted-small">Holding at the end of the week</p>
+              <!-- The same shape as a day's book line, so the two cards on
+                   this timeline read as one family. -->
               @for (line of d.book_lines ?? []; track line) {
-                <p class="big-fact">{{ line }}</p>
+                @let holding = holdingLine(line);
+                <p class="journal-book">
+                  <span class="journal-book-value">{{ holding.ticker }}</span>
+                  <span class="money">{{ holding.rest }}</span>
+                </p>
               }
             </div>
           }

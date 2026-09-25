@@ -57,32 +57,45 @@
         <table class="data-table data-table--stack">
           <thead>
             <tr>
-              <th>Ticker</th>
-              <th class="num">Price</th>
-              <th>Latest call</th>
+              <th class="col-fit">Ticker</th>
+              <th class="num col-fit">Price</th>
+              <th class="col-fit">Latest call</th>
+              <th>Last analysed</th>
             </tr>
           </thead>
           <tbody>
             @for (t of tickers(); track t.ticker) {
               <tr>
-                <td class="ticker-cell" data-label="">
+                <td class="ticker-cell col-fit" data-label="">
                   <a [routerLink]="['/research/ticker', t.ticker]">{{ t.ticker }}</a>
                   @if (t.inactive) {
                     <span class="badge badge-warn" [attr.title]="t.inactive_reason">No data</span>
                   }
                 </td>
-                <td class="num" data-label="Price">
+                <td class="num col-fit" data-label="Price">
                   @if (t.inactive) {
                     <span class="muted">—</span>
                   } @else {
                     {{ t.current_price !== null ? '$' + t.current_price.toFixed(2) : '—' }}
                   }
                 </td>
-                <td data-label="Latest call">
+                <td class="col-fit" data-label="Latest call">
                   @if (t.latest_signal) {
                     <app-decision-badge [decision]="t.latest_signal.decision" />
                   } @else {
                     <span class="muted">not analysed yet</span>
+                  }
+                </td>
+                <td data-label="Last analysed">
+                  @if (t.latest_signal; as s) {
+                    <span class="analysed">
+                      <span>{{ analysedDay(s) }}</span>
+                      @if (analysedTime(s); as time) {
+                        <span class="analysed-time">{{ time }}</span>
+                      }
+                    </span>
+                  } @else {
+                    <span class="muted">—</span>
                   }
                 </td>
               </tr>
@@ -97,27 +110,32 @@
   <section class="card">
     <div class="card-head">
       <h2>Every analysis</h2>
-      <div class="segmented">
-        <button type="button" [class.active]="statusFilter() === ''" (click)="setFilter('')">
-          All
-        </button>
-        <button
-          type="button"
-          [class.active]="statusFilter() === 'pending'"
-          (click)="setFilter('pending')"
-        >
-          Maturing
-        </button>
-        <button
-          type="button"
-          [class.active]="statusFilter() === 'resolved'"
-          (click)="setFilter('resolved')"
-        >
-          Graded
-        </button>
+      <div class="table-tools">
+        <div class="segmented">
+          <button type="button" [class.active]="statusFilter() === ''" (click)="setFilter('')">
+            All
+          </button>
+          <button
+            type="button"
+            [class.active]="statusFilter() === 'pending'"
+            (click)="setFilter('pending')"
+          >
+            Maturing
+          </button>
+          <button
+            type="button"
+            [class.active]="statusFilter() === 'resolved'"
+            (click)="setFilter('resolved')"
+          >
+            Graded
+          </button>
+        </div>
+        @if (signals().length) {
+          <app-table-search [of]="analyses" label="Filter by ticker or decision" />
+        }
       </div>
     </div>
-    @if (feed().length === 0) {
+    @if (signals().length === 0) {
       <div class="empty">
         <span class="empty-icon" aria-hidden="true">🧠</span>
         <strong>No analyses yet</strong>
@@ -131,24 +149,28 @@
           }
         </span>
       </div>
+    } @else if (analyses.total() === 0) {
+      <div class="card-body">
+        <p class="empty">No analysis matches “{{ analyses.query() }}”.</p>
+      </div>
     } @else {
       <div class="table-wrap">
         <table class="data-table data-table--stack">
           <thead>
             <tr>
-              <th>Ticker</th>
-              <th>Analysed</th>
-              <th>Decision</th>
+              <th class="col-fit">Ticker</th>
+              <th class="col-fit">Analysed</th>
+              <th class="col-fit">Decision</th>
               <th><app-term key="graded" /></th>
             </tr>
           </thead>
           <tbody>
-            @for (s of feed(); track s.id) {
+            @for (s of analyses.rows(); track s.id) {
               <tr>
-                <td class="ticker-cell" data-label="">
+                <td class="ticker-cell col-fit" data-label="">
                   <a [routerLink]="['/research/analysis', s.id]">{{ s.ticker }}</a>
                 </td>
-                <td class="num" data-label="Analysed">
+                <td class="col-fit" data-label="Analysed">
                   <span class="analysed">
                     <span>{{ analysedDay(s) }}</span>
                     @if (analysedTime(s); as t) {
@@ -156,7 +178,9 @@
                     }
                   </span>
                 </td>
-                <td data-label="Decision"><app-decision-badge [decision]="s.decision" /></td>
+                <td class="col-fit" data-label="Decision">
+                  <app-decision-badge [decision]="s.decision" />
+                </td>
                 <td data-label="Graded">
                   @if (s.outcome) {
                     <span [class.pass]="s.outcome === 'pass'" [class.fail]="s.outcome === 'fail'">
@@ -171,6 +195,7 @@
           </tbody>
         </table>
       </div>
+      <app-pager [of]="analyses" noun="analyses" />
     }
   </section>
 

@@ -139,7 +139,12 @@
   --topbar-h: 4.8rem;
   --page-max: 78rem;
 
-  color-scheme: light dark;
+  /* One scheme, the one the page is in. This said `light dark` until
+     2026-09-25, which tells the browser either is fine and lets it draw the
+     scrollbars, form controls and the page's canvas from the OS setting —
+     so a reader on a dark OS who chose the light theme got dark scrollbars.
+     Each dark block below sets `dark`, and nothing else may set it. */
+  color-scheme: light;
 }
 
 /* --- Dark ------------------------------------------------------------------
@@ -154,6 +159,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    color-scheme: dark;
     --bg: #12110e;
     --surface: #1a1815;
     --surface-2: #23201b;
@@ -195,6 +201,7 @@
 }
 
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --bg: #12110e;
   --surface: #1a1815;
   --surface-2: #23201b;

@@ -2,14 +2,18 @@ import { UpperCasePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
-import { AgentTrade } from '../../core/models/api.models';
+import { AgentTrade, AgentTradeRow } from '../../core/models/api.models';
 import { EquityChart, EquityPoint } from '../../shared/equity-chart';
 import { AgentService } from '../../core/services/agent.service';
 import { Term } from '../../shared/glossary/term';
+import { readerDateTime } from '../../shared/market-time';
+import { PagedRows } from '../../shared/paged-rows';
+import { Pager } from '../../shared/pager';
+import { TableSearch } from '../../shared/table-search';
 
 @Component({
   selector: 'app-book-view',
-  imports: [RouterLink, UpperCasePipe, EquityChart, Term],
+  imports: [RouterLink, UpperCasePipe, EquityChart, Term, Pager, TableSearch],
   templateUrl: './book-view.html',
 })
 export class BookView {
@@ -18,6 +22,22 @@ export class BookView {
   protected readonly trades = this.agentService.trades;
   protected readonly performance = this.agentService.performance;
   protected readonly history = this.agentService.history;
+
+  /** The trade log, filtered and paged in place. A reader can search by
+   * ticker, side, status, the day, or a word from the agent's reason —
+   * every column the table shows. */
+  protected readonly log = new PagedRows<AgentTrade>(
+    () => this.trades(),
+    (t) => `${t.ticker} ${t.side} ${t.status} ${this.whenPlaced(t)} ${t.reason ?? ''}`,
+  );
+
+  /** Every lot, filtered and paged the same way. "held" finds what is still
+   * open, because that is the question a reader most often brings here. */
+  protected readonly positions = new PagedRows<AgentTradeRow>(
+    () => this.history(),
+    (r) =>
+      `${r.ticker} ${r.is_open ? 'still held open' : 'sold closed'} ${r.entry_at} ${r.exit_at ?? ''}`,
+  );
 
   /** Equity per trading day. Plotted against the budget rather than from zero,
    * so the line crossing its own starting level is the thing you see first —
@@ -86,10 +106,12 @@ export class BookView {
     return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
   }
 
-  /** Date and time, trimmed to the minute. Empty for a position still open —
-   * a blank exit is the signal that it has not been sold. */
+  /** Date and time on the reader's clock, the way the Research and Decisions
+   * pages show theirs. Until 2026-09-25 this printed the ledger's UTC stamp
+   * trimmed to the minute, so one site kept two clocks. Empty for a position
+   * still open — a blank exit is the signal that it has not been sold. */
   protected when(value: string | null): string {
-    return value ? value.replace('T', ' ').slice(0, 16) : '—';
+    return value ? readerDateTime(value) : '—';
   }
 
   protected money(value: number | null, digits = 2): string {
@@ -118,6 +140,6 @@ export class BookView {
   }
 
   protected whenPlaced(trade: AgentTrade): string {
-    return (trade.filled_at ?? trade.placed_at).replace('T', ' ').slice(0, 16);
+    return readerDateTime(trade.filled_at ?? trade.placed_at);
   }
 }

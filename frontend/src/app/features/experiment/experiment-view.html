@@ -31,46 +31,63 @@
         Nobody helps it. There is no button on this site that adds a ticker, starts an analysis, or
         places a trade — and there never was one in the version that is running.
       </p>
+      <!-- The answer to the headline, on the first screen. The scoreboard
+           below the fold used to be the first place it appeared. -->
+      @if (book(); as b) {
+        <p class="hero-answer">
+          <span class="hero-answer-label">Right now</span>
+          <span class="hero-answer-value money">${{ money(b.equity, 2) }}</span>
+          <span
+            class="money"
+            [class.money--pos]="b.return_pct >= 0"
+            [class.money--neg]="b.return_pct < 0"
+            >{{ signed(b.return_pct) }}%</span
+          >
+          <a routerLink="/book">The book →</a>
+        </p>
+      }
     </div>
 
-    <app-logo class="hero-mark" [size]="240" [frameOpacity]="0.3" />
-  </header>
-
-  <div class="guardrails-wrap" id="guardrails">
-    <div class="guardrails">
-      <p class="guardrails-label">* with guardrails to keep it in bounds</p>
-      <div class="guardrails-cols">
-        <div>
-          <p class="guardrails-head">It chooses</p>
-          <ul>
-            @if (charging()) {
-              <li>
-                Which tickers to study, and when a fresh look is worth {{ researchPriceLabel() }}
-              </li>
-            } @else {
-              <li>Which tickers to study, and when one is worth a fresh look</li>
-            }
-            <li>What to buy and sell, and how much</li>
-            <li>Where to rest its stop and its target</li>
-            <li>Which names to stop watching</li>
-            <!-- Added 2026-09-10. It has set its own times since 2026-09-05
+    <!-- Beside the headline, where the mark used to be: the guardrails are
+         the most interesting thing on the page to both audiences, and the
+         mark is already in the masthead above. The footnote in the headline
+         still points here. -->
+    <aside class="guardrails-wrap" id="guardrails">
+      <div class="guardrails">
+        <p class="guardrails-label">* with guardrails to keep it in bounds</p>
+        <div class="guardrails-cols">
+          <div>
+            <p class="guardrails-head">It chooses</p>
+            <ul>
+              @if (charging()) {
+                <li>
+                  Which tickers to study, and when a fresh look is worth {{ researchPriceLabel() }}
+                </li>
+              } @else {
+                <li>Which tickers to study, and when one is worth a fresh look</li>
+              }
+              <li>What to buy and sell, and how much</li>
+              <li>Where to rest its stop and its target</li>
+              <li>Which names to stop watching</li>
+              <!-- Added 2026-09-10. It has set its own times since 2026-09-05
                  and this list did not say so, which left the most important
                  thing it chooses off the list of things it chooses. -->
-            <li>When it is next asked, at any hour it likes</li>
-          </ul>
-        </div>
-        <div>
-          <p class="guardrails-head">It cannot</p>
-          <ul>
-            <li>Trade on margin, or short anything</li>
-            <li>Touch crypto, options or futures</li>
-            <li>Spend more cash than it holds</li>
-            <li>Reach a real account, ever</li>
-          </ul>
+              <li>When it is next asked, at any hour it likes</li>
+            </ul>
+          </div>
+          <div>
+            <p class="guardrails-head">It cannot</p>
+            <ul>
+              <li>Trade on margin, or short anything</li>
+              <li>Touch crypto, options or futures</li>
+              <li>Spend more cash than it holds</li>
+              <li>Reach a real account, ever</li>
+            </ul>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
+    </aside>
+  </header>
 
   <p class="disclaimer">
     <strong>No real money is involved.</strong> Every order goes to a sandbox account, and the agent
@@ -94,6 +111,17 @@
   } @else {
     <section class="status">
       <div class="status-main">
+        <!-- On a narrow screen the rhythm sits under everything, so the one
+             row that says what happens next was the last thing on the page.
+             This line shows it first; the stylesheet hides it where the
+             rhythm is beside the content and already in view. -->
+        @if (nextBeat(); as n) {
+          <p class="rhythm-next">
+            <span class="rhythm-next-label">Next</span>
+            <span class="tl-time">{{ clock(n.t) }}</span>
+            <span>{{ n.text }}</span>
+          </p>
+        }
         @if (book(); as b) {
           <div class="scoreboard">
             <div class="scoreboard-main">
@@ -189,7 +217,11 @@
                       <td class="num money" data-label="Shares">{{ h.quantity }}</td>
                       <td class="num money" data-label="Avg cost">${{ money(h.avg_cost, 2) }}</td>
                       <td class="num money" data-label="Invested">${{ money(h.cost_basis, 2) }}</td>
-                      <td class="num money" data-label="Price">
+                      <td
+                        class="num money"
+                        data-label="Price"
+                        [class.cell-empty]="h.price === null"
+                      >
                         {{ h.price === null ? '—' : '$' + money(h.price, 2) }}
                       </td>
                       <td
@@ -197,6 +229,7 @@
                         data-label="P&L"
                         [class.money--pos]="(h.unrealized_pnl ?? 0) >= 0"
                         [class.money--neg]="(h.unrealized_pnl ?? 0) < 0"
+                        [class.cell-empty]="h.unrealized_pnl === null"
                       >
                         @if (h.unrealized_pnl === null) {
                           —

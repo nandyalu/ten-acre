@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { Signal } from '../../core/models/api.models';
@@ -8,9 +8,17 @@ import { WatchlistService } from '../../core/services/watchlist.service';
 import { DecisionBadge } from '../../shared/decision-badge';
 import { Term } from '../../shared/glossary/term';
 import { readerDateKey, readerTime } from '../../shared/market-time';
+import { PagedRows } from '../../shared/paged-rows';
+import { Pager } from '../../shared/pager';
 import { charging, researchPriceLabel } from '../../shared/research-price';
+import { TableSearch } from '../../shared/table-search';
 
 type StatusFilter = '' | 'pending' | 'resolved';
+
+/** Every analysis this deployment has, not the newest fifty. The list is
+ * paged in the browser, so the reader chooses how far back to look; the
+ * static site already serves the whole record whatever this says. */
+const ALL_ANALYSES = 5000;
 
 /**
  * What the agent studies, and what each study concluded.
@@ -31,7 +39,7 @@ type StatusFilter = '' | 'pending' | 'resolved';
  */
 @Component({
   selector: 'app-research-view',
-  imports: [RouterLink, DecisionBadge, Term],
+  imports: [RouterLink, DecisionBadge, Term, Pager, TableSearch],
   templateUrl: './research-view.html',
 })
 export class ResearchView {
@@ -50,10 +58,16 @@ export class ResearchView {
 
   protected readonly statusFilter = signal<StatusFilter>('');
 
-  /** Newest analysis per ticker is already on the watchlist rows, so the feed
-   * below is every analysis in date order — the same name appearing twice is
-   * the interesting case, not a duplicate to collapse. */
-  protected readonly feed = computed<Signal[]>(() => this.signals());
+  /** Every analysis in date order, filtered and paged in place. The newest
+   * analysis per ticker is already on the watchlist rows, so the same name
+   * appearing twice here is the interesting case, not a duplicate to
+   * collapse. A reader can search by ticker, decision, outcome, day or the
+   * model that produced it. */
+  protected readonly analyses = new PagedRows<Signal>(
+    () => this.signals(),
+    (s) =>
+      `${s.ticker} ${s.decision} ${s.outcome ?? 'maturing'} ${this.analysedDay(s)} ${s.model ?? ''}`,
+  );
 
   /** True when the page's own data could not be fetched. Distinct from "there
    * is nothing yet", which is a real answer — a skeleton that never resolves
@@ -70,12 +84,14 @@ export class ResearchView {
 
   protected async setFilter(status: StatusFilter): Promise<void> {
     this.statusFilter.set(status);
+    // A different list, so the page a reader was on no longer means anything.
+    this.analyses.goTo(1);
     await this.reloadSignals();
   }
 
   private async reloadSignals(): Promise<void> {
     const status = this.statusFilter();
-    await this.signalsService.load({ status: status || undefined, limit: 50 });
+    await this.signalsService.load({ status: status || undefined, limit: ALL_ANALYSES });
   }
 
   protected volumeM(volume: number): string {
@@ -86,7 +102,7 @@ export class ResearchView {
    * The calendar day an analysis ran, on the reader's clock.
    *
    * Taken from `created_at` rather than `signal_date` so the day and the time
-   * below it are the same instant in the same zone. Falls back to
+   * beside it are the same instant in the same zone. Falls back to
    * `signal_date` on a row with no timestamp to recover one from.
    */
   protected analysedDay(s: Signal): string {

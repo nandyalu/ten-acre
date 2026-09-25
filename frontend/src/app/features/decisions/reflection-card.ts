@@ -4,6 +4,7 @@ import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core
 import { AgentReflection, ReflectionNote } from '../../core/models/api.models';
 import { readerDateKey, readerDateTime, readerTime } from '../../shared/market-time';
 import { CopyButton } from '../../shared/copy-button';
+import { Markdown } from '../../shared/markdown';
 
 /** A review note's kind, in words: `missing_information` reads as "missing
  * information". Shared with the Notes page, which shows the same notes
@@ -14,29 +15,33 @@ export function noteKindLabel(kind: string | null | undefined): string {
   return (kind ?? 'other').replace(/_/g, ' ');
 }
 
-type Panel = 'prompts' | 'answers' | 'thinking';
-
 /**
  * One evening review: what the agent told whoever maintains it, what it
  * changed in its own notes, and the words that produced both.
  *
  * Modelled on `DecisionCard`: a bordered card with the report always visible
- * and the two prompts, the two answers and the thinking behind the same kind
- * of disclosure, since a review prompt carries every pass of the day and is
+ * and the two prompts, the two answers and the thinking behind the same
+ * disclosure, since a review prompt carries every pass of the day and is
  * longer than any one of them.
  */
 @Component({
   selector: 'app-reflection-card',
   standalone: true,
-  imports: [DecimalPipe, CopyButton],
+  imports: [DecimalPipe, CopyButton, Markdown],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reflection-card.html',
 })
 export class ReflectionCard {
   readonly review = input.required<AgentReflection>();
 
-  /** Which panels are open on this one card. */
-  private readonly open = signal<Set<Panel>>(new Set());
+  /** Whether this card's transcript is open: both prompts on one side, the
+   * thinking and both answers on the other. One disclosure, the same as a
+   * pass card's, since 2026-09-25. */
+  readonly transcriptOpen = signal(false);
+
+  toggleTranscript(): void {
+    this.transcriptOpen.update((open) => !open);
+  }
 
   when(instant: string): string {
     return readerDateTime(instant);
@@ -67,16 +72,6 @@ export class ReflectionCard {
 
   appliedIn(review: AgentReflection): string[] {
     return review.applied ?? [];
-  }
-
-  isOpen(which: Panel): boolean {
-    return this.open().has(which);
-  }
-
-  toggle(which: Panel): void {
-    const next = new Set(this.open());
-    next.has(which) ? next.delete(which) : next.add(which);
-    this.open.set(next);
   }
 
   /** A review that never asked has no words to show. */

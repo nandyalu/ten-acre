@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
+import { provideRouter } from '@angular/router';
 
-import { AgentEvent } from '../../core/models/api.models';
+import { AgentBook, AgentEvent } from '../../core/models/api.models';
 import { AgentService } from '../../core/services/agent.service';
 import { RegimeService } from '../../core/services/regime.service';
 import { ScorecardService } from '../../core/services/scorecard.service';
@@ -42,7 +43,7 @@ function event(over: Partial<AgentEvent> = {}): AgentEvent {
 
 class AgentServiceStub {
   readonly events = signal<AgentEvent[]>([]);
-  readonly book = signal(null);
+  readonly book = signal<AgentBook | null>(null);
   readonly curve = signal([]);
   async load(): Promise<void> {}
   async loadEvents(): Promise<void> {}
@@ -70,6 +71,9 @@ describe('ExperimentView timeline', () => {
         { provide: AgentService, useValue: agent },
         { provide: RegimeService, useValue: new RegimeServiceStub() },
         { provide: ScorecardService, useValue: new ScorecardServiceStub() },
+        // The hero's answer line links to the book, and a rendered link
+        // needs a router behind it.
+        provideRouter([]),
       ],
     }).compileComponents();
   });
@@ -78,6 +82,37 @@ describe('ExperimentView timeline', () => {
   function view(): any {
     return TestBed.createComponent(ExperimentView).componentInstance as any;
   }
+
+  it('answers the headline on the first screen once the book is in', async () => {
+    /** The scoreboard below the fold used to be the first place the figure
+     * appeared, so a reader who stopped at the headline left without it. */
+    agent.book.set({
+      enabled: true,
+      sandbox: true,
+      budget: 10_000,
+      cash: 6_600.74,
+      invested: 3_393.88,
+      market_value: 3_386.57,
+      equity: 9_987.31,
+      realized_pnl: -5.38,
+      return_pct: -0.1,
+      holdings: [],
+    });
+    const fixture = TestBed.createComponent(ExperimentView);
+    await fixture.whenStable();
+
+    const answer = (fixture.nativeElement as HTMLElement).querySelector('.hero .hero-answer');
+    expect(answer?.textContent).toContain('Right now');
+    expect(answer?.textContent).toContain('$9,987.31');
+    expect(answer?.querySelector('.money--neg')).not.toBeNull();
+  });
+
+  it('keeps the guardrails inside the hero, where the footnote points', () => {
+    const el = TestBed.createComponent(ExperimentView).nativeElement as HTMLElement;
+
+    expect(el.querySelector('.hero #guardrails')).not.toBeNull();
+    expect(el.querySelector('.hero app-logo')).toBeNull();
+  });
 
   it('no longer advertises the decision pass that was removed', () => {
     const rows = [...view().today(), ...view().previous()];

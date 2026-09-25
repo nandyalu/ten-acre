@@ -26,6 +26,36 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Every scrollbar, thin and in the page's own colours: the page, a wide
+   table, a prompt, the rhythm column. The default is a grey slab that
+   belongs to the browser rather than the page, and it followed the OS
+   scheme rather than the theme until `color-scheme` was pinned in
+   theme.css. Both forms are needed: Firefox and Chrome read the two
+   properties, Safari the ::-webkit rules. Chrome ignores the ::-webkit
+   rules once the properties are set, so the two must agree. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
 body {
   margin: 0;
   font-family: var(--font);
@@ -88,15 +118,19 @@ a:hover {
   color: var(--text-muted);
 }
 
-/* When an analysis ran: the day, and the time under it.
+/* When an analysis ran: the day, and the time beside it.
    The time is the point — several analyses a day is normal here, and the
    calendar date alone cannot separate them. Kept in one wrapper so the two
    stay together when `.data-table--stack` turns the cell into a flex row on
-   a phone and would otherwise push them to opposite ends. */
+   a phone and would otherwise push them to opposite ends. On one line, not
+   stacked: stacked, every row was two lines tall for one fact, and the date
+   sat right-aligned under a left-aligned header. */
 .analysed {
   display: inline-flex;
-  flex-direction: column;
-  align-items: inherit;
+  flex-wrap: nowrap; /* a col-fit column is as narrow as its widest piece; let it wrap and the time drops under the day again */
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .analysed-time {
@@ -784,6 +818,17 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+/* Two tiles a row on a phone, and an odd last tile takes the whole row
+   rather than sitting beside a gap. */
+@media (max-width: 639px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .stat-grid > .stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ==========================================================================
    5. Controls
    ========================================================================== */
@@ -1088,6 +1133,27 @@ table {
   white-space: nowrap;
 }
 
+/* A column that hugs its content. A table stretches to the card, and with
+   every column auto-sized the browser spreads the spare width between them
+   all — eight short columns with a gap after each, a date wrapped onto two
+   lines because the reason beside it wanted the room. Marking the short
+   columns `col-fit` packs them to the left and gives the width to the one
+   column that can use it: the reason, the note, the outcome. 1% is the
+   standard trick — a column can never be narrower than its content, so 1%
+   means "as narrow as it can be". Goes on the `th` and its `td`s both: the
+   header sets the width, and the cells must not wrap to fit it. */
+.data-table th.col-fit,
+.data-table td.col-fit {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* The two exit legs a buy rests at the broker, in the trade log. Quieter
+   than the buy above them: they are the same decision, not two more. */
+.data-table tr.row-exit td {
+  color: var(--text-muted);
+}
+
 /* Below 640px a six-column table cannot be read, and side-scrolling hides the
    column that matters. Each row becomes a labelled block instead. */
 @media (max-width: 639px) {
@@ -1132,6 +1198,78 @@ table {
     justify-content: flex-start;
     margin-top: var(--sp-2);
   }
+  /* A stacked cell is a full-width row, so a 1% width would collapse it. */
+  .data-table--stack td.col-fit {
+    width: auto;
+    white-space: normal;
+  }
+  /* A cell with nothing in it is a label and a dash: a line that says
+     nothing. On a desktop the dash keeps the column aligned; here there is
+     no column to keep. */
+  .data-table--stack td.cell-empty {
+    display: none;
+  }
+}
+
+/* --- Filtering and paging a long table ------------------------------------
+   The controls sit in the card head beside the heading: a filter box, and
+   the segmented status switch where a table has one. The hint, which takes
+   the head's whole second row, stays under them. Below 640px the box takes
+   a full row of its own; beside the heading it was 6rem wide. */
+.table-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+/* Wide enough for its placeholder, which is its label. It may give up some
+   width to the hint beside it, but never so much that the label is cut. */
+.table-search {
+  display: block;
+  flex: 0 1 16rem;
+  min-width: 13rem;
+}
+
+.table-search input {
+  min-height: 2rem;
+}
+
+@media (max-width: 639px) {
+  .table-tools {
+    width: 100%;
+    margin-left: 0;
+  }
+  .table-search {
+    flex-basis: 100%;
+  }
+}
+
+/* Under the table, inside the card, so it reads as part of the table rather
+   than a control floating below it. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.pager-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.pager-page,
+.pager-status {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -1165,6 +1303,12 @@ table {
   background: var(--warn-soft);
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 25%, transparent);
+}
+/* A label that carries no verdict: which leg of a bracket a row is. */
+.badge-muted {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border-color: var(--border-strong);
 }
 
 .notice {
@@ -1612,12 +1756,29 @@ table {
 .wake-reason {
   /* What the app told the agent at the top of that turn, not what the agent
      said back — so it is deliberately quieter than `.reasoning` beneath it and
-     carries no quote bar. It repeats on every turn of a pass, which is honest
-     (every turn really was shown it) and is exactly why it must not compete
-     with the agent's own words for attention. */
+     carries no quote bar. Every turn has one (what woke the first, why the
+     rest were asked again), and none may compete with the agent's own words
+     for attention. */
   margin: 0 0 var(--sp-3);
   font-size: var(--t-sm);
   color: var(--text-muted);
+}
+
+/* A pass card's head: the title line, and the figures under it on every
+   card. They shared the title's row until 2026-09-25 and wrapped under it
+   only when the title ran long, so two cards on one day put the same line
+   in two places. */
+.pass-head {
+  min-width: 0;
+}
+
+.pass-title {
+  margin: 0;
+}
+
+.pass-stats {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--t-sm);
 }
 
 .orders {
@@ -1722,6 +1883,175 @@ table {
   margin-top: var(--sp-4);
 }
 
+/* The transcript: what the model was given on the left, what it produced
+   on the right, one row per turn. Each block is capped and scrolls on its
+   own, so a prompt of thirty kilobytes and the thinking beside it are read
+   side by side rather than one below the other. */
+.transcript-turn {
+  margin-top: var(--sp-3);
+}
+
+.transcript-turn-label {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+
+.transcript-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+.transcript-col {
+  min-width: 0;
+}
+
+@media (max-width: 62rem) {
+  .transcript-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --- Rendered Markdown -----------------------------------------------------
+   The prompt, a fetch's result and the model's thinking, rendered. The same
+   box as `.verbatim`, so the raw JSON answer beside them reads as one set.
+   Everything is scoped under `.markdown`: the site's own headings, tables
+   and lists are not to change because a prompt has some. */
+.markdown-block {
+  display: block;
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  overflow: auto;
+  max-height: 40rem;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-family: var(--font);
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.markdown h1 {
+  font-size: 1.0625rem;
+}
+
+.markdown h2 {
+  font-size: 0.9375rem;
+}
+
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown pre,
+.markdown table {
+  margin: 0 0 var(--sp-3);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.2rem;
+}
+
+.markdown li {
+  margin: 0.15rem 0;
+}
+
+.markdown hr {
+  margin: var(--sp-4) 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.markdown blockquote {
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.markdown code {
+  padding: 0 0.25em;
+  border-radius: 3px;
+  background: var(--surface-3);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  padding: var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+/* A table wider than the column scrolls inside its own box rather than
+   pushing the column out. `display: block` is what lets a table scroll. */
+.markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.markdown th {
+  background: var(--surface-3);
+  font-weight: 600;
+}
+
+.markdown a {
+  color: var(--accent);
+}
+
 /* A prompt runs to tens of kilobytes. Capped and scrolled, so one long pass
    cannot push every other event off the screen. */
 .verbatim {
@@ -1739,16 +2069,82 @@ table {
   max-height: 26rem;
 }
 
-/* The journal is prose, not a transcript: it reads at body size, with no box
-   around it, because the card is already the box. */
-.journey-body {
-  margin: 0;
-  font-family: inherit;
+/* --- A journal day -------------------------------------------------------
+   The generated markdown, rendered as the parts it is written in (see
+   shared/journal-entry.ts): the book line first, then what happened, then
+   the agent's own words as a quotation, then any milestone. Until 2026-09-24
+   it was one <pre> with the list markers and asterisks showing. */
+.journal-entry .card-body > * {
+  margin: 0 0 var(--sp-4);
+}
+
+.journal-entry .card-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* Where the book stood at the close: the one number a reader wants first,
+   at the same weight the scoreboard gives it. */
+.journal-book {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+  font-size: 0.9375rem;
+}
+
+.journal-book-value {
+  font-size: 1.375rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.journal-events {
+  list-style: disc; /* nested inside the timeline's <ol>, so the browser's default would be a hollow circle */
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.journal-events li::marker {
+  color: var(--text-faint);
+}
+
+.journal-quote .rationale-label {
+  margin: 0 0 var(--sp-2);
+}
+
+/* The reasoning may run to several lines. */
+.journal-quote .quote {
+  white-space: pre-wrap;
+}
+
+/* Something that happened once and was worth naming when it did. The same
+   accent panel as an agent note: it is not a warning, it is a marker. */
+.journal-milestone {
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.journal-milestone .rationale-label {
+  display: block;
+  margin: 0 0 var(--sp-1);
+}
+
+/* A day on which nothing was bought, sold or spent. Quiet on the page too. */
+.journal-quiet {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.journal-text {
   font-size: 0.95rem;
   line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text);
 }
 
 /* ==========================================================================
@@ -1773,11 +2169,15 @@ table {
 /* The hero is the one place the mark appears large. It sits opposite the
    headline rather than above it, so the two read as one object and the eye
    lands on the question first. */
+/* The headline on the left and the guardrails beside it. The mark sat in
+   the right column until 2026-09-25, and the guardrails below the hero in a
+   box beside empty space; the mark is already in the masthead, and the
+   guardrails are the most interesting thing on the page to both audiences. */
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(17rem, 23rem);
   gap: var(--sp-7);
-  align-items: center;
+  align-items: start;
   padding: var(--sp-8) 0 var(--sp-6);
 }
 
@@ -1786,20 +2186,44 @@ table {
   min-width: 0;
 }
 
-/* The mark at full strength. An earlier version sat at 10% and read as a
-   watermark, which threw away the one thing it is for: the red below the line
-   and the green above it are the same two colours the equity chart uses, and
-   at that opacity neither was visible.
-
-   It carries no label, so it is decorative to a screen reader — the headline
-   beside it already says everything the mark does. */
-.hero-mark {
-  color: var(--text);
-  justify-self: end;
-}
-
 .guardrails-wrap {
   max-width: var(--measure);
+}
+
+/* Inside the hero's side column the two lists stack; side by side they had
+   fifteen rem each and the column has twenty-three. */
+.hero .guardrails {
+  margin-top: 0;
+}
+
+.hero .guardrails-cols {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The answer to the headline, on the first screen. Same figure and same
+   colouring as the scoreboard below the fold, at a size between the lede
+   and the title. */
+.hero-answer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-3);
+  margin: var(--sp-5) 0 0;
+  font-size: var(--t-base);
+}
+
+.hero-answer-label {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.hero-answer-value {
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 .hero-eyebrow {
@@ -1964,6 +2388,21 @@ table {
   min-width: 0;
 }
 
+/* The next scheduled step, as one line above the money. Only where the
+   rhythm column sits under the content: beside it, the same row is already
+   in view. */
+.rhythm-next {
+  display: none;
+}
+
+.rhythm-next-label {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
 /* One number the page is about, and four that qualify it. Not five equal
    tiles: equity is the answer and the rest are footnotes. */
 .scoreboard {
@@ -2097,26 +2536,9 @@ table {
   max-height: 300vh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* Themed, because the default is a grey slab that belongs to the browser
-     rather than the page — and this is the one scrollbar a reader meets
-     inside the content. Both properties are needed: Firefox reads the first
-     pair, Chrome and Safari the ::-webkit rules below. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-
-.timeline::-webkit-scrollbar {
-  width: 8px;
-}
-.timeline::-webkit-scrollbar-track {
-  background: transparent;
-}
-.timeline::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 999px;
-}
-.timeline::-webkit-scrollbar-thumb:hover {
-  background: var(--text-faint);
+  /* Its scrollbar is the site-wide one, under "Element defaults". This
+     block used to carry its own, when it was the one scrollbar a reader
+     met inside the content; the transcript and the tables have them now. */
 }
 
 .timeline-title {
@@ -2221,6 +2643,19 @@ table {
   gap: var(--sp-2);
   width: 100%;
   cursor: pointer;
+}
+
+/* One line beside a closed day: what a reader would find on opening it.
+   Cut with an ellipsis rather than wrapped, so a ladder of closed days
+   keeps one row per day. */
+.tl-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-sm);
+  color: var(--text-muted);
 }
 
 .tl-mark {
@@ -2373,6 +2808,19 @@ table {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .rhythm-next {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--sp-2) var(--sp-3);
+    margin: 0;
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--surface-2);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: var(--t-sm);
+  }
+
   /* Below this the timeline sits under the content rather than beside it, so
      it has the whole page to run down. A capped height here would put a second
      scrollbar inside a column that needs none. */
@@ -2383,9 +2831,9 @@ table {
   }
 }
 
-/* Below this the mark and the headline cannot share a row. At 412px the
-   240px mark left the text column about 100px wide, which set the headline
-   three words to a line. */
+/* Below this the guardrails and the headline cannot share a row. The
+   guardrails drop under the headline, and their two lists sit side by side
+   again wherever the width allows it. */
 @media (max-width: 52rem) {
   .hero {
     grid-template-columns: minmax(0, 1fr);
@@ -2393,16 +2841,8 @@ table {
     padding: var(--sp-6) 0 var(--sp-5);
   }
 
-  /* Above the headline rather than below it: the mark is the first thing on
-     the page and reads as a masthead for it. */
-  .hero-mark {
-    order: -1;
-    justify-self: start;
-  }
-
-  .hero-mark svg {
-    width: 5rem;
-    height: 5rem;
+  .hero .guardrails-cols {
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   }
 
   .hero-title {

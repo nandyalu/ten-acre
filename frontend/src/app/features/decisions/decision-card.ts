@@ -12,6 +12,30 @@ import {
 import { Term } from '../../shared/glossary/term';
 import { readerDateKey, readerDateTime, readerTime } from '../../shared/market-time';
 import { CopyButton } from '../../shared/copy-button';
+import { Markdown } from '../../shared/markdown';
+
+/** The line over a turn block: what woke the pass, or why it asked again. */
+export interface WakeLine {
+  label: string;
+  text: string;
+  /** True when `text` is the prompt's own sentence, in the second person. */
+  quoted: boolean;
+}
+
+/** The sentence `build_prompt` puts in every later turn of a pass. The
+ * clauses between "not a new wake: " and ". All of it" are `_asked_again`'s,
+ * joined with "; and ". */
+const ASKED_AGAIN =
+  /\*\*Why you are asked again\.\*\* This is the same pass, not a new wake: (.+?)\. All of it is under/;
+
+/** `_asked_again`'s four clauses, each turned to the third person. */
+const ASKED_AGAIN_CLAUSES: Record<string, string> = {
+  'the orders in your last answer have been carried out': 'its orders were carried out',
+  'you asked to read an analysis': 'it asked to read an analysis',
+  'part of your last answer went with a read, so it was not carried out':
+    'part of its answer went with a read and was not carried out',
+  'part of your last answer was refused': 'part of its answer was refused',
+};
 
 /**
  * One decision pass: the prompt, the answer, and what it did — collapsed by
@@ -26,15 +50,35 @@ import { CopyButton } from '../../shared/copy-button';
 @Component({
   selector: 'app-decision-card',
   standalone: true,
-  imports: [DecimalPipe, RouterLink, Term, CopyButton],
+  imports: [DecimalPipe, RouterLink, Term, CopyButton, Markdown],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './decision-card.html',
 })
 export class DecisionCard {
   readonly event = input.required<AgentEvent>();
 
-  /** Which panels are open on this one card. */
-  private readonly open = signal<Set<'prompt' | 'response' | 'thinking'>>(new Set());
+  /** Whether this card's transcript is open: the prompt and every fetch on
+   * one side, the thinking and the answer on the other, turn by turn.
+   * One disclosure since 2026-09-25. It was three — the prompt, the answer
+   * and the thinking each behind a button — and the answer panel showed the
+   * same JSON the turn's own reasoning and orders above are read from. */
+  readonly transcriptOpen = signal(false);
+
+  toggleTranscript(): void {
+    this.transcriptOpen.update((open) => !open);
+  }
+
+  /** The turns the transcript draws, one per model call. A pass recorded
+   * before turns were kept, or a single-turn pass that fetched nothing,
+   * has none on record and only the pass-level prompt, answer and thinking;
+   * those become the one turn there was, so the transcript has one shape. */
+  turnsShown(event: AgentEvent): DecisionTurn[] {
+    const turns = event.turns ?? [];
+    if (turns.length) return turns;
+    return [
+      { prompt: event.prompt ?? '', response: event.response ?? '', thinking: event.thinking },
+    ];
+  }
 
   when(instant: string): string {
     return readerDateTime(instant);
@@ -69,15 +113,63 @@ export class DecisionCard {
     return event.woke_because ?? '';
   }
 
-  /** The heading the prompt itself put over that sentence on this turn.
+  /** The line over a turn block that says why the model was called at all.
    *
-   * The prompt says "Why you are awake" on the first turn and "Why this pass
-   * started" on every later one, because by then the wake is history and the
-   * turn was asked again rather than woken. Each turn block here shows what
-   * that turn was shown, so it uses the same two headings — mirroring
-   * `describe_wakeup`'s own `heading`. */
-  wakeLabel(index: number): string {
-    return index === 0 ? 'Why you are awake' : 'Why this pass started';
+   * On the first turn it is what woke the pass, in the sentence the agent
+   * was shown. Quoted, because it is the prompt's words in the second person
+   * and not the page's. The prompt heads that sentence "Why you are awake",
+   * and the page used the same heading until 2026-09-25; a reader took the
+   * "you" for themselves.
+   *
+   * On a later turn it is why the same pass asked again: its orders were
+   * carried out, it asked to read an analysis, part of its answer was
+   * refused. Until 2026-09-25 every turn repeated the wake sentence, so a
+   * two-turn pass read as though it had been woken twice for one reason.
+   * Null when nothing is on record, so no line is drawn — an empty label
+   * would read as a reason nobody gave rather than one nobody kept. */
+  wakeLine(event: AgentEvent, index: number): WakeLine | null {
+    if (index === 0) {
+      const woke = this.wokeBecause(event);
+      return woke ? { label: 'What woke it', text: woke, quoted: true } : null;
+    }
+    const text = this.askedAgain(event, index);
+    return text ? { label: 'Why it was asked again', text, quoted: false } : null;
+  }
+
+  /** Why turn `index` of the pass was asked, in the third person.
+   *
+   * Read from that turn's own prompt: `build_prompt` writes a "Why you are
+   * asked again" sentence there from whichever of the outcomes, the readings
+   * and the refusals are really in the prompt, so it is the one account of
+   * the reason that cannot drift from what the model saw. Each clause is
+   * turned from "your last answer" into "its", and a clause this page does
+   * not know is quoted as written rather than dropped. The previous turn's
+   * own orders are named in brackets, because "its orders were carried out"
+   * says less than "research ORCL".
+   *
+   * A prompt with no such sentence, from before 2026-09-13, falls back to
+   * the previous turn's orders when it had any, and to nothing otherwise. */
+  askedAgain(event: AgentEvent, index: number): string {
+    const turns = event.turns ?? [];
+    const turn = turns[index];
+    const previous = turns[index - 1];
+    if (!turn || !previous) return '';
+
+    const match = (turn.prompt ?? '').match(ASKED_AGAIN);
+    const clauses = match
+      ? match[1]
+          .split('; and ')
+          .map((clause) => ASKED_AGAIN_CLAUSES[clause.trim()] ?? `“${clause.trim()}”`)
+      : [];
+    const did = this.turnTradesIn(previous).map((o) =>
+      [o.side, o.ticker].filter(Boolean).join(' '),
+    );
+    if (!clauses.length) {
+      if (!did.length) return '';
+      clauses.push('its orders were carried out');
+    }
+    const detail = did.length ? ` (${did.join(', ')})` : '';
+    return `Same pass, asked again after turn ${index}: ${clauses.join('; and ')}${detail}.`;
   }
 
   /** The agent's messages to whoever maintains it.
@@ -241,16 +333,6 @@ export class DecisionCard {
    * a result, and the row shows them the way a refused order is shown. */
   fetchRan(exchange: DecisionExchange): boolean {
     return !/^Not (run|carried out)\b/.test(exchange.result);
-  }
-
-  isOpen(which: 'prompt' | 'response' | 'thinking'): boolean {
-    return this.open().has(which);
-  }
-
-  toggle(which: 'prompt' | 'response' | 'thinking'): void {
-    const next = new Set(this.open());
-    next.has(which) ? next.delete(which) : next.add(which);
-    this.open.set(next);
   }
 
   /** A pass that asked nothing has no words to show — the market was shut, or

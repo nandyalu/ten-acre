@@ -153,6 +153,31 @@ export class DecisionsView {
     return Array.from(groups.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
   }
 
+  /** One line beside a collapsed day, so a reader can tell which days are
+   * worth opening without opening each: how many passes, what they did, and
+   * whether the day was reviewed. Fifteen closed days that all read the same
+   * were a ladder with no rungs. Three actions at most, then a count. */
+  daySummary(day: DecisionDay): string {
+    const passes = day.events.length;
+    const did = Array.from(
+      new Set(
+        day.events.flatMap((event) =>
+          event.orders
+            .filter((o) => o.side !== 'note' && o.side !== 'memory')
+            .map((o) => `${o.side} ${o.ticker}`.trim()),
+        ),
+      ),
+    );
+    const parts: string[] = [];
+    if (passes) {
+      parts.push(`${passes} ${passes === 1 ? 'pass' : 'passes'}`);
+      const shown = did.slice(0, 3).join(', ');
+      parts.push(did.length > 3 ? `${shown} +${did.length - 3}` : shown || 'nothing');
+    }
+    if (day.reviews.length) parts.push(passes ? 'reviewed' : 'evening review only');
+    return parts.join(' · ');
+  }
+
   /** "2026-09" -> "September 2026". */
   monthLabel(month: string): string {
     const [year, monthNumber] = month.split('-').map(Number);

@@ -75,60 +75,61 @@
 
       @if (asked(review())) {
         <div class="transcript">
-          <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('prompts')">
-            {{ isOpen('prompts') ? 'Hide' : 'Show' }} the prompts
+          <button type="button" class="btn btn-ghost btn-sm" (click)="toggleTranscript()">
+            {{ transcriptOpen() ? 'Hide' : 'Show' }} the transcript
           </button>
-          <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('answers')">
-            {{ isOpen('answers') ? 'Hide' : 'Show' }} the answers
-          </button>
-          @if (review().thinking) {
-            <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('thinking')">
-              {{ isOpen('thinking') ? 'Hide' : 'Show' }} the thinking
-            </button>
-          }
         </div>
-        @if (isOpen('prompts')) {
+        @if (transcriptOpen()) {
           <!-- Two prompts in one conversation: the first asks for the report,
-               the second, once the report is in, asks for the revision. -->
+               the second, once the report is in, asks for the revision. The
+               same two columns as a pass card: what it was given on the
+               left, what it produced on the right. The prompts and the
+               thinking are Markdown and render as such; the copy buttons
+               carry the raw text. The answers are JSON and stay verbatim. -->
           <p class="hint">
-            The review takes two turns. The agent was asked to report, and then, with its report in
-            front of it, to revise its own notes.
+            The review takes two turns in one conversation. The agent was asked to report, and then,
+            with its report in front of it, to revise its own notes. On the left, what it was asked;
+            on the right, its thinking across both turns, then each answer. Some providers return
+            the thinking in full; Gemini returns a summary of it.
           </p>
-          <p class="turn-label">Turn 1 of 2 — asked to report</p>
-          <div class="verbatim-wrap">
-            <app-copy-button [text]="review().prompt" label="the first prompt" />
-            <pre class="verbatim">{{ review().prompt }}</pre>
-          </div>
-          @if (review().turn2_prompt) {
-            <p class="turn-label">Turn 2 of 2 — asked to revise</p>
-            <div class="verbatim-wrap">
-              <app-copy-button [text]="review().turn2_prompt" label="the second prompt" />
-              <pre class="verbatim">{{ review().turn2_prompt }}</pre>
+          <div class="transcript-cols">
+            <div class="transcript-col">
+              <p class="turn-label">Turn 1 of 2 — asked to report</p>
+              <div class="verbatim-wrap">
+                <app-copy-button [text]="review().prompt" label="the first prompt" />
+                <app-markdown class="markdown-block" [text]="review().prompt" />
+              </div>
+              @if (review().turn2_prompt) {
+                <p class="turn-label">Turn 2 of 2 — asked to revise</p>
+                <div class="verbatim-wrap">
+                  <app-copy-button [text]="review().turn2_prompt" label="the second prompt" />
+                  <app-markdown class="markdown-block" [text]="review().turn2_prompt" />
+                </div>
+              }
             </div>
-          }
-        }
-        @if (isOpen('answers')) {
-          <p class="turn-label">Turn 1 of 2 — the report</p>
-          <div class="verbatim-wrap">
-            <app-copy-button [text]="review().response" label="the report" />
-            <pre class="verbatim">{{ review().response }}</pre>
-          </div>
-          @if (review().revision) {
-            <p class="turn-label">Turn 2 of 2 — the revision</p>
-            <div class="verbatim-wrap">
-              <app-copy-button [text]="review().revision" label="the revision" />
-              <pre class="verbatim">{{ review().revision }}</pre>
+            <div class="transcript-col">
+              <p class="turn-label">Thinking</p>
+              @if (review().thinking) {
+                <div class="verbatim-wrap">
+                  <app-copy-button [text]="review().thinking" label="the thinking" />
+                  <app-markdown class="markdown-block" [text]="review().thinking" />
+                </div>
+              } @else {
+                <p class="hint">No thinking was kept for this review.</p>
+              }
+              <p class="turn-label">Turn 1 of 2 — the report</p>
+              <div class="verbatim-wrap">
+                <app-copy-button [text]="review().response" label="the report" />
+                <pre class="verbatim">{{ review().response }}</pre>
+              </div>
+              @if (review().revision) {
+                <p class="turn-label">Turn 2 of 2 — the revision</p>
+                <div class="verbatim-wrap">
+                  <app-copy-button [text]="review().revision" label="the revision" />
+                  <pre class="verbatim">{{ review().revision }}</pre>
+                </div>
+              }
             </div>
-          }
-        }
-        @if (isOpen('thinking')) {
-          <p class="hint">
-            The model's reasoning on the way to its answers. Some providers return it in full;
-            Gemini returns a summary of it.
-          </p>
-          <div class="verbatim-wrap">
-            <app-copy-button [text]="review().thinking" label="the thinking" />
-            <pre class="verbatim">{{ review().thinking }}</pre>
           </div>
         }
       }

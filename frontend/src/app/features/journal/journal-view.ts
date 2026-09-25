@@ -4,6 +4,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { JourneyEntry } from '../../core/models/api.models';
 import { AgentService } from '../../core/services/agent.service';
 import { DigestService } from '../../core/services/digest.service';
+import { JournalBlock, parseJournalEntry, summariseEntry } from '../../shared/journal-entry';
 
 /**
  * What happened, in the app's own words: the week in summary, then every day
@@ -166,16 +167,41 @@ export class JournalView {
     return total ? `${passes}/${total} (${Math.round((passes / total) * 100)}%)` : 'n/a';
   }
 
-  /** The generated markdown, minus its heading line.
-   *
-   * `to_markdown` renders each day under its own `##` date heading, and the
-   * day's own row already shows that date. Printing both reads as a stutter.
-   */
-  body(markdown: string): string {
-    return markdown
-      .split('\n')
-      .filter((line) => !line.startsWith('#'))
-      .join('\n')
-      .trim();
+  /** Parsed once per entry, not once per change-detection pass. Keyed on the
+   * entry object itself, so a month refetched from the API parses afresh. */
+  private readonly parsed = new WeakMap<JourneyEntry, JournalBlock[]>();
+
+  /** The day's markdown as the parts it is written in. The `##` date heading
+   * is dropped along the way: the day's own row already shows that date, and
+   * printing both reads as a stutter. */
+  blocks(entry: JourneyEntry): JournalBlock[] {
+    let blocks = this.parsed.get(entry);
+    if (!blocks) {
+      blocks = parseJournalEntry(entry.markdown);
+      this.parsed.set(entry, blocks);
+    }
+    return blocks;
+  }
+
+  /** One line beside a closed day, so a reader can tell which days are
+   * worth opening: where the book stood and what happened. Same reason as
+   * the Decisions page's own day summary. */
+  entrySummary(entry: JourneyEntry): string {
+    return summariseEntry(this.blocks(entry));
+  }
+
+  /** "COIN: 17 @ $199.64 → $199.21 (-0.2%)" as the ticker and the rest, so
+   * the digest's holdings take the same shape as a day's book line. */
+  holdingLine(line: string): { ticker: string; rest: string } {
+    const at = line.indexOf(': ');
+    if (at === -1) return { ticker: line, rest: '' };
+    return { ticker: line.slice(0, at), rest: line.slice(at + 2) };
+  }
+
+  /** "−0.1%", with the sign in the text. The `.money--pos` and `.money--neg`
+   * classes add the arrow; neither colour nor arrow is ever the only thing
+   * separating a gain from a loss. */
+  signedPct(value: number): string {
+    return `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(1)}%`;
   }
 }

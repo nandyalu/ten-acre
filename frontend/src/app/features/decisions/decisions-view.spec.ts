@@ -118,27 +118,50 @@ describe('DecisionsView', () => {
     button?.click();
   }
 
-  it('hides the prompt until it is asked for', async () => {
+  it('hides the transcript until it is asked for', async () => {
     // A prompt runs to tens of kilobytes. A feed that opens with one is a feed
     // nobody scrolls.
     service.eventsByMonth['2026-09'] = [event()];
 
     const el = await render();
 
+    expect(el.querySelector('.markdown')).toBeNull();
     expect(el.querySelector('.verbatim')).toBeNull();
-    expect(el.textContent).toContain('Show the prompt');
+    expect(el.textContent).toContain('Show the transcript');
   });
 
-  it('shows the prompt verbatim once opened', async () => {
+  it('opens the prompt, rendered, beside the answer, verbatim', async () => {
+    /** One disclosure since 2026-09-25. It was three — the prompt, the
+     * answer and the thinking — and the answer panel repeated the JSON the
+     * turn's own reasoning and orders are read from. The prompt is Markdown
+     * and renders; the answer is JSON and stays as it is. */
     service.eventsByMonth['2026-09'] = [event()];
     const fixture = TestBed.createComponent(DecisionsView);
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
 
-    clickButtonContaining(el, 'Show the prompt');
+    clickButtonContaining(el, 'Show the transcript');
     await fixture.whenStable();
 
-    expect(el.querySelector('.verbatim')?.textContent).toContain('You manage a $10,000 account');
+    const cols = el.querySelector('.transcript-cols');
+    expect(cols?.querySelector('.markdown')?.textContent).toContain('You manage a $10,000 account');
+    expect(cols?.querySelector('.verbatim')?.textContent).toContain('"orders": []');
+    expect(el.textContent).not.toContain('Show the answer');
+    expect(el.textContent).not.toContain('Show the thinking');
+  });
+
+  it('keeps the copy button on the raw text, not the rendering', async () => {
+    service.eventsByMonth['2026-09'] = [event({ prompt: '## A heading\n\n**bold**' })];
+    const fixture = TestBed.createComponent(DecisionsView);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+
+    clickButtonContaining(el, 'Show the transcript');
+    await fixture.whenStable();
+
+    expect(el.querySelector('.markdown h2')?.textContent).toBe('A heading');
+    const copy = el.querySelector('.transcript-col app-copy-button button');
+    expect(copy?.getAttribute('aria-label')).toBe("Copy this turn's prompt");
   });
 
   it('lists what the pass actually did', async () => {
@@ -178,7 +201,7 @@ describe('DecisionsView', () => {
     const el = await render();
 
     expect(el.textContent).toContain('kept no prompt');
-    expect(el.textContent).not.toContain('Show the prompt');
+    expect(el.textContent).not.toContain('Show the transcript');
   });
 
   it('reports a pass that did nothing as nothing, not as blank', async () => {
@@ -609,7 +632,7 @@ describe('DecisionsView', () => {
       await fixture.whenStable();
       const el = fixture.nativeElement as HTMLElement;
 
-      clickButtonContaining(el, 'Show the prompt');
+      clickButtonContaining(el, 'Show the transcript');
       await fixture.whenStable();
 
       expect(el.textContent).toContain('the first prompt');
@@ -684,16 +707,16 @@ describe('DecisionsView', () => {
           ...over,
         });
 
-      it('opens every turn block, because every turn was shown it', async () => {
+      it('opens the first turn with what woke the pass, in the words the agent read', async () => {
         service.eventsByMonth['2026-09'] = [twoBlocks({ woke_because: WOKE })];
 
         const el = await render();
 
-        const turns = Array.from(el.querySelectorAll('.turn'));
-        expect(turns).toHaveLength(2);
-        for (const turn of turns) {
-          expect(turn.querySelector('.wake-reason')?.textContent).toContain(WOKE);
-        }
+        const first = el.querySelector('.turn .wake-reason');
+        expect(first?.textContent).toContain(WOKE);
+        // A quotation, because the sentence is the prompt's and in the second
+        // person: the "you" is the agent, not the reader.
+        expect(first?.querySelector('q')?.textContent).toBe(WOKE);
       });
 
       it('is the first thing under the turn label', async () => {
@@ -707,20 +730,68 @@ describe('DecisionsView', () => {
         expect(children[1]?.className).toContain('wake-reason');
       });
 
-      it('names the wake as history on a later turn, the way the prompt does', async () => {
-        /** The prompt heads it "Why you are awake" on the first turn and
-         * "Why this pass started" on every later one — by then the wake has
-         * already happened and the turn was asked again, not woken. Each
-         * block shows what that turn was shown. */
+      it("labels the wake for the reader, not with the prompt's own heading", async () => {
+        /** The prompt heads the sentence "Why you are awake", and so did the
+         * page until 2026-09-25 — a reader took the "you" for themselves. */
+        service.eventsByMonth['2026-09'] = [twoBlocks({ woke_because: WOKE })];
+
+        const el = await render();
+
+        const first = el.querySelector('.turn .wake-reason')?.textContent ?? '';
+        expect(first).toContain('What woke it');
+        expect(first).not.toContain('Why you are awake');
+      });
+
+      it("says why a later turn was asked again, from that turn's own prompt", async () => {
+        /** Until 2026-09-25 every turn repeated the wake sentence, so a pass
+         * that researched ORCL and was asked again read as though it had
+         * been woken twice for one reason. The real reason is in the later
+         * turn's prompt, written by the backend from what is in that prompt. */
+        service.eventsByMonth['2026-09'] = [
+          event({
+            woke_because: WOKE,
+            turns: [
+              {
+                prompt: 'the first prompt',
+                response: '{"orders":[{"side":"research","ticker":"ORCL"}]}',
+                thinking: null,
+                reasoning: 'Commissioning fresh research on ORCL.',
+                orders: [{ side: 'research', ticker: 'ORCL', quantity: 0, reason: 'dip' }],
+              },
+              {
+                prompt:
+                  'the second prompt\n\n**Why you are asked again.** This is the same pass, not a new wake: the orders in your last answer have been carried out; and you asked to read an analysis. All of it is under "What your last answer did" above.',
+                response: '{"orders":[]}',
+                thinking: null,
+                reasoning: 'ORCL came back Underweight; nothing to do.',
+                orders: [],
+              },
+            ],
+          }),
+        ];
+
+        const el = await render();
+
+        const turns = Array.from(el.querySelectorAll('.turn'));
+        const second = turns[1]?.querySelector('.wake-reason')?.textContent ?? '';
+        expect(second).toContain('Why it was asked again');
+        expect(second).toContain('its orders were carried out; and it asked to read an analysis');
+        expect(second).toContain('(research ORCL)');
+        expect(second).not.toContain(WOKE);
+        expect(second).not.toContain('your last answer');
+      });
+
+      it('draws no line on a later turn when nothing on record says why it was asked', async () => {
+        /** A pass from before 2026-09-13 has no such sentence in its prompt
+         * and, here, no orders on the turn before. Saying "asked again" with
+         * no reason would be a label with nothing behind it. */
         service.eventsByMonth['2026-09'] = [twoBlocks({ woke_because: WOKE })];
 
         const el = await render();
 
         const turns = Array.from(el.querySelectorAll('.turn'));
-        expect(turns[0]?.querySelector('.wake-reason')?.textContent).toContain('Why you are awake');
-        expect(turns[1]?.querySelector('.wake-reason')?.textContent).toContain(
-          'Why this pass started',
-        );
+        expect(turns[0]?.querySelector('.wake-reason')).not.toBeNull();
+        expect(turns[1]?.querySelector('.wake-reason')).toBeNull();
       });
 
       it('draws no line at all when no reason is on record', async () => {
@@ -743,9 +814,26 @@ describe('DecisionsView', () => {
         const el = await render();
 
         expect(el.querySelector('.turn')).toBeNull();
-        expect(el.querySelector('.wake-reason')?.textContent).toContain('Why you are awake');
+        expect(el.querySelector('.wake-reason')?.textContent).toContain('What woke it');
         expect(el.querySelector('.wake-reason')?.textContent).toContain(WOKE);
       });
+    });
+
+    it('summarises a closed day beside its date, so a reader knows which to open', async () => {
+      /** Fifteen closed days that all read the same were a ladder with no
+       * rungs. The newest day opens on its own; the older one is closed and
+       * carries its passes and what they did. */
+      service.eventsByMonth['2026-09'] = [
+        event({ id: 2, ran_at: '2026-09-02T13:35:00Z', orders: [] }),
+        event({ id: 1, ran_at: '2026-09-01T13:35:00Z' }),
+      ];
+
+      const el = await render();
+
+      const summaries = Array.from(el.querySelectorAll('.tl-summary')).map((s) =>
+        s.textContent?.trim(),
+      );
+      expect(summaries).toEqual(['1 pass · untrack CRM']);
     });
 
     it("shows every turn's thinking, not only the last", async () => {
@@ -760,12 +848,16 @@ describe('DecisionsView', () => {
       await fixture.whenStable();
       const el = fixture.nativeElement as HTMLElement;
 
-      clickButtonContaining(el, 'Show the thinking');
+      clickButtonContaining(el, 'Show the transcript');
       await fixture.whenStable();
 
-      expect(el.textContent).toContain('the first thought');
-      expect(el.textContent).toContain('the second thought');
-      expect(el.textContent).toContain('Turn 1 of 2 — thinking');
+      // Each turn's thinking sits in that turn's own row, beside its prompt.
+      const rows = Array.from(el.querySelectorAll('.transcript-turn'));
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.textContent).toContain('Turn 1 of 2');
+      expect(rows[0]?.textContent).toContain('the first thought');
+      expect(rows[0]?.textContent).not.toContain('the second thought');
+      expect(rows[1]?.textContent).toContain('the second thought');
     });
 
     it('shows a single prompt when the pass had one turn', async () => {
@@ -774,11 +866,12 @@ describe('DecisionsView', () => {
       await fixture.whenStable();
       const el = fixture.nativeElement as HTMLElement;
 
-      clickButtonContaining(el, 'Show the prompt');
+      clickButtonContaining(el, 'Show the transcript');
       await fixture.whenStable();
 
       expect(el.textContent).not.toContain('turns.');
-      expect(el.querySelector('.verbatim')?.textContent).toContain('You manage a $10,000 account');
+      expect(el.querySelectorAll('.transcript-turn')).toHaveLength(1);
+      expect(el.querySelector('.markdown')?.textContent).toContain('You manage a $10,000 account');
     });
 
     it("shows each turn's own reasoning and what it asked for, not only the pass's final one", async () => {
@@ -868,7 +961,7 @@ describe('DecisionsView', () => {
       expect(rows[2]?.textContent).toContain('Not run: the fetch allowance for this pass is spent');
       expect(el.textContent).not.toContain('defend below 102.70');
 
-      clickButtonContaining(el, 'Show the prompt');
+      clickButtonContaining(el, 'Show the transcript');
       await fixture.whenStable();
 
       expect(el.textContent).toContain('Fetched read NVDA (2026-09-08)');
@@ -994,7 +1087,7 @@ describe('DecisionsView', () => {
       expect(text).toContain('no pass since the last review');
       expect(text).not.toContain('Nothing to report');
       expect(text).not.toContain('passes reviewed');
-      expect(text).not.toContain('Show the prompts');
+      expect(text).not.toContain('Show the transcript');
     });
 
     it('hides both prompts, both answers and the thinking until asked for', async () => {
@@ -1003,24 +1096,25 @@ describe('DecisionsView', () => {
       const fixture = TestBed.createComponent(DecisionsView);
       await fixture.whenStable();
       const el = fixture.nativeElement as HTMLElement;
-      const card = () => el.querySelector('app-reflection-card')?.textContent ?? '';
+      const card = () => el.querySelector('app-reflection-card') as HTMLElement;
 
-      expect(card()).not.toContain('the review prompt');
-      expect(card()).not.toContain('the review thinking');
+      expect(card().textContent).not.toContain('the review prompt');
+      expect(card().textContent).not.toContain('the review thinking');
 
-      clickButtonContaining(el, 'Show the prompts');
+      // One disclosure opens the whole conversation: the prompts on the
+      // left, the thinking and the answers on the right.
+      const button = Array.from(card().querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('Show the transcript'),
+      );
+      button?.click();
       await fixture.whenStable();
-      expect(card()).toContain('the review prompt, every pass of the day');
-      expect(card()).toContain('the second prompt, asking for the revision');
 
-      clickButtonContaining(el, 'Show the answers');
-      await fixture.whenStable();
-      expect(card()).toContain('{"notes": [...]}');
-      expect(card()).toContain('{"wakeup_note": "Watch INTC at the open."}');
-
-      clickButtonContaining(el, 'Show the thinking');
-      await fixture.whenStable();
-      expect(card()).toContain('the review thinking');
+      const [asked, produced] = Array.from(card().querySelectorAll('.transcript-col'));
+      expect(asked?.textContent).toContain('the review prompt, every pass of the day');
+      expect(asked?.textContent).toContain('the second prompt, asking for the revision');
+      expect(produced?.textContent).toContain('the review thinking');
+      expect(produced?.textContent).toContain('{"notes": [...]}');
+      expect(produced?.textContent).toContain('{"wakeup_note": "Watch INTC at the open."}');
     });
 
     it('shows a review on a day with no pass in the month', async () => {

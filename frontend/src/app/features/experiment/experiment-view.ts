@@ -6,7 +6,6 @@ import { AgentService } from '../../core/services/agent.service';
 import { RegimeService } from '../../core/services/regime.service';
 import { ScorecardService } from '../../core/services/scorecard.service';
 import { EquityChart, EquityPoint } from '../../shared/equity-chart';
-import { Logo } from '../../shared/logo';
 import { ClockTime, marketTime, readerTime } from '../../shared/market-time';
 import { dayNumber, startedOn } from '../../shared/experiment';
 import { charging, researchPriceLabel } from '../../shared/research-price';
@@ -40,7 +39,7 @@ interface Beat {
  */
 @Component({
   selector: 'app-experiment-view',
-  imports: [RouterLink, EquityChart, Logo],
+  imports: [RouterLink, EquityChart],
   templateUrl: './experiment-view.html',
 })
 export class ExperimentView {
@@ -248,6 +247,13 @@ export class ExperimentView {
   }
 
   protected readonly today = computed(() => this.beats(this.focusDay()));
+
+  /** The first thing on the focus day that has not happened yet, for the
+   * one-line "Next" a narrow screen shows above the money. Null once the
+   * day's rows are all done, when there is nothing to say. */
+  protected readonly nextBeat = computed<Beat | null>(
+    () => this.today().find((beat) => !beat.done) ?? null,
+  );
 
   /** What the second column is: the day in progress, or the one being waited
    * for. The heading has to say which, or a Monday's rows read as today's. */

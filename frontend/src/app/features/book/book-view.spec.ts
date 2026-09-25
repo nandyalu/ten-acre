@@ -62,6 +62,25 @@ function exit(
   };
 }
 
+/** A filled market order, the kind the trade log is mostly made of. */
+function fill(id: number, ticker: string, side: 'buy' | 'sell'): AgentTrade {
+  return {
+    id,
+    ticker,
+    side,
+    quantity: 4,
+    price: 98.07,
+    placed_at: '2026-09-15T16:57:00',
+    filled_at: '2026-09-15T16:57:00',
+    status: 'filled',
+    is_stop: false,
+    limit_price: null,
+    exit_kind: null,
+    reason: `${side} ${ticker} on a fresh signal`,
+    signal_id: null,
+  };
+}
+
 class AgentServiceStub {
   readonly book = signal<AgentBook | null>(BOOK);
   readonly trades = signal<AgentTrade[]>([]);
@@ -149,6 +168,81 @@ describe('BookView', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('app-equity-chart')).toBeTruthy();
     expect(el.textContent).not.toContain('No curve yet');
+  });
+
+  // --- the trade log, paged and filtered in place ------------------------
+
+  function tradeLog(el: HTMLElement): HTMLElement {
+    const section = Array.from(el.querySelectorAll('section.card')).find((s) =>
+      s.querySelector('h2')?.textContent?.includes('Trade log'),
+    );
+    return section as HTMLElement;
+  }
+
+  it('shows the trade log ten orders at a time, newest page first', async () => {
+    service.trades.set(Array.from({ length: 23 }, (_, i) => fill(i + 1, 'INTC', 'buy')));
+    const fixture = TestBed.createComponent(BookView);
+    await fixture.whenStable();
+
+    const log = tradeLog(fixture.nativeElement);
+
+    expect(log.querySelectorAll('tbody tr')).toHaveLength(10);
+    expect(log.querySelector('.pager')?.textContent).toContain('1–10 of 23 orders');
+  });
+
+  it('moves to the next page of orders on Next', async () => {
+    service.trades.set(Array.from({ length: 23 }, (_, i) => fill(i + 1, 'INTC', 'buy')));
+    const fixture = TestBed.createComponent(BookView);
+    await fixture.whenStable();
+    const log = tradeLog(fixture.nativeElement);
+
+    const next = Array.from(log.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Next'),
+    );
+    next?.click();
+    await fixture.whenStable();
+
+    expect(log.querySelector('.pager')?.textContent).toContain('11–20 of 23 orders');
+  });
+
+  it('filters the trade log in place as the reader types', async () => {
+    service.trades.set([fill(1, 'INTC', 'buy'), fill(2, 'COIN', 'buy'), fill(3, 'COIN', 'sell')]);
+    const fixture = TestBed.createComponent(BookView);
+    await fixture.whenStable();
+    const log = tradeLog(fixture.nativeElement);
+
+    const box = log.querySelector<HTMLInputElement>('input[type="search"]')!;
+    box.value = 'coin';
+    box.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+
+    const tickers = Array.from(log.querySelectorAll('tbody tr td:first-child')).map((c) =>
+      c.textContent?.trim(),
+    );
+    expect(tickers).toEqual(['COIN', 'COIN']);
+  });
+
+  it('says when nothing matches the filter rather than showing an empty table', async () => {
+    service.trades.set([fill(1, 'INTC', 'buy')]);
+    const fixture = TestBed.createComponent(BookView);
+    await fixture.whenStable();
+    const log = tradeLog(fixture.nativeElement);
+
+    const box = log.querySelector<HTMLInputElement>('input[type="search"]')!;
+    box.value = 'ZZZZ';
+    box.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+
+    expect(log.querySelector('table')).toBeNull();
+    expect(log.textContent).toContain('No order matches “ZZZZ”');
+  });
+
+  it('hides the pager while the log fits on one page', async () => {
+    service.trades.set([fill(1, 'INTC', 'buy')]);
+    const fixture = TestBed.createComponent(BookView);
+    await fixture.whenStable();
+
+    expect(tradeLog(fixture.nativeElement).querySelector('.pager')).toBeNull();
   });
 
   it('says the curve has not started rather than drawing an empty chart', async () => {

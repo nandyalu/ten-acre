@@ -120,27 +120,27 @@
             <table class="data-table data-table--stack">
               <thead>
                 <tr>
-                  <th>Strategy</th>
-                  <th class="num">Equity</th>
-                  <th class="num">Return</th>
-                  <th class="num">Trades</th>
+                  <th class="col-fit">Strategy</th>
+                  <th class="num col-fit">Equity</th>
+                  <th class="num col-fit">Return</th>
+                  <th class="num col-fit">Trades</th>
                   <th>Note</th>
                 </tr>
               </thead>
               <tbody>
                 @for (s of p.strategies; track s.name) {
                   <tr>
-                    <td data-label="">{{ s.name }}</td>
-                    <td class="num" data-label="Equity">{{ money(s.equity) }}</td>
+                    <td class="col-fit" data-label="">{{ s.name }}</td>
+                    <td class="num col-fit" data-label="Equity">{{ money(s.equity) }}</td>
                     <td
-                      class="num"
+                      class="num col-fit"
                       data-label="Return"
                       [class.pass]="s.equity >= p.budget"
                       [class.fail]="s.equity < p.budget"
                     >
                       {{ returnPct(s.equity, p.budget) }}
                     </td>
-                    <td class="num" data-label="Trades">{{ s.trades }}</td>
+                    <td class="num col-fit" data-label="Trades">{{ s.trades }}</td>
                     <td data-label="Note">{{ s.note || '—' }}</td>
                   </tr>
                 }
@@ -184,8 +184,18 @@
                   <td class="num" data-label="Shares">{{ h.quantity }}</td>
                   <td class="num" data-label="Avg cost">{{ money(h.avg_cost) }}</td>
                   <td class="num" data-label="Price">{{ money(h.price) }}</td>
-                  <td class="num" data-label="Stop">{{ money(exitLevel(h.ticker, 'stop')) }}</td>
-                  <td class="num" data-label="Target">
+                  <td
+                    class="num"
+                    data-label="Stop"
+                    [class.cell-empty]="exitLevel(h.ticker, 'stop') === null"
+                  >
+                    {{ money(exitLevel(h.ticker, 'stop')) }}
+                  </td>
+                  <td
+                    class="num"
+                    data-label="Target"
+                    [class.cell-empty]="exitLevel(h.ticker, 'target') === null"
+                  >
                     {{ money(exitLevel(h.ticker, 'target')) }}
                   </td>
                   <td class="num" data-label="Value">{{ money(h.market_value) }}</td>
@@ -260,59 +270,79 @@
     <section class="card">
       <div class="card-head">
         <h2>Positions taken</h2>
+        @if (history().length) {
+          <div class="table-tools">
+            <app-table-search [of]="positions" label="Filter by ticker or date" />
+          </div>
+        }
         <p class="hint">
           Every lot the agent has bought, and what became of it. A position still open shows no exit
           and no profit — its result is not decided yet — but the days held keep counting.
         </p>
       </div>
       @if (history().length) {
-        <div class="table-wrap">
-          <table class="data-table data-table--stack">
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th class="num">Shares</th>
-                <th class="num">Entry</th>
-                <th>Bought</th>
-                <th class="num">Exit</th>
-                <th>Sold</th>
-                <th class="num">Days held</th>
-                <th class="num">Profit / loss</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (r of history(); track $index) {
+        @if (positions.total()) {
+          <div class="table-wrap">
+            <table class="data-table data-table--stack">
+              <thead>
                 <tr>
-                  <td class="ticker-cell" data-label="">
-                    <a [routerLink]="['/research/ticker', r.ticker]">{{ r.ticker }}</a>
-                    @if (r.is_open) {
-                      <span class="muted"> still held</span>
-                    }
-                  </td>
-                  <td class="num" data-label="Shares">{{ r.quantity }}</td>
-                  <td class="num" data-label="Entry">{{ money(r.entry) }}</td>
-                  <td data-label="Bought">{{ when(r.entry_at) }}</td>
-                  <td class="num" data-label="Exit">{{ r.exit === null ? '—' : money(r.exit) }}</td>
-                  <td data-label="Sold">{{ when(r.exit_at) }}</td>
-                  <td class="num" data-label="Days held">{{ r.held_days }}</td>
-                  <td
-                    class="num"
-                    data-label="Profit / loss"
-                    [class.pass]="(r.pnl ?? 0) > 0"
-                    [class.fail]="(r.pnl ?? 0) < 0"
-                  >
-                    @if (r.pnl === null) {
-                      —
-                    } @else {
-                      {{ signed(r.pnl) }}
-                      <span class="muted">({{ r.return_pct!.toFixed(1) }}%)</span>
-                    }
-                  </td>
+                  <th class="col-fit">Ticker</th>
+                  <th class="num col-fit">Shares</th>
+                  <th class="num col-fit">Entry</th>
+                  <th class="col-fit">Bought</th>
+                  <th class="num col-fit">Exit</th>
+                  <th class="col-fit">Sold</th>
+                  <th class="num col-fit">Days held</th>
+                  <th class="num">Profit / loss</th>
                 </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                @for (r of positions.rows(); track $index) {
+                  <tr>
+                    <td class="ticker-cell col-fit" data-label="">
+                      <a [routerLink]="['/research/ticker', r.ticker]">{{ r.ticker }}</a>
+                      @if (r.is_open) {
+                        <span class="muted"> still held</span>
+                      }
+                    </td>
+                    <td class="num col-fit" data-label="Shares">{{ r.quantity }}</td>
+                    <td class="num col-fit" data-label="Entry">{{ money(r.entry) }}</td>
+                    <td class="col-fit" data-label="Bought">{{ when(r.entry_at) }}</td>
+                    <!-- `cell-empty` hides a dash on a phone, where a
+                         stacked open position printed four label lines
+                         that each said nothing. -->
+                    <td class="num col-fit" data-label="Exit" [class.cell-empty]="r.exit === null">
+                      {{ r.exit === null ? '—' : money(r.exit) }}
+                    </td>
+                    <td class="col-fit" data-label="Sold" [class.cell-empty]="r.exit_at === null">
+                      {{ when(r.exit_at) }}
+                    </td>
+                    <td class="num col-fit" data-label="Days held">{{ r.held_days }}</td>
+                    <td
+                      class="num"
+                      data-label="Profit / loss"
+                      [class.pass]="(r.pnl ?? 0) > 0"
+                      [class.fail]="(r.pnl ?? 0) < 0"
+                      [class.cell-empty]="r.pnl === null"
+                    >
+                      @if (r.pnl === null) {
+                        —
+                      } @else {
+                        {{ signed(r.pnl) }}
+                        <span class="muted">({{ r.return_pct!.toFixed(1) }}%)</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <app-pager [of]="positions" noun="positions" />
+        } @else {
+          <div class="card-body">
+            <p class="empty">No position matches “{{ positions.query() }}”.</p>
+          </div>
+        }
       } @else {
         <div class="card-body">
           <p class="empty">
@@ -326,39 +356,66 @@
     <section class="card">
       <div class="card-head">
         <h2>Trade log</h2>
+        @if (trades().length) {
+          <div class="table-tools">
+            <app-table-search [of]="log" label="Filter by ticker or reason" />
+          </div>
+        }
         <p class="hint">Every order the agent placed, and why it said it placed it.</p>
       </div>
       @if (trades().length) {
-        <div class="table-wrap">
-          <table class="data-table data-table--stack">
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>Side</th>
-                <th class="num">Shares</th>
-                <th class="num">Price</th>
-                <th>When</th>
-                <th>Status</th>
-                <th>Why</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (t of trades(); track t.id) {
+        @if (log.total()) {
+          <div class="table-wrap">
+            <table class="data-table data-table--stack">
+              <thead>
                 <tr>
-                  <td class="ticker-cell" data-label="">
-                    <a [routerLink]="['/research/ticker', t.ticker]">{{ t.ticker }}</a>
-                  </td>
-                  <td data-label="Side">{{ t.side | uppercase }}</td>
-                  <td class="num" data-label="Shares">{{ t.quantity }}</td>
-                  <td class="num" data-label="Price">{{ money(t.price) }}</td>
-                  <td data-label="When">{{ whenPlaced(t) }}</td>
-                  <td data-label="Status">{{ t.status }}</td>
-                  <td data-label="Why">{{ t.reason ?? '—' }}</td>
+                  <th class="col-fit">Ticker</th>
+                  <th class="col-fit">Side</th>
+                  <th class="num col-fit">Shares</th>
+                  <th class="num col-fit">Price</th>
+                  <th class="col-fit">When</th>
+                  <th class="col-fit">Status</th>
+                  <th>Why</th>
                 </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                @for (t of log.rows(); track t.id) {
+                  <!-- A stop and a target are the two legs of the bracket
+                       placed with a buy, not decisions of their own. Muted,
+                       and tagged with which leg, so the three rows a buy
+                       produces read as one event. -->
+                  <tr [class.row-exit]="t.is_stop">
+                    <td class="ticker-cell col-fit" data-label="">
+                      <a [routerLink]="['/research/ticker', t.ticker]">{{ t.ticker }}</a>
+                    </td>
+                    <td class="col-fit" data-label="Side">
+                      {{ t.side | uppercase }}
+                      @if (t.is_stop && t.exit_kind) {
+                        <span class="badge badge-muted">{{ t.exit_kind }}</span>
+                      }
+                    </td>
+                    <td class="num col-fit" data-label="Shares">{{ t.quantity }}</td>
+                    <td
+                      class="num col-fit"
+                      data-label="Price"
+                      [class.cell-empty]="t.price === null"
+                    >
+                      {{ money(t.price) }}
+                    </td>
+                    <td class="col-fit" data-label="When">{{ whenPlaced(t) }}</td>
+                    <td class="col-fit" data-label="Status">{{ t.status }}</td>
+                    <td data-label="Why">{{ t.reason ?? '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <app-pager [of]="log" noun="orders" />
+        } @else {
+          <div class="card-body">
+            <p class="empty">No order matches “{{ log.query() }}”.</p>
+          </div>
+        }
       } @else {
         <div class="card-body">
           <p class="empty">

@@ -113,6 +113,9 @@
                     isDayExpanded(day.key) ? '−' : '+'
                   }}</span>
                   <span class="tl-day">{{ day.label }}</span>
+                  @if (!isDayExpanded(day.key)) {
+                    <span class="tl-summary">{{ daySummary(day) }}</span>
+                  }
                 </button>
 
                 @if (isDayExpanded(day.key)) {

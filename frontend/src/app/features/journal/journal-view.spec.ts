@@ -81,12 +81,35 @@ describe('JournalView', () => {
 
   it('drops the markdown heading, because the day row already shows the date', async () => {
     // Printing both reads as a stutter.
-    const fixture = TestBed.createComponent(JournalView);
-    await fixture.whenStable();
+    service.entriesByMonth['2026-09'] = [
+      { date: '2026-09-08', markdown: '## 2026-09-08\n- Bought 260 SMCI.' },
+    ];
 
-    const body = fixture.componentInstance.body('## 2026-08-28\n- Bought 260 SMCI.');
+    const text = (await render()).textContent ?? '';
 
-    expect(body).toBe('- Bought 260 SMCI.');
+    expect(text).not.toContain('##');
+    expect(text).not.toContain('2026-09-08');
+  });
+
+  it('renders the day as its parts rather than as raw markdown', async () => {
+    service.entriesByMonth['2026-09'] = [
+      {
+        date: '2026-09-08',
+        markdown:
+          '## 2026-09-08\nBook $9,987.96 (-0.1% against the starting balance).\n' +
+          '- Bought 10 COIN at $195.58\n\n> Holding COIN into the open.\n\n**First position opened: COIN.**',
+      },
+    ];
+
+    const el = await render();
+    const text = el.textContent ?? '';
+
+    expect(el.querySelector('.journal-events li')?.textContent).toContain('Bought 10 COIN');
+    expect(el.querySelector('blockquote')?.textContent).toContain('Holding COIN');
+    expect(el.querySelector('.journal-milestone')?.textContent).toContain('First position opened');
+    expect(el.querySelector('.journal-book .money--neg')?.textContent).toContain('−0.1%');
+    expect(text).not.toContain('**');
+    expect(text).not.toContain('> ');
   });
 
   it('keeps a day on which nothing happened', async () => {
@@ -95,7 +118,7 @@ describe('JournalView', () => {
       { date: '2026-09-08', markdown: '## 2026-09-08\n**2026-09-08** — nothing bought or sold.' },
     ];
 
-    expect((await render()).textContent).toContain('nothing bought or sold');
+    expect((await render()).textContent).toContain('Nothing bought or sold');
   });
 
   it('says the journal is empty rather than rendering a blank page', async () => {
@@ -147,6 +170,24 @@ describe('JournalView', () => {
     expect(el.textContent).not.toContain('older day content');
   });
 
+  it('summarises a closed day beside its date, so a reader knows which to open', async () => {
+    service.entriesByMonth['2026-09'] = [
+      { date: '2026-09-08', markdown: '## 2026-09-08\nnewest day content' },
+      {
+        date: '2026-09-01',
+        markdown:
+          '## 2026-09-01\nBook $9,944.15 (-0.6% against the starting balance).\n- Bought 10 COIN at $195.58\n- Spent $0.05 on research.',
+      },
+    ];
+
+    const el = await render();
+
+    const summaries = Array.from(el.querySelectorAll('.tl-summary')).map((s) =>
+      s.textContent?.trim(),
+    );
+    expect(summaries).toEqual(['$9,944.15 −0.6% · bought COIN, research']);
+  });
+
   it('opening a collapsed day reveals its entry', async () => {
     service.entriesByMonth['2026-09'] = [
       { date: '2026-09-08', markdown: '## 2026-09-08\nnewest day content' },
@@ -177,7 +218,7 @@ describe('JournalView', () => {
     const text = el.textContent ?? '';
 
     const newestLabel = text.indexOf('Tuesday 8 September');
-    const digestHeading = text.indexOf('The week to 2026-09-05');
+    const digestHeading = text.indexOf('The week to Saturday 5 September');
     const olderLabel = text.indexOf('Tuesday 1 September');
 
     expect(newestLabel).toBeGreaterThan(-1);
@@ -199,7 +240,7 @@ describe('JournalView', () => {
     const text = el.textContent ?? '';
 
     const olderLabel = text.indexOf('Saturday 5 September');
-    const digestHeading = text.indexOf('The week to 2026-09-01');
+    const digestHeading = text.indexOf('The week to Tuesday 1 September');
 
     expect(olderLabel).toBeGreaterThan(-1);
     expect(digestHeading).toBeGreaterThan(olderLabel);
@@ -214,6 +255,6 @@ describe('JournalView', () => {
 
     const el = await render();
 
-    expect(el.textContent).not.toContain('The week to 2026-08-20');
+    expect(el.textContent).not.toContain('The week to');
   });
 });

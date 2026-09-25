@@ -29,7 +29,7 @@ Three files, imported in order by `src/styles.css`:
 
 **Colours come from the tokens, never as literals.** The exception is the chart components, which draw to a canvas and cannot inherit a CSS variable; they read tokens through `shared/chart-theme.ts` at creation and again on every theme change. A new chart must do the same or its axis labels stay the wrong colour until reload.
 
-**Two themes, always.** The dark palette is declared twice — once under `prefers-color-scheme`, once under `:root[data-theme='dark']`. CSS cannot share one block between a media query and an attribute selector, so a new token has to be added in both. `index.html` sets `data-theme` before the first paint; do not move that into Angular or dark readers get a white flash on every load.
+**Two themes, always.** The dark palette is declared twice — once under `prefers-color-scheme`, once under `:root[data-theme='dark']`. CSS cannot share one block between a media query and an attribute selector, so a new token has to be added in both. `index.html` sets `data-theme` before the first paint; do not move that into Angular or dark readers get a white flash on every load. **Each block pins `color-scheme` to its own scheme.** The root said `light dark` until 2026-09-25, which lets the browser draw scrollbars and form controls from the OS setting whatever theme the page chose. The site-wide scrollbar rule is under "Element defaults" in `styles.css`; nothing else styles a scrollbar.
 
 ## Rules that are not style preferences
 
@@ -60,6 +60,14 @@ Two breakpoints:
 **Size a logo in CSS, never with `transform: scale()`.** A scaled element keeps its original layout box, which is why the masthead could not collapse past the mark's full height until this was fixed.
 
 **A new table needs `class="data-table data-table--stack"`, a `data-label` on every `<td>`, and a `.table-wrap` around it.** Below 640px the rows become labelled blocks built from those values; a cell without one renders as a value with no name.
+
+**Short columns take `col-fit`, on the `th` and its `td`s both.** A table stretches to the card, and auto-sized columns share the spare width out evenly, which leaves a gap after every short column and wraps a date to make room for a reason. `col-fit` packs the short columns left and gives the width to the one column that can use it. Leave it off that column.
+
+**A list that grows without limit is paged in the browser, never trimmed.** The trade log, the positions and the analyses each arrive whole; a `PagedRows` in the component filters and pages them, `<app-table-search>` in the card head does the filtering, and `<app-pager>` under the table does the paging. The pager renders itself only once the list runs past one page. The static site cannot answer a query, so nothing about this may move to the server.
+
+## Markdown
+
+**Text whose shape nobody controls renders through `<app-markdown>`.** The prompt the agent is given, what a fetch returned and the model's thinking are Markdown, and the component renders them with the `marked` package, the one runtime dependency besides the charts. Angular sanitises the binding, so nothing the model or the prompt held reaches the page as a script. **The copy button beside a rendered block always carries the raw text.** A fixed, known shape is still parsed by hand instead, the way `rationale.ts` and `journal-entry.ts` do; pulling five labels out is smaller than rendering.
 
 ## Terms
 

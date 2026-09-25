@@ -1,29 +1,36 @@
 <article class="card">
+  <!-- The figures sit under the title on every card. They used to share its
+       row and wrap under it only when the title was long, so two cards on
+       one day put the same line in two places. -->
   <div class="card-head">
-    <div>
-      <strong>{{ when(event().ran_at) }}</strong>
-      <span class="muted"> — {{ did(event()) }}</span>
-      @if (event().next_wakeup) {
-        <span class="muted"> · asked to be woken at {{ wokenAt(event()) }}</span>
+    <div class="pass-head">
+      <p class="pass-title">
+        <strong>{{ when(event().ran_at) }}</strong>
+        <span class="muted"> — {{ did(event()) }}</span>
+        @if (event().next_wakeup) {
+          <span class="muted"> · asked to be woken at {{ wokenAt(event()) }}</span>
+        }
+      </p>
+      @if (event().cash !== null) {
+        <p class="pass-stats muted">
+          cash ${{ event().cash | number: '1.2-2' }} · equity ${{
+            event().equity | number: '1.2-2'
+          }}
+          @if (event().research_spent) {
+            · research ${{ event().research_spent | number: '1.2-2' }}
+          }
+          <!-- What the pass cost the model. Null before 2026-09-09, when
+               nothing counted it, so the whole clause stays off rather than
+               printing a zero that would read as a free call. -->
+          @if (event().prompt_tokens) {
+            · {{ event().prompt_tokens | number }} in / {{ event().completion_tokens | number }} out
+          }
+          @if (event().seconds) {
+            · {{ event().seconds | number: '1.0-1' }}s
+          }
+        </p>
       }
     </div>
-    @if (event().cash !== null) {
-      <span class="muted">
-        cash ${{ event().cash | number: '1.2-2' }} · equity ${{ event().equity | number: '1.2-2' }}
-        @if (event().research_spent) {
-          · research ${{ event().research_spent | number: '1.2-2' }}
-        }
-        <!-- What the pass cost the model. Null before 2026-09-09, when
-             nothing counted it, so the whole clause stays off rather than
-             printing a zero that would read as a free call. -->
-        @if (event().prompt_tokens) {
-          · {{ event().prompt_tokens | number }} in / {{ event().completion_tokens | number }} out
-        }
-        @if (event().seconds) {
-          · {{ event().seconds | number: '1.0-1' }}s
-        }
-      </span>
-    }
   </div>
 
   <div class="card-body">
@@ -60,15 +67,19 @@
              than their own and read as though they belonged to it. -->
         <section class="turn">
           <p class="turn-label">Turn {{ $index + 1 }} of {{ event().turns?.length }}</p>
-          @if (wokeBecause(event())) {
-            <!-- What started the pass, repeated on every turn because every
-                 turn was shown it — the prompt is rebuilt from scratch each
-                 time and carries this line each time. The heading changes on a
-                 later turn exactly as the prompt's does; see `wakeLabel`.
-                 Quoted, and in the second person, because these are the words
-                 the agent read and not the page speaking. -->
+          @if (wakeLine(event(), $index); as line) {
+            <!-- Why the model was called on this turn: what woke the pass
+                 on the first, why the same pass asked again on a later one.
+                 The wake sentence is quoted, in the second person, because
+                 those are the words the agent read and not the page
+                 speaking; see `wakeLine`. -->
             <p class="wake-reason">
-              <strong>{{ wakeLabel($index) }}.</strong> {{ wokeBecause(event()) }}
+              <strong>{{ line.label }}.</strong>
+              @if (line.quoted) {
+                <q>{{ line.text }}</q>
+              } @else {
+                {{ line.text }}
+              }
             </p>
           }
           @if (turnExchanges(turn).length) {
@@ -238,10 +249,10 @@
     } @else {
       <!-- The flat layout has no turn blocks to open, so the same line opens
            the body instead. A pass drawn this way ran one turn, which is the
-           first turn, so it takes the first turn's heading. -->
-      @if (wokeBecause(event())) {
+           first turn, so it takes the first turn's line. -->
+      @if (wakeLine(event(), 0); as line) {
         <p class="wake-reason">
-          <strong>{{ wakeLabel(0) }}.</strong> {{ wokeBecause(event()) }}
+          <strong>{{ line.label }}.</strong> <q>{{ line.text }}</q>
         </p>
       }
       @if (exchangesIn(event()).length) {
@@ -388,102 +399,80 @@
 
     @if (asked(event())) {
       <div class="transcript">
-        <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('prompt')">
-          {{ isOpen('prompt') ? 'Hide' : 'Show' }} the prompt
+        <button type="button" class="btn btn-ghost btn-sm" (click)="toggleTranscript()">
+          {{ transcriptOpen() ? 'Hide' : 'Show' }} the transcript
         </button>
-        <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('response')">
-          {{ isOpen('response') ? 'Hide' : 'Show' }} the answer
-        </button>
-        <!-- Null on every pass before 2026-09-09, when the model's reasoning
-             was generated and discarded, so the button is absent rather than
-             opening an empty panel. -->
-        @if (event().thinking) {
-          <button type="button" class="btn btn-ghost btn-sm" (click)="toggle('thinking')">
-            {{ isOpen('thinking') ? 'Hide' : 'Show' }} the thinking
-          </button>
-        }
       </div>
-      @if (isOpen('prompt')) {
-        <!-- A pass has more than one turn when the agent asked to read an
+      @if (transcriptOpen()) {
+        <!-- What the model was given and what it produced, turn by turn:
+             the prompt and each fetch's result on the left, the thinking
+             and the answer on the right. Until 2026-09-25 these were three
+             panels behind three buttons, and the answer panel repeated the
+             JSON the turn's own reasoning and orders above are read from.
+
+             A pass has more than one turn when the agent asked to read an
              analysis, or when a refused order earned it a correction. Before
              2026-09-10 only the last was kept, so a two-turn pass was
-             published as though it were one. The reasoning and orders for
-             each turn are already shown above; this panel is the raw JSON
-             underneath them, for whoever wants it verbatim. -->
-        @if ((event().turns?.length ?? 0) > 1) {
-          <p class="hint">
-            This pass took {{ event().turns?.length }} turns. The agent answered, was given
-            something back — what its orders did, an analysis it asked to read, or the reason an
-            order was refused — and answered again.
-          </p>
-          @for (turn of event().turns ?? []; track $index) {
-            <p class="turn-label">Turn {{ $index + 1 }} of {{ event().turns?.length }} — asked</p>
-            <div class="verbatim-wrap">
-              <app-copy-button [text]="turn.prompt" label="this turn's prompt" />
-              <pre class="verbatim">{{ turn.prompt }}</pre>
-            </div>
-            <!-- Each fetch's result, verbatim: it reached the model as text
-                 inside the same call, so it is part of what the model saw. -->
-            @for (fetched of turnExchanges(turn); track $index) {
-              <p class="turn-label">Fetched {{ fetchLabel(fetched) }}</p>
-              <div class="verbatim-wrap">
-                <app-copy-button [text]="fetched.result" label="what the fetch returned" />
-                <pre class="verbatim">{{ fetched.result }}</pre>
-              </div>
-            }
-            <p class="turn-label">Turn {{ $index + 1 }} — answered</p>
-            <div class="verbatim-wrap">
-              <app-copy-button [text]="turn.response" label="this turn's answer" />
-              <pre class="verbatim">{{ turn.response }}</pre>
-            </div>
-          }
-        } @else {
-          <div class="verbatim-wrap">
-            <app-copy-button [text]="event().prompt" label="the prompt" />
-            <pre class="verbatim">{{ event().prompt }}</pre>
-          </div>
-          @for (fetched of exchangesIn(event()); track $index) {
-            <p class="turn-label">Fetched {{ fetchLabel(fetched) }}</p>
-            <div class="verbatim-wrap">
-              <app-copy-button [text]="fetched.result" label="what the fetch returned" />
-              <pre class="verbatim">{{ fetched.result }}</pre>
-            </div>
-          }
-        }
-      }
-      @if (isOpen('response')) {
-        <div class="verbatim-wrap">
-          <app-copy-button [text]="event().response" label="the answer" />
-          <pre class="verbatim">{{ event().response }}</pre>
-        </div>
-      }
-      @if (isOpen('thinking')) {
-        <!-- Every turn keeps its own thinking. Until 2026-09-13 this panel
-             showed only the last turn's, so a two-turn pass looked as though
-             it had thought once. -->
+             published as though it were one.
+
+             The prompt, a fetch's result and the thinking are Markdown and
+             render as such; the copy button beside each carries the raw
+             text. The answer stays verbatim: it is JSON, not prose. -->
+        @let turns = turnsShown(event());
         <p class="hint">
-          The model's reasoning on the way to its answer. Some providers return it in full; Gemini
-          returns a summary of it. It is most of what the pass generated.
-        </p>
-        @if ((event().turns?.length ?? 0) > 1) {
-          @for (turn of event().turns ?? []; track $index) {
-            <p class="turn-label">
-              Turn {{ $index + 1 }} of {{ event().turns?.length }} — thinking
-            </p>
-            @if (turn.thinking) {
-              <div class="verbatim-wrap">
-                <app-copy-button [text]="turn.thinking" label="this turn's thinking" />
-                <pre class="verbatim">{{ turn.thinking }}</pre>
-              </div>
-            } @else {
-              <p class="hint">This turn returned no thinking.</p>
-            }
+          @if (turns.length > 1) {
+            This pass took {{ turns.length }} turns. The agent answered, was given something back —
+            what its orders did, an analysis it asked to read, or the reason an order was refused —
+            and answered again.
           }
-        } @else {
-          <div class="verbatim-wrap">
-            <app-copy-button [text]="event().thinking" label="the thinking" />
-            <pre class="verbatim">{{ event().thinking }}</pre>
-          </div>
+          On the left, what the model was given: the prompt, then what each fetch returned. On the
+          right, what it produced: its thinking, then the answer the orders above were read from.
+          Some providers return the thinking in full; Gemini returns a summary of it.
+        </p>
+        @for (turn of turns; track $index) {
+          <section class="transcript-turn">
+            @if (turns.length > 1) {
+              <p class="turn-label transcript-turn-label">
+                Turn {{ $index + 1 }} of {{ turns.length }}
+              </p>
+            }
+            <div class="transcript-cols">
+              <div class="transcript-col">
+                <p class="turn-label">Asked</p>
+                <div class="verbatim-wrap">
+                  <app-copy-button [text]="turn.prompt" label="this turn's prompt" />
+                  <app-markdown class="markdown-block" [text]="turn.prompt" />
+                </div>
+                <!-- Each fetch's result: it reached the model as text inside
+                     the same call, so it is part of what the model saw. -->
+                @for (fetched of turnExchanges(turn); track $index) {
+                  <p class="turn-label">Fetched {{ fetchLabel(fetched) }}</p>
+                  <div class="verbatim-wrap">
+                    <app-copy-button [text]="fetched.result" label="what the fetch returned" />
+                    <app-markdown class="markdown-block" [text]="fetched.result" />
+                  </div>
+                }
+              </div>
+              <div class="transcript-col">
+                <p class="turn-label">Thinking</p>
+                @if (turn.thinking) {
+                  <div class="verbatim-wrap">
+                    <app-copy-button [text]="turn.thinking" label="this turn's thinking" />
+                    <app-markdown class="markdown-block" [text]="turn.thinking" />
+                  </div>
+                } @else {
+                  <!-- Null on every pass before 2026-09-09, when the
+                       model's reasoning was generated and discarded. -->
+                  <p class="hint">No thinking was kept for this turn.</p>
+                }
+                <p class="turn-label">Answered</p>
+                <div class="verbatim-wrap">
+                  <app-copy-button [text]="turn.response" label="this turn's answer" />
+                  <pre class="verbatim">{{ turn.response }}</pre>
+                </div>
+              </div>
+            </div>
+          </section>
         }
       }
     } @else if (event().skipped) {
