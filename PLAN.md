@@ -28,6 +28,18 @@ Read these four counts from the Decisions page and the `agentrun` table before y
 
 ## Step 1: the tool-usage audit
 
+**Built 2026-09-26** as `backend/scripts/fetch_audit.py`. The "quoted" column counts a pass when its reasoning carries a figure that only the fetch's result held. A laya judge was tried first and failed: every call scored between 0.56 and 0.77. The first run, on nine tool-channel passes from 2026-09-17 to 2026-09-25:
+
+| Fetch | Passes that called it | Calls per calling pass | Passes that quoted it |
+|---|---|---|---|
+| `read` | 8 | 2.4 | 3 |
+| `candidates` | 1 | 1.0 | 0 |
+| `fundamentals` | 0 | - | 0 |
+| `watchlist` | 9 | 1.3 | 3 |
+| `track_record` | 9 | 1.3 | 2 |
+
+Nine passes are fewer than the twenty the rule below needs, so nothing is removed yet. `fundamentals` is on course to be: nine of nine passes had it and none called it.
+
 **What it is.** For every tool-channel pass, count the calls to each fetch by name, and whether a figure from the fetch's result appears in the turn's reasoning. The data is in `agentrun.turns[i].exchanges`, stored since 2026-09-17, and `agentrun.turns[i].reasoning`, stored since 2026-09-15.
 
 **Why it comes first.** Five features have shipped "unconfirmed as read": the price-range column, the four analyst tables, `fundamentals`, limit orders, and the change-note section. Adding a sixth before counting the five is the wrong order. The audit also tells the reflection call in step 2 which tools to ask about.
@@ -186,9 +198,9 @@ Use the paraphrase test from the `probe-the-prompt` skill for the third count. A
 
 ## Checklist for 2026-09-26
 
-- [ ] Read the four counts from the week of watching. Write what they say in JOURNEY.md if any of them changes a rule.
-- [ ] Run the step 1 audit script and read its table.
-- [ ] Decide whether the sizing fact line is needed, from the live record.
+- [x] Read the four counts from the week of watching. None changes a rule. The pipeline gave one Hold in six analyses, and that one carried no plan, so the Hold rule was not tested. One buy in five named a limit price.
+- [x] Run the step 1 audit script and read its table. Built and run 2026-09-26, on nine tool-channel passes, fewer than the twenty the rule needs. The table is under step 1.
+- [x] Decide whether the sizing fact line is needed, from the live record. Not needed: the largest new position was about 36% of the book with its stop about 7% under the entry.
 - [x] Write the two JOURNEY.md entries for the reflection, then build it. Done 2026-09-24.
 - [x] Probe the reflection with the three checks, and record the result in `.claude/rules/agent-probes.md`. The pre-build probe is there; the real prompt was probed on 2026-09-24 before the release.
-- [ ] Set the two-week measurement date from the ship date: **2026-10-09**, two weeks after the first review on 2026-09-25.
+- [x] Set the two-week measurement date from the ship date: **2026-10-09**, two weeks after the first review on 2026-09-25.

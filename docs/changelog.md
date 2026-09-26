@@ -6,6 +6,11 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-26
+
+- **Scripts** — `python -m backend.scripts.fetch_audit` counts each fetch the agent calls on the tool channel, and the passes whose reasoning carries a figure that only the fetch's result held. This is step 1 of PLAN.md.
+- **Analysis** — `tradingagents/dataflows/laya.py` is a client for a laya sidecar at `LAYA_URL`. Nothing depends on it: when the variable is unset, or the sidecar fails, the caller continues with no grade.
+
 ## 2026-09-25
 
 - **Setup** — `compose.example.yaml`, the README and "Running it yourself" now use the published image, `ghcr.io/nandyalu/ten-acre:latest`, so a Docker deployment needs two files and no clone or build. The image is x86-64 only. Building the image yourself stays documented, for ARM and for your own changes, with `ten-acre:local` and `pull_policy: never`.
