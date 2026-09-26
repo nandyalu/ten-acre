@@ -225,3 +225,25 @@ def test_ask_with_no_question_or_no_analysis_says_why_and_asks_nothing(stored):
     assert "no analysis of NVDA" in analysis_reader.ask("NVDA", "Why?", answer=answer)
     assert "named no ticker" in analysis_reader.ask("", "Why?", answer=answer)
 
+
+def test_a_read_lists_every_other_analysis_of_the_ticker(stored, monkeypatch):
+    """A read of one analysis also shows how the others moved: verdict, price,
+    levels and the sentiment score, newest first, the one shown left out."""
+    stored[2].price_at_signal, stored[2].stop_loss = 94.09, 80.96
+    monkeypatch.setattr(
+        analysis_reader.db, "get_signal_reports",
+        lambda signal_id: {"sentiment_report": "**Overall Sentiment:** **Bullish** (Score: 7.2/10)\n**Confidence:** High"}
+        if signal_id == 20 else {},
+    )
+    text = analysis_reader.read("INTC")
+    history = text.split("**Every other analysis of INTC on record, newest first.**")[1]
+    assert "2026-09-08 19:18" not in history  # the one shown
+    assert history.index("2026-09-08 19:06 UTC: Overweight") < history.index("2026-09-02")
+    assert "- 2026-09-02 14:00 UTC: Buy at $94.09 — stop $80.96; sentiment Bullish 7.2/10" in history
+
+
+def test_a_ticker_with_one_analysis_shows_no_history(monkeypatch):
+    only = _signal(5, "AAPL", "2026-09-18", "Buy")
+    monkeypatch.setattr(analysis_reader.db, "get_recent_signals", lambda ticker=None, limit=10: [only])
+    monkeypatch.setattr(analysis_reader.db, "get_signal_reports", lambda signal_id: {})
+    assert "Every other analysis" not in analysis_reader.read("AAPL")

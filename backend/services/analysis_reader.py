@@ -230,7 +230,69 @@ def read(ticker: str, on=None) -> str:
         reply = f"{header}. It recorded no reasoning."
     else:
         reply = f"{header}:\n{_levels_line(signal)}{body}"
-    return f"{reply}\n\n---\n\n{snapshot}" if snapshot else reply
+    blocks = [reply, snapshot, _history(ticker, signal)]
+    return "\n\n---\n\n".join(block for block in blocks if block)
+
+
+# Enough to show a thesis moving across two or three weeks of analyses. INTC
+# had thirteen in three weeks by 2026-09-26, so the list stops somewhere.
+_HISTORY_LINES = 8
+
+
+def _sentiment_head(signal_id: int) -> str:
+    """"Bullish 7.2/10" from the sentiment report's fixed first line, or ""."""
+    first = ((db.get_signal_reports(signal_id).get("sentiment_report") or "").strip().splitlines() or [""])[0]
+    band = first.split("**")[3] if first.count("**") >= 4 else ""
+    score = first.split("Score:")[1].split(")")[0].strip() if "Score:" in first else ""
+    return " ".join(part for part in (band, score) if part)
+
+
+def _history(ticker: str, shown) -> str:
+    """Every other analysis of the ticker on record, one line each, newest first.
+
+    **Added 2026-09-26.** A read showed one analysis alone. The agent could
+    see that today's said Hold, but not that the five before it said Buy, nor
+    how the stop and the target moved between them. Each line is the verdict,
+    the price when it ran, the app's levels, the chance, and the sentiment
+    analyst's score, which is the one analyst figure that a fixed line states.
+    """
+    others = [s for s in _matching(ticker, None) if s.id != shown.id]
+    if not others:
+        return ""
+    lines = [
+        f"**Every other analysis of {ticker} on record, newest first.** "
+        "Read one by its date for its reasoning."
+    ]
+    for s in others[:_HISTORY_LINES]:
+        when = str(s.signal_date)[:10]
+        created = getattr(s, "created_at", None)
+        if created:
+            when += f" {str(created)[11:16]} UTC"
+        line = f"- {when}: {s.decision}"
+        price = getattr(s, "price_at_signal", None)
+        if price:
+            line += f" at ${price:,.2f}"
+        levels = [
+            f"{label} ${value:,.2f}"
+            for label, value in (
+                ("entry", getattr(s, "entry_price", None)),
+                ("stop", getattr(s, "stop_loss", None)),
+                ("target", getattr(s, "price_target", None)),
+            )
+            if value
+        ]
+        chance = getattr(s, "win_probability", None)
+        if chance:
+            levels.append(f"{chance:.0f}% chance")
+        if levels:
+            line += " — " + ", ".join(levels)
+        sentiment = _sentiment_head(s.id)
+        if sentiment:
+            line += f"; sentiment {sentiment}"
+        lines.append(line)
+    if len(others) > _HISTORY_LINES:
+        lines.append(f"- {len(others) - _HISTORY_LINES} older not shown.")
+    return "\n".join(lines)
 
 
 # The order the full reports are given to the model that answers a question.

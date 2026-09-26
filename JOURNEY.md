@@ -51,6 +51,8 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-26 — a read now lists every other analysis of the ticker.** Each line gives the date, the verdict, the price at the time, the app's entry, stop and target, the chance, and the sentiment analyst's score, newest first, up to eight. Before, a read showed one analysis alone, so the agent could see that INTC's newest analysis said Hold but not that the five before it said Buy, or how the stop and the target moved between them. This is item 4 of the "Later" list in PLAN.md.
+
 **2026-09-26 — the agent can ask one question about an analysis, with the `ask_analyst` fetch.** A read shows each analyst's summary table. The full reports behind it run to about 20,000 characters, and the agent never saw them. `ask_analyst` sends the question and every stored report of that analysis to the quick-think model, which is told to answer only from that text and to say so when the text does not hold the answer. The answer is a new kind of fetch result in the record. The tool-channel rule that lists the fetches now names it, and the rule about reading adds one sentence that says when to use it. This is step 3 of PLAN.md.
 
 **2026-09-25 — a stop that the trade stream catches now wakes the agent and reaches its prompt.** The stream settles a fill within a second and then posted it to Discord only. A settled order is no longer pending, so the watchdog's own settle found nothing, and the agent got no `stop_fill` alert and no wake. It learned of the sale at its next own wakeup. A limit buy that filled was missed the same way. Only the deployment that holds the stream was affected; the other settles on the 15-minute poll, which always announced both.
