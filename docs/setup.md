@@ -12,6 +12,7 @@ Everything the app needs, and what happens when you skip each one.
 | [Discord webhook](#discord) | No | No notifications. The site is identical |
 | [FRED](#fred) | No | The news analyst infers rates from headlines, and says so in its own report |
 | [Reddit](#reddit) | No | Sentiment comes from a public feed instead. This is the normal path |
+| [More news, and grades](#more-news-and-grades) | No | The analysts read Yahoo, Google News and 8-K filings, with no grade on each item |
 | [An LLM](#the-model) | **Yes** | Nothing analyses anything |
 
 ## Webull
@@ -39,6 +40,23 @@ WEBULL_ACCOUNT_ID=DE00000000
 **`WEBULL_ACCOUNT_ID` names the one account this deployment owns, and it has no default.** Leave it empty and the app places no order at all. That is deliberate. The checks above narrow the sandbox's accounts to one, and they narrow to the *same* one for every deployment applying the same rule — so two containers would trade a single book, and afterwards nothing could say which of them placed an order. It takes either the account number or the internal account id, and matches whichever you give it.
 
 Quotes need a stock-quotes market-data subscription on the account. Without it, or after any failure, prices fall back to yfinance automatically.
+
+## More news, and grades
+
+The news analyst and the sentiment analyst read Yahoo Finance's headlines, then Google News and the company's SEC 8-K filings. Neither needs a key.
+
+**Finnhub** adds its company news, which it tags with the ticker. Get a free key at [finnhub.io](https://finnhub.io/).
+
+**laya** grades each news item, StockTwits post and Reddit post: the chance that it mentions the company, and a tone from -1 (bearish) to +1 (bullish). [laya](https://github.com/NandhaKishorM/laya) is a small classifier that runs on a CPU in its own container, `laya-serve`. Point the app at it with `LAYA_URL`.
+
+```
+FINNHUB_API_KEY=...
+LAYA_URL=http://host.docker.internal:8300
+LAYA_API_KEY=...        # only when laya-serve requires a bearer token
+LAYA_DROP_BELOW=        # leave empty; see below
+```
+
+**A grade is an annotation.** Nothing is dropped while `LAYA_DROP_BELOW` is empty. Set it to a number between 0 and 1 to drop the items whose mention score is lower. Read the grades on your own items before you do: laya is a general classifier, not one trained on market news.
 
 ## Discord
 

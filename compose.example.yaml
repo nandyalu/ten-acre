@@ -113,6 +113,16 @@ services:
       # Free from fred.stlouisfed.org. Without it the news analyst infers
       # rates and the yield curve from headlines, and says so in its report.
       - FRED_API_KEY=${FRED_API_KEY:-}
+      # Free from finnhub.io. Adds Finnhub's company news to Yahoo, Google
+      # News and 8-K filings, which need no key.
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
+      # A laya-serve container that grades each news item and post, for
+      # example http://host.docker.internal:8300. Unset means no grades.
+      # LAYA_DROP_BELOW stays empty until you have read the grades; see
+      # docs/setup.md.
+      - LAYA_URL=${LAYA_URL:-}
+      - LAYA_API_KEY=${LAYA_API_KEY:-}
+      - LAYA_DROP_BELOW=${LAYA_DROP_BELOW:-}
       # A self-hosted trawl container, for example
       # http://host.docker.internal:8191. The sentiment analyst then reads
       # Reddit's search page through trawl's browser, where the RSS feed
