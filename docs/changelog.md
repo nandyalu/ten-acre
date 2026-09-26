@@ -9,6 +9,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 ## 2026-09-26
 
 - **Scripts** — `python -m backend.scripts.fetch_audit` counts each fetch the agent calls on the tool channel, and the passes whose reasoning carries a figure that only the fetch's result held. This is step 1 of PLAN.md.
+- **Scripts** — `python -m backend.scripts.prompt_cost` shows where the prompt tokens of a tool-channel pass go: each section of the prompt, each fetch result, and each pass's reported total. It trims nothing.
 - **Analysis** — `tradingagents/dataflows/laya.py` is a client for a laya sidecar at `LAYA_URL`. Nothing depends on it: when the variable is unset, or the sidecar fails, the caller continues with no grade.
 
 ## 2026-09-25
