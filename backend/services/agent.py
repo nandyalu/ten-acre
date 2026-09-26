@@ -2590,7 +2590,10 @@ _FIXED_RULES = [
         True:
         "- To read one, call read with a ticker, and a date like 2026-09-08 if you "
         "want a particular analysis rather than the newest. Comparing the one you "
-        "bought on against today's is how you tell whether a thesis still holds.",
+        "bought on against today's is how you tell whether a thesis still holds. "
+        "A read shows each analyst's summary, not the full report behind it; to "
+        "ask about what a summary leaves out, call ask_analyst with the ticker and "
+        "one question.",
     },
     {
         False:
@@ -2601,8 +2604,8 @@ _FIXED_RULES = [
         "alone is the thing this is trying to avoid. Reading is not acting, "
         "though: a pass that only read is an idle pass, and the budget runs out.",
         True:
-        "- Fetch what you need before deciding — read, candidates, fundamentals, "
-        "watchlist and track_record — several in one round when you know what you "
+        "- Fetch what you need before deciding — read, ask_analyst, candidates, "
+        "fundamentals, watchlist and track_record — several in one round when you know what you "
         f"want. The ceiling is {_MAX_FETCHES_PER_PASS} fetches across "
         f"{_MAX_FETCH_ROUNDS} rounds, more than a pass needs; it exists to stop a "
         "loop, not to be saved, and you are told when a round is your last. This "
@@ -2978,6 +2981,7 @@ class ToolContext:
         self.day_ranges = day_ranges or {}
         self._handlers = {
             "read": self._read,
+            "ask_analyst": self._ask_analyst,
             "candidates": self._candidates,
             "fundamentals": self._fundamentals,
             "watchlist": self._watchlist,
@@ -2996,6 +3000,9 @@ class ToolContext:
 
     def _read(self, args: dict) -> str:
         return analysis_reader.read(args.get("ticker"), args.get("date"))
+
+    def _ask_analyst(self, args: dict) -> str:
+        return analysis_reader.ask(args.get("ticker"), args.get("question"), args.get("date"))
 
     def _candidates(self, args: dict) -> str:
         if self.budget.get("menu") is None:

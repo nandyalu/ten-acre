@@ -163,6 +163,8 @@ Use the paraphrase test from the `probe-the-prompt` skill for the third count. A
 
 ## Step 3: the `ask_analyst` fetch
 
+**Built 2026-09-26**, with a JOURNEY.md entry. **Not probed yet**: the probe below needs a container with the Gemini key, and it waits for the maintainer.
+
 **What it is.** A fetch beside `read`. The agent sends one question about a stored analysis. The app answers from the full reports, which the agent never sees in full, and the exchange is recorded like any other fetch.
 
 **What keeps it a tool.** The answer comes only from the stored reports, and the answer says so when the reports do not hold it. `analysis.answer_question` already has that instruction in its system prompt. Keep it. A grounded answer over data the agent cannot fit in its prompt is retrieval. An ungrounded one is a second opinion, which is the thing rejected below.

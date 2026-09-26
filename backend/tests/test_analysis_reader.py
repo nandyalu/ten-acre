@@ -194,3 +194,34 @@ def test_a_report_with_no_table_is_skipped_not_shown_blank(monkeypatch):
 
     assert "Market —" not in reply
     assert "News — ### Summary" in reply
+
+
+def test_ask_answers_from_the_full_reports_of_the_named_analysis(stored, monkeypatch):
+    """ask_analyst hands the model every stored report in full, not the
+    summary tables a read shows, and names the analysis it asked about."""
+    monkeypatch.setattr(
+        analysis_reader.db, "get_signal_reports",
+        lambda signal_id: {"news_report": f"full news of signal {signal_id}", "market_report": ""},
+    )
+    seen = {}
+
+    def answer(context, question):
+        seen["context"], seen["question"] = context, question
+        return "The news report names a foundry contract."
+
+    reply = analysis_reader.ask("intc", "Why is it Hold?", on="2026-09-08", answer=answer)
+    assert "full news of signal 31" in seen["context"]
+    assert "Market analyst" not in seen["context"]  # an empty report is left out
+    assert seen["question"] == "Why is it Hold?"
+    assert reply.startswith("You asked about INTC's analysis of 2026-09-08: Why is it Hold?")
+    assert reply.endswith("names a foundry contract.")
+
+
+def test_ask_with_no_question_or_no_analysis_says_why_and_asks_nothing(stored):
+    def answer(context, question):
+        raise AssertionError("the model must not be asked")
+
+    assert "gave no question" in analysis_reader.ask("INTC", " ", answer=answer)
+    assert "no analysis of NVDA" in analysis_reader.ask("NVDA", "Why?", answer=answer)
+    assert "named no ticker" in analysis_reader.ask("", "Why?", answer=answer)
+

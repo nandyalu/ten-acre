@@ -171,6 +171,33 @@ def _matching(ticker: str, on: datetime.date | None) -> list[Signal]:
     return [s for s in found if str(s.signal_date)[:10] == on.isoformat()]
 
 
+def _resolve(ticker: str, on, verb: str) -> tuple[Signal | None, list[Signal], str]:
+    """The analysis a ticker and an optional date name, newest first.
+
+    Returns the signal, every match, and "". When nothing matches, returns
+    None, [] and the reply that says why, so a caller never waits for an
+    answer that does not come.
+    """
+    if not ticker:
+        return None, [], f"You asked to {verb} an analysis but named no ticker."
+    wanted = _parse_date(on)
+    if on and wanted is None:
+        return None, [], (
+            f"You asked for {ticker}'s analysis of {str(on)!r}, which is not a date "
+            "I can read. Use YYYY-MM-DD, or name no date for the newest."
+        )
+    found = _matching(ticker, wanted)
+    if not found:
+        when = f" from {wanted.isoformat()}" if wanted else ""
+        return None, [], (
+            f"There is no analysis of {ticker}{when} on record. "
+            'Use side "research" to commission one.'
+        )
+    # Newest first out of the query, so the head is the newest of the day when
+    # a date was given and the newest overall when it was not.
+    return found[0], found, ""
+
+
 def read(ticker: str, on=None) -> str:
     """The rationale of one analysis, as a block for the next prompt.
 
@@ -179,27 +206,9 @@ def read(ticker: str, on=None) -> str:
     never comes, and it has already spent its one extra turn asking.
     """
     ticker = str(ticker or "").upper().strip()
-    if not ticker:
-        return "You asked to read an analysis but named no ticker."
-
-    wanted = _parse_date(on)
-    if on and wanted is None:
-        return (
-            f"You asked for {ticker}'s analysis of {str(on)!r}, which is not a date "
-            "I can read. Use YYYY-MM-DD, or name no date for the newest."
-        )
-
-    found = _matching(ticker, wanted)
-    if not found:
-        when = f" from {wanted.isoformat()}" if wanted else ""
-        return (
-            f"There is no analysis of {ticker}{when} on record. "
-            'Use side "research" to commission one.'
-        )
-
-    # Newest first out of the query, so the head is the newest of the day when
-    # a date was given and the newest overall when it was not.
-    signal = found[0]
+    signal, found, refusal = _resolve(ticker, on, "read")
+    if signal is None:
+        return refusal
     stamp = str(signal.signal_date)[:10]
     # Same-day siblings only. With no date given, `found` holds every analysis
     # of the ticker, and counting those announced "3 other analyses that day"
@@ -222,6 +231,60 @@ def read(ticker: str, on=None) -> str:
     else:
         reply = f"{header}:\n{_levels_line(signal)}{body}"
     return f"{reply}\n\n---\n\n{snapshot}" if snapshot else reply
+
+
+# The order the full reports are given to the model that answers a question.
+# The names are the analysts' own, so an answer can say which report it used.
+_REPORTS = (
+    ("market_report", "Market analyst's report"),
+    ("sentiment_report", "Sentiment analyst's report"),
+    ("news_report", "News analyst's report"),
+    ("fundamentals_report", "Fundamentals analyst's report"),
+    ("investment_plan", "Investment plan"),
+    ("trader_investment_plan", "Trader's plan"),
+)
+
+
+def ask(ticker: str, question: str, on=None, answer=None) -> str:
+    """Answer one question about an analysis from its full stored reports.
+
+    ``read`` gives the agent each analyst's summary table. The four full
+    reports behind it run to about 20,000 characters, and the agent never sees
+    them. This lets it ask about them instead.
+
+    **The answer comes only from the stored reports.** ``analysis.answer_question``
+    tells the model to use only the text it is given and to say so when the
+    text does not hold the answer. That is what keeps this a tool. An answer
+    from the model's own knowledge would be a second opinion, and a second
+    opinion that can change a decision is a second decision-maker in the record.
+
+    ``answer`` is the function that asks the model, for a test.
+    """
+    ticker = str(ticker or "").upper().strip()
+    question = str(question or "").strip()
+    if not question:
+        return "You asked about an analysis but gave no question."
+    signal, _, refusal = _resolve(ticker, on, "ask about")
+    if signal is None:
+        return refusal
+
+    reports = db.get_signal_reports(signal.id)
+    parts = [
+        f"{ticker}'s analysis of {str(signal.signal_date)[:10]}, decision: {signal.decision}",
+        f"## Rationale\n\n{(signal.rationale or '').strip()}",
+    ]
+    parts += [
+        f"## {title}\n\n{reports[key].strip()}"
+        for key, title in _REPORTS
+        if (reports.get(key) or "").strip()
+    ]
+    if answer is None:
+        from backend.services.analysis import answer_question as answer
+    reply = answer("\n\n".join(parts), question)
+    return (
+        f"You asked about {ticker}'s analysis of {str(signal.signal_date)[:10]}: "
+        f"{question}\n\n{reply.strip()}"
+    )
 
 
 def _levels_line(signal) -> str:

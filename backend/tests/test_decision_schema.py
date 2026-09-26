@@ -69,12 +69,17 @@ def test_the_declaration_production_sends_is_the_tool_channel_one():
     }
 
 
-def test_the_fetches_are_the_five_the_rules_name():
-    assert decision_schema.FETCH_NAMES == ["read", "candidates", "fundamentals", "watchlist", "track_record"]
+def test_the_fetches_are_the_six_the_rules_name():
+    assert decision_schema.FETCH_NAMES == [
+        "read", "ask_analyst", "candidates", "fundamentals", "watchlist", "track_record"
+    ]
+    rule = next(r[True] for r in agent._FIXED_RULES if isinstance(r, dict) and "Fetch what you need" in r[True])
+    assert all(name in rule for name in decision_schema.FETCH_NAMES)
     by_name = {f["name"]: f for f in decision_schema.FETCHES}
     assert by_name["read"]["parameters_json_schema"]["required"] == ["ticker"]
     assert "date" in by_name["read"]["parameters_json_schema"]["properties"]
     assert by_name["fundamentals"]["parameters_json_schema"]["required"] == ["ticker"]
+    assert by_name["ask_analyst"]["parameters_json_schema"]["required"] == ["ticker", "question"]
     # A fetch with nothing to say declares no parameters at all: the API
     # refuses an object schema with no properties.
     for name in ("candidates", "watchlist", "track_record"):

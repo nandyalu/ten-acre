@@ -263,6 +263,30 @@ FETCHES: list[dict] = [
         },
     },
     {
+        "name": "ask_analyst",
+        "description": (
+            "One question about an analysis on record, answered from its full "
+            "reports: the four analysts' complete reports and both plans, of which "
+            "read shows only the summaries. The answer uses only those reports and "
+            "says so when they do not hold it. Free. The newest unless you give a date."
+        ),
+        "parameters_json_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": _TICKER,
+                "question": {
+                    "type": "string",
+                    "description": "One question, in your own words.",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD, for a particular analysis rather than the newest.",
+                },
+            },
+            "required": ["ticker", "question"],
+        },
+    },
+    {
         "name": "candidates",
         "description": (
             "Screened names you may research that you do not track yet: liquid, "
