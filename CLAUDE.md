@@ -21,6 +21,8 @@ The prompt may lie to the model. The code MUST never lie to itself. The reasonin
 3. **The target account is resolved by `account_class == INDIVIDUAL_CASH`**, never hardcoded.
 4. **`WEBULL_ACCOUNT_ID` names the one account this deployment owns.** An unset or empty value stops order flow. NEVER add a fallback.
 
+**With `BROKER=alpaca` the same four hold in Alpaca's terms**, in `backend/services/alpaca_broker.py`. The module knows only the paper host, and `_assert_sandbox()` checks the host before every order. The account number MUST carry the `PA` prefix. The class is resolved from the account's own margin multiplier, and shorting MUST be off. `ALPACA_ACCOUNT_NUMBER` names the one account, and an unset value stops order flow. The reasoning is in `.claude/rules/alpaca.md`.
+
 ## Invariants for every change
 
 - **NEVER add a manual control.** No slash command, and no button that adds a ticker, starts an analysis or places a trade. To correct something, write an entry in `JOURNEY.md` that says what and why, then make the change by hand. `POST /api/agent/exits/{ticker}` is the one write endpoint left, and it decides nothing.
@@ -32,7 +34,7 @@ The prompt may lie to the model. The code MUST never lie to itself. The reasonin
 
 ## Permanent non-goals
 
-- **Real order execution.** Every order goes to the Webull sandbox, and the agent refuses to run without `WEBULL_SANDBOX=1`.
+- **Real order execution.** Every order goes to the Webull sandbox or to Alpaca paper. On Webull the agent refuses to run without `WEBULL_SANDBOX=1`, and the Alpaca module knows no host but paper.
 - **Manual controls of any kind.**
 - **Shorting.** A sell closes a long. `sandbox_broker` enforces it, because a margin account shorts where a cash account refuses.
 - **Intraday LLM analysis.** An analysis takes about eighteen minutes on the local model, so alerts stay rule-based.
@@ -61,3 +63,4 @@ A rule file loads when Claude reads a file that matches its `paths:` list, so a 
 | `tradingagents-submodule.md` | The fork, its remotes, the cherry-picks, how to move the pin |
 | `market-data.md` | The bar cache, tickers that stop trading, Reddit |
 | `webull.md` | The Webull OpenAPI, combo orders, order history, the four guards in full |
+| `alpaca.md` | The Alpaca paper broker, how it hides its differences from Webull, what is proved and what is not |

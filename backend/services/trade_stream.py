@@ -24,7 +24,7 @@ import os
 import sys
 import threading
 
-from backend.services import quotes, sandbox_broker
+from backend.services import broker, quotes, sandbox_broker
 
 log = logging.getLogger("ten-acre.trade_stream")
 
@@ -179,6 +179,10 @@ def start() -> bool:
     global _thread
     if is_running():
         return True
+    if broker.name() != "webull":
+        # Webull's gRPC stream only. Another broker settles on the 15-minute poll.
+        log.info("BROKER is %s — the Webull trade event stream is not started", broker.name())
+        return False
     if not quotes.is_sandbox():
         log.info("Not in sandbox — trade event stream not started")
         return False

@@ -27,17 +27,17 @@ def broker(monkeypatch):
             {"kind": "target", "price": 12.37, "quantity": 4, "client_order_id": "target-x"}],
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda ticker, side, qty: steps.append(("sell", ticker, side, qty))
         or {"client_order_id": "x", "placed_at": None},
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda ticker, qty, stop, target: steps.append(("restore", ticker, stop, target)) or [],
     )
     # The cancels report cancelled on the first check, so _await_cancels
     # returns at once and no test here pays _CANCEL_WAIT_SECONDS.
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: {"status": "CANCELLED"})
+    monkeypatch.setattr(agent.broker, "get_order_detail", lambda _id: {"status": "CANCELLED"})
     return steps
 
 
@@ -63,7 +63,7 @@ def test_a_failed_sell_puts_the_exits_back(broker, monkeypatch):
     """Between the cancel and the fill the shares have nothing under them.
     Leaving them bare would replace one defect with a worse one."""
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("broker said no")),
     )
 
@@ -77,7 +77,7 @@ def test_the_restore_uses_the_levels_that_were_resting(broker, monkeypatch):
     """Not the signal's levels. The agent moves its stops and targets during the
     day — it moved AVGO's twice on 2026-09-04 — so the signal is stale."""
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no")),
     )
 
@@ -93,7 +93,7 @@ def test_a_sell_with_nothing_resting_needs_no_restore(broker, monkeypatch):
     restore would invent an exit nobody chose."""
     monkeypatch.setattr(agent, "_cancel_resting_exits", lambda ticker: [])
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no")),
     )
 
@@ -107,7 +107,7 @@ def test_a_buy_is_untouched_by_any_of_this(broker, monkeypatch):
     """A buy has no position to clear. Cancelling on one would remove the exits
     of a holding the agent is adding to."""
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a, **k: {"client_order_id": "b", "placed_at": None, "exits": []},
     )
 
@@ -134,9 +134,9 @@ def test_arming_a_fresh_exit_cancels_whatever_is_already_resting_first(monkeypat
         lambda ticker: steps.append(("cancel", ticker))
         or [{"kind": "stop", "price": 9.68, "quantity": 4, "client_order_id": "stale-stop"}],
     )
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: {"status": "CANCELLED"})
+    monkeypatch.setattr(agent.broker, "get_order_detail", lambda _id: {"status": "CANCELLED"})
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda ticker, qty, stop, target: steps.append(("arm", ticker, stop, target)) or [],
     )
 
@@ -151,12 +151,12 @@ def test_arming_on_a_genuinely_new_position_does_not_wait(monkeypatch):
     monkeypatch.setattr(agent, "get_current_price", lambda t: 98.41)
     monkeypatch.setattr(agent, "_cancel_resting_exits", lambda ticker: [])
     monkeypatch.setattr(
-        agent.sandbox_broker, "get_order_detail",
+        agent.broker, "get_order_detail",
         lambda _id: pytest.fail("nothing was cancelled — there is nothing to wait for"),
     )
     armed = []
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda ticker, qty, stop, target: armed.append((ticker, stop, target)) or [],
     )
 
@@ -182,13 +182,13 @@ def test_the_sell_waits_for_the_cancel_to_confirm(monkeypatch):
         lambda ticker: [{"kind": "stop", "price": 9.68, "quantity": 4, "client_order_id": "stop-x"}],
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda ticker, side, qty: steps.append("sell") or {"client_order_id": "x", "placed_at": None},
     )
     monkeypatch.setattr(agent, "_CANCEL_POLL_SECONDS", 0)
     statuses = iter(["SUBMITTED", "SUBMITTED", "CANCELLED"])
     monkeypatch.setattr(
-        agent.sandbox_broker, "get_order_detail",
+        agent.broker, "get_order_detail",
         lambda _id: steps.append("check") or {"status": next(statuses)},
     )
 
@@ -208,10 +208,10 @@ def test_a_cancel_that_never_confirms_still_lets_the_sell_go_out(monkeypatch):
         lambda ticker: [{"kind": "stop", "price": 9.68, "quantity": 4, "client_order_id": "stop-x"}],
     )
     monkeypatch.setattr(agent, "_CANCEL_WAIT_SECONDS", 0)
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: {"status": "SUBMITTED"})
+    monkeypatch.setattr(agent.broker, "get_order_detail", lambda _id: {"status": "SUBMITTED"})
     placed = []
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda ticker, side, qty: placed.append(ticker) or {"client_order_id": "x", "placed_at": None},
     )
 
@@ -224,7 +224,7 @@ def test_a_limit_sell_still_clears_its_exits_first(broker, monkeypatch):
     """The order type asked for doesn't change what the broker refuses — any
     new sell is blocked while something rests on the position."""
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_limit_order",
+        agent.broker, "place_limit_order",
         lambda ticker, side, qty, limit_price, tif: broker.append(
             ("limit_sell", ticker, side, qty, limit_price, tif)
         ) or {"client_order_id": "x", "placed_at": None},
@@ -247,11 +247,11 @@ def test_a_sell_with_nothing_to_cancel_does_not_ask_the_broker_anything(monkeypa
     wasted round trip on every plain-market-order sell."""
     monkeypatch.setattr(agent, "_cancel_resting_exits", lambda ticker: [])
     monkeypatch.setattr(
-        agent.sandbox_broker, "get_order_detail",
+        agent.broker, "get_order_detail",
         lambda _id: pytest.fail("nothing was cancelled — there is nothing to check"),
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda ticker, side, qty: {"client_order_id": "x", "placed_at": None},
     )
 

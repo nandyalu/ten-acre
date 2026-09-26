@@ -24,7 +24,7 @@ import os
 from dataclasses import dataclass
 
 from backend.database import db
-from backend.services import agent, analysis, quotes, sandbox_broker
+from backend.services import agent, analysis, broker, quotes, sandbox_broker
 
 log = logging.getLogger("ten-acre.setup_check")
 
@@ -86,6 +86,27 @@ def _setting(key: str) -> str | None:
         return None
 
 
+def _alpaca() -> Requirement:
+    ready = _configured("ALPACA_API_KEY", "ALPACA_API_SECRET")
+    return Requirement(
+        key="alpaca_credentials",
+        label="Alpaca paper API keys",
+        ready=ready,
+        blocking=True,
+        detail=(
+            "Connected." if ready else
+            "Without these the app cannot place an order. Sign up at alpaca.markets, "
+            "open the paper account, and generate its API keys. Prices come from "
+            "yfinance when no Webull key is set."
+        ),
+        fix="" if ready else "ALPACA_API_KEY=your-paper-key\nALPACA_API_SECRET=your-paper-secret",
+    )
+
+
+def _broker_credentials() -> Requirement:
+    return _alpaca() if broker.name() == "alpaca" else _webull()
+
+
 def _webull() -> Requirement:
     ready = _configured("WEBULL_APP_KEY", "WEBULL_APP_SECRET")
     return Requirement(
@@ -103,19 +124,23 @@ def _webull() -> Requirement:
 
 
 def _sandbox() -> Requirement:
-    ready = quotes.is_sandbox()
+    ready = broker.is_paper()
+    alpaca = broker.name() == "alpaca"
     return Requirement(
         key="sandbox",
         label="Simulated trading",
         ready=ready,
         blocking=True,
         detail=(
-            "Every order goes to Webull's sandbox." if ready else
+            ("Every order goes to Alpaca's paper host." if alpaca else "Every order goes to Webull's sandbox.")
+            if ready else
             "The agent refuses to place any order without this. It is the guarantee "
             "that no real money is reachable, and it is checked in code before every "
             "single order rather than trusted from this file."
         ),
-        fix="" if ready else "WEBULL_SANDBOX=1",
+        # Alpaca's module knows only the paper host, so for it this fails only
+        # when the keys are missing, which the credentials row already says.
+        fix="" if ready or alpaca else "WEBULL_SANDBOX=1",
     )
 
 
@@ -136,8 +161,8 @@ def _account() -> Requirement:
     """
     named = True
     try:
-        sandbox_broker.configured_account()
-    except sandbox_broker.NoAccountConfiguredError:
+        broker.configured_account()
+    except broker.no_account_errors():
         named = False
 
     resolved = False
@@ -145,7 +170,7 @@ def _account() -> Requirement:
         try:
             # The cached value when there is one, so the page costs a Webull
             # call once rather than on every load.
-            resolved = bool(sandbox_broker.get_paper_account_id())
+            resolved = bool(broker.get_paper_account_id())
         except Exception:
             log.warning("Setup check could not resolve the configured account", exc_info=True)
 
@@ -160,8 +185,8 @@ def _account() -> Requirement:
             "Named, but the broker did not return it. The account number, the account "
             "class, or the credentials above do not match a simulated account that "
             "exists — so the agent runs and places nothing. Sandbox account numbers "
-            "do change; check the list at Webull rather than a number written down "
-            "earlier."
+            "do change; check the list at the broker rather than a number written "
+            "down earlier."
         )
     else:
         detail = "Named, and the broker returned it."
@@ -175,7 +200,10 @@ def _account() -> Requirement:
         # A shaped placeholder, not a real account. The number this deployment
         # owns is the one thing on this page a reader must supply themselves,
         # and an example that looks copyable invites pasting it.
-        fix="" if resolved else "WEBULL_ACCOUNT_ID=DEL00000000",
+        fix="" if resolved else (
+            "ALPACA_ACCOUNT_NUMBER=PA0000000000" if broker.name() == "alpaca"
+            else "WEBULL_ACCOUNT_ID=DEL00000000"
+        ),
     )
 
 
@@ -297,7 +325,7 @@ def _fred() -> Requirement:
 
 def requirements() -> list[Requirement]:
     """Every check, blocking ones first, in the order a person would fix them."""
-    return [_webull(), _sandbox(), _account(), _llm(), _agent_switched_on(), _discord(), _fred()]
+    return [_broker_credentials(), _sandbox(), _account(), _llm(), _agent_switched_on(), _discord(), _fred()]
 
 
 def status() -> dict:

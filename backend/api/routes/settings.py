@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.database import db
 from backend.services import (
-    agent, agent_book, analysis, experiment, publish, quotes, research, watchdog,
+    agent, agent_book, analysis, broker, experiment, publish, quotes, research, watchdog,
 )
 from backend.api.schemas import SettingsOut, SettingsPatchIn
 
@@ -89,10 +89,10 @@ def update_settings(payload: SettingsPatchIn):
         # Switching the agent on outside the sandbox would arm something that
         # refuses every order anyway; saying so beats an agent that silently
         # never trades.
-        if payload.agent_enabled and not quotes.is_sandbox():
+        if payload.agent_enabled and not broker.is_paper():
             raise HTTPException(
                 status_code=400,
-                detail="Webull is not in sandbox mode — the agent would refuse every order.",
+                detail="The broker is not in paper mode — the agent would refuse every order.",
             )
         agent.set_enabled(payload.agent_enabled)
 

@@ -29,7 +29,7 @@ from backend.api.schemas import (
     UnprotectedPositionOut,
 )
 from backend.database import db
-from backend.services import agent, agent_book, agent_performance, journey, quotes, ticker_book
+from backend.services import agent, agent_book, agent_performance, broker, journey, quotes, ticker_book
 from backend.services.positions import get_shown_price
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -42,7 +42,7 @@ def get_book():
     book = agent_book.build_book(price_lookup=get_shown_price)
     return AgentBookOut(
         enabled=agent.is_enabled(),
-        sandbox=quotes.is_sandbox(),
+        sandbox=broker.is_paper(),
         budget=book.budget,
         cash=book.cash,
         invested=book.invested,

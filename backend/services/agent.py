@@ -39,7 +39,7 @@ from backend.services import (
     llm_throttle,
     llm_usage,
     market_clock,
-    quotes, research, sandbox_broker, watchdog,
+    broker, quotes, research, watchdog,
 )
 from backend.services import decision_schema, fundamentals, llm_gemini
 from backend.services.positions import get_current_price
@@ -3090,7 +3090,7 @@ def _unsettled_cash() -> float:
     balance and talk the agent out of a purchase it could have made.
     """
     try:
-        balance = sandbox_broker.get_balance() or {}
+        balance = broker.get_balance() or {}
         assets = balance.get("account_currency_assets") or []
         if not assets:
             return 0.0
@@ -4215,7 +4215,7 @@ def _place(
         return _sell_and_restore_on_failure(order, run=run)
 
     if str(order.get("order_type") or "").lower().strip() == "limit":
-        return sandbox_broker.place_limit_order(
+        return broker.place_limit_order(
             ticker, "BUY", order["quantity"], float(order["limit_price"]),
             str(order.get("time_in_force") or "day").upper(),
         )
@@ -4226,7 +4226,7 @@ def _place(
     refused_because = None
     if price and (stop or target):
         try:
-            return sandbox_broker.place_bracket_order(
+            return broker.place_bracket_order(
                 ticker, order["quantity"], price, stop, target
             )
         except Exception as exc:
@@ -4241,7 +4241,7 @@ def _place(
     # instead, and NVDA's analysis was older than the table's window: the
     # bracket had a 2×ATR stop, the broker refused it for unsettled cash, and
     # the fallback armed nothing.
-    result = sandbox_broker.place_market_order(ticker, "BUY", order["quantity"])
+    result = broker.place_market_order(ticker, "BUY", order["quantity"])
     return {**result, "levels": (stop, target), "bracket_refused": refused_because}
 
 
@@ -4361,7 +4361,7 @@ def _cancel_resting_exits(ticker: str) -> list[dict]:
     for trade in db.get_pending_agent_trades():
         if not trade.is_stop or trade.ticker != ticker:
             continue
-        if sandbox_broker.cancel_order(trade.client_order_id):
+        if broker.cancel_order(trade.client_order_id):
             db.settle_agent_trade(trade.client_order_id, status="rejected")
             cancelled.append({
                 "kind": trade.exit_kind,
@@ -4404,7 +4404,7 @@ def _await_cancels(client_order_ids: list[str]) -> None:
     deadline = time.monotonic() + _CANCEL_WAIT_SECONDS
     while pending and time.monotonic() < deadline:
         for client_order_id in list(pending):
-            detail = sandbox_broker.get_order_detail(client_order_id)
+            detail = broker.get_order_detail(client_order_id)
             status = str((detail or {}).get("status") or "").upper()
             if status in ("CANCELLED", "REJECTED", "FAILED", "EXPIRED"):
                 pending.discard(client_order_id)
@@ -4469,12 +4469,12 @@ def _sell_and_restore_on_failure(order: dict, run: "AgentRun | None" = None) -> 
     _await_cancels([c.get("client_order_id") for c in cancelled])
     try:
         if str(order.get("order_type") or "").lower().strip() == "limit":
-            return sandbox_broker.place_limit_order(
+            return broker.place_limit_order(
                 order["ticker"], order["side"].upper(), order["quantity"],
                 float(order["limit_price"]),
                 str(order.get("time_in_force") or "day").upper(),
             )
-        return sandbox_broker.place_market_order(
+        return broker.place_market_order(
             order["ticker"], order["side"].upper(), order["quantity"]
         )
     except Exception:
@@ -4495,7 +4495,7 @@ def _restore_resting_exits(
     target = next((c["price"] for c in cancelled if c["kind"] == "target"), None)
     quantity = max(c["quantity"] for c in cancelled)
     try:
-        legs = sandbox_broker.place_exit_bracket(ticker, quantity, stop, target)
+        legs = broker.place_exit_bracket(ticker, quantity, stop, target)
     except Exception as exc:
         log.exception("Could not restore the exits on %s after a failed sell", ticker)
         _record_unguarded(
@@ -4590,7 +4590,7 @@ def _await_fill(client_order_id: str) -> bool:
     """
     deadline = time.monotonic() + _FILL_WAIT_SECONDS
     while time.monotonic() < deadline:
-        detail = sandbox_broker.get_order_detail(client_order_id)
+        detail = broker.get_order_detail(client_order_id)
         status = str((detail or {}).get("status") or "").upper()
         if status in ("FILLED", "PARTIAL_FILLED"):
             return True
@@ -4644,7 +4644,7 @@ def _arm_exits(
         return f"{order['ticker']}: {why}"
     _clear_before_arming(order["ticker"])
     try:
-        legs = sandbox_broker.place_exit_bracket(
+        legs = broker.place_exit_bracket(
             order["ticker"], order["quantity"], stop_price, target_price
         )
     except Exception as exc:
@@ -4683,7 +4683,7 @@ def settle_pending() -> list[dict]:
     """
     settled: list[dict] = []
     for trade in db.get_pending_agent_trades():
-        detail = sandbox_broker.get_order_detail(trade.client_order_id)
+        detail = broker.get_order_detail(trade.client_order_id)
         if not detail:
             continue
         # Field names verified against a live sandbox fill: status, filled_price,
@@ -4919,7 +4919,7 @@ def _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, res
                 outcomes.append(f"{order['ticker']}: nothing pending to cancel.")
                 continue
             try:
-                cancelled_ok = sandbox_broker.cancel_order(pending_entry.client_order_id)
+                cancelled_ok = broker.cancel_order(pending_entry.client_order_id)
             except Exception as exc:
                 log.exception("Couldn't cancel the pending order on %s", order["ticker"])
                 run.failed.append((order, str(exc)))
@@ -5112,8 +5112,8 @@ def run_once(woke_because: str | None = None, should_stop=None) -> AgentRun:
     # Skipped passes are recorded too. Four days of "switched off" is part of
     # the story — a journey that showed only the days something happened would
     # credit the agent with patience it never had the chance to show.
-    if not quotes.is_sandbox():
-        return _skip("Webull is not in sandbox mode — refusing to trade.")
+    if not broker.is_paper():
+        return _skip("The broker is not in paper mode — refusing to trade.")
     if not is_enabled():
         return _skip("The trading agent is switched off.")
     # **A closed market is not a reason to skip the pass (2026-09-10).** There
@@ -5624,11 +5624,11 @@ def reset_book(pending_external_flatten: bool = False) -> ResetResult:
     still held shares, which is the one disagreement reconciliation cannot
     recover from.
     """
-    if not quotes.is_sandbox():
-        return ResetResult(refused="Webull is not in sandbox mode.")
+    if not broker.is_paper():
+        return ResetResult(refused="The broker is not in paper mode.")
 
     result = ResetResult()
-    held = sandbox_broker.get_positions()
+    held = broker.get_positions()
 
     if pending_external_flatten and held:
         # The account is going to be flattened from Webull's own site, so the
@@ -5669,14 +5669,14 @@ def reset_book(pending_external_flatten: bool = False) -> ResetResult:
         for ticker, quantity in sorted(held.items()):
             result.cancelled += len(_cancel_resting_exits(ticker))
             try:
-                sandbox_broker.place_market_order(ticker, "SELL", quantity)
+                broker.place_market_order(ticker, "SELL", quantity)
                 result.closed.append(f"{quantity:g} {ticker}")
             except Exception as exc:
                 log.exception("Couldn't close %s during reset", ticker)
                 result.refused = f"Couldn't close {ticker}: {exc}"
                 return result
 
-        still_held = sandbox_broker.get_positions()
+        still_held = broker.get_positions()
         if still_held is None or still_held:
             result.refused = (
                 f"Account still holds {still_held} — the sells may not have filled yet. "
@@ -5687,7 +5687,7 @@ def reset_book(pending_external_flatten: bool = False) -> ResetResult:
     # Nothing is held, so any exit still resting belongs to a position that no
     # longer exists — an order to sell shares the account does not have.
     for trade in db.get_pending_agent_trades():
-        if trade.is_stop and sandbox_broker.cancel_order(trade.client_order_id):
+        if trade.is_stop and broker.cancel_order(trade.client_order_id):
             result.cancelled += 1
 
     result.cleared = db.clear_agent_trades()
@@ -5718,8 +5718,8 @@ def arm_exits_now(ticker: str) -> dict:
     from backend.services import ticker_book
 
     ticker = ticker.upper().strip()
-    if not quotes.is_sandbox():
-        return {"ok": False, "message": "Webull is not in sandbox mode, so no order can be placed."}
+    if not broker.is_paper():
+        return {"ok": False, "message": "The broker is not in paper mode, so no order can be placed."}
 
     price = get_current_price(ticker)
     position = ticker_book.agent_position(ticker, price)
@@ -5837,7 +5837,7 @@ def _why_replace_failed(existing, exc: Exception) -> str:
     second failure here must not hide the first.
     """
     try:
-        detail = sandbox_broker.get_order_detail(existing.client_order_id) or {}
+        detail = broker.get_order_detail(existing.client_order_id) or {}
     except Exception:
         log.exception("Couldn't read %s after a failed replace", existing.client_order_id)
         return str(exc)
@@ -5874,8 +5874,8 @@ def adjust_exits(
     instead, so "set my exits to these" works whether or not there are any.
     """
     ticker = ticker.upper().strip()
-    if not quotes.is_sandbox():
-        return {"ok": False, "message": "Webull is not in sandbox mode, so no order can be placed."}
+    if not broker.is_paper():
+        return {"ok": False, "message": "The broker is not in paper mode, so no order can be placed."}
 
     price = get_current_price(ticker)
     refused = level_refusals(stop, target, price)
@@ -5905,7 +5905,7 @@ def adjust_exits(
             if existing.limit_price is not None and abs(existing.limit_price - level) < 0.005:
                 continue  # already there; a replace would be a round trip for nothing
             try:
-                sandbox_broker.replace_exit(existing.client_order_id, kind, level)
+                broker.replace_exit(existing.client_order_id, kind, level)
             except Exception as exc:
                 log.exception("Couldn't move the %s on %s", kind, ticker)
                 failed.append(

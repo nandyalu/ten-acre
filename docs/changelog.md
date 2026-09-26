@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-26
 
+- **Broker** — A second broker, Alpaca paper, beside the Webull sandbox. `BROKER=alpaca` selects it, and `webull` stays the default. Alpaca paper keys need only an email address, so a person without a funded Webull account can run the experiment. `backend/services/broker.py` picks the module, and `alpaca_broker.py` applies Webull's four guards in Alpaca's terms. See [setup](setup.md#alpaca). Fills and an OCO on a real position are not proved yet: run `python -m backend.scripts.alpaca_paper_check` during a session first.
 - **Scripts** — `python -m backend.scripts.fetch_audit` counts each fetch the agent calls on the tool channel, and the passes whose reasoning carries a figure that only the fetch's result held. This is step 1 of PLAN.md.
 - **Scripts** — `python -m backend.scripts.prompt_cost` shows where the prompt tokens of a tool-channel pass go: each section of the prompt, each fetch result, and each pass's reported total. It trims nothing.
 - **Analysis** — `tradingagents/dataflows/laya.py` is a client for a laya sidecar at `LAYA_URL`. Nothing depends on it: when the variable is unset, or the sidecar fails, the caller continues with no grade.

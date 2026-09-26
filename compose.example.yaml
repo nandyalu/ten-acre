@@ -30,20 +30,32 @@ services:
       # and the documentation under /docs.
       - "${HOST_PORT:-8080}:8080"
     environment:
-      # --- Webull: required, and none of it is optional --------------------
-      # The agent refuses every order without WEBULL_SANDBOX=1, and checks it
-      # in code before each order rather than trusting this file. It is the
-      # boundary between an experiment and a machine spending real money.
+      # --- the broker: Webull's sandbox or Alpaca paper ---------------------
+      # BROKER picks one. Fill in that broker's block below in .env. The app
+      # checks its guards in code before each order rather than trusting this
+      # file, and places no order at all until the account is named.
+      - BROKER=${BROKER:-webull}
+
+      # Webull. The agent refuses every order without WEBULL_SANDBOX=1. It is
+      # the boundary between an experiment and a machine spending real money.
       - WEBULL_SANDBOX=1
-      - WEBULL_APP_KEY=${WEBULL_APP_KEY:?set WEBULL_APP_KEY in .env}
-      - WEBULL_APP_SECRET=${WEBULL_APP_SECRET:?set WEBULL_APP_SECRET in .env}
-      # Which simulated account THIS container owns. Required, with no default
-      # on purpose: unset or empty and the app places no order at all.
-      # Takes the account number (DE…) or the internal account id.
-      - WEBULL_ACCOUNT_ID=${WEBULL_ACCOUNT_ID:?set WEBULL_ACCOUNT_ID in .env}
+      - WEBULL_APP_KEY=${WEBULL_APP_KEY:-}
+      - WEBULL_APP_SECRET=${WEBULL_APP_SECRET:-}
+      # Which simulated account THIS container owns, with no default on
+      # purpose. Takes the account number (DE…) or the internal account id.
+      - WEBULL_ACCOUNT_ID=${WEBULL_ACCOUNT_ID:-}
       - WEBULL_ACCOUNT_CLASS=${WEBULL_ACCOUNT_CLASS:-INDIVIDUAL_CASH}
       # Keep the exchanged access token on the volume so a redeploy reuses it.
       - WEBULL_OPENAPI_TOKEN_DIR=/app/data/webull
+
+      # Alpaca paper. Paper keys need only an email address. The app knows
+      # only Alpaca's paper host. ALPACA_ACCOUNT_NUMBER (PA…) names the one
+      # account this container owns. The account must have shorting off, and
+      # for the default cash class, a margin multiplier of 1.
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - ALPACA_API_SECRET=${ALPACA_API_SECRET:-}
+      - ALPACA_ACCOUNT_NUMBER=${ALPACA_ACCOUNT_NUMBER:-}
+      - ALPACA_ACCOUNT_CLASS=${ALPACA_ACCOUNT_CLASS:-cash}
 
       # --- the model -------------------------------------------------------
       # Three supported shapes. Set the matching values in .env.

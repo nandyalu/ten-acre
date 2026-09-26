@@ -250,7 +250,7 @@ def test_a_filled_order_is_settled_with_its_real_price(monkeypatch):
 
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Trade()])
     monkeypatch.setattr(
-        agent.sandbox_broker, "get_order_detail", lambda _id: orders_in(LIVE_ORDER_DETAIL)[0]
+        agent.broker, "get_order_detail", lambda _id: orders_in(LIVE_ORDER_DETAIL)[0]
     )
     monkeypatch.setattr(
         agent.db, "settle_agent_trade", lambda order_id, **kw: settled.update(kw)
@@ -275,7 +275,7 @@ def test_a_filled_limit_buy_carries_its_limit_price_so_the_wake_can_tell_it_apar
         limit_price = 95.00
 
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Trade()])
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: filled)
+    monkeypatch.setattr(agent.broker, "get_order_detail", lambda _id: filled)
     monkeypatch.setattr(agent.db, "settle_agent_trade", lambda *a, **k: None)
 
     [settled] = agent.settle_pending()
@@ -301,7 +301,7 @@ def test_a_partial_fill_records_what_filled_not_what_was_asked(monkeypatch):
         limit_price = None
 
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Trade()])
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: partial)
+    monkeypatch.setattr(agent.broker, "get_order_detail", lambda _id: partial)
     monkeypatch.setattr(
         agent.db, "settle_agent_trade", lambda order_id, **kw: settled.update(kw)
     )
@@ -321,7 +321,7 @@ def test_a_rejected_order_is_marked_not_left_pending(monkeypatch):
 
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Trade()])
     monkeypatch.setattr(
-        agent.sandbox_broker, "get_order_detail", lambda _id: {"status": "CANCELLED"}
+        agent.broker, "get_order_detail", lambda _id: {"status": "CANCELLED"}
     )
     monkeypatch.setattr(
         agent.db, "settle_agent_trade", lambda order_id, **kw: settled.update(kw)
@@ -607,7 +607,7 @@ def test_a_placed_order_is_settled_before_the_run_is_reported(monkeypatch):
     # patch belongs here too, because the guard states the rule and this states
     # what the test actually needs.
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a, **kw: {"client_order_id": "test-bracket", "placed_at": None, "exits": []},
     )
     monkeypatch.setattr(
@@ -615,7 +615,7 @@ def test_a_placed_order_is_settled_before_the_run_is_reported(monkeypatch):
         lambda *a, **kw: ("go", [{"ticker": "AAA", "side": "buy", "quantity": 1}], []),
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda *a: {"client_order_id": "x", "placed_at": None},
     )
     monkeypatch.setattr(agent.db, "record_agent_trade", lambda **kw: 1)
@@ -806,7 +806,7 @@ def test_a_buy_arms_both_exits(monkeypatch):
     placed = {}
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda t, q, stop, target: placed.update(ticker=t, qty=q, stop=stop, target=target)
         or [
             {"client_order_id": "s1", "kind": "stop", "price": stop, "placed_at": None},
@@ -833,7 +833,7 @@ def test_a_buy_with_neither_level_gets_no_exits(monkeypatch):
     # the test asks Webull for a real AAA price. The neighbouring tests already
     # patch it; this one did not.
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
-    monkeypatch.setattr(agent.sandbox_broker, "place_exit_bracket", lambda *a: called.append(a))
+    monkeypatch.setattr(agent.broker, "place_exit_bracket", lambda *a: called.append(a))
 
     agent._arm_exits({"ticker": "AAA", "quantity": 10, "side": "buy"}, None, None)
 
@@ -844,7 +844,7 @@ def test_only_the_level_that_exists_is_placed(monkeypatch):
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
     """The trader states each only when it has a view."""
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda t, q, stop, target: [
             {"client_order_id": "t1", "kind": "target", "price": target, "placed_at": None}
         ],
@@ -864,7 +864,7 @@ def test_a_failed_exit_does_not_undo_the_buy(monkeypatch):
     def boom(*a):
         raise RuntimeError("broker said no")
 
-    monkeypatch.setattr(agent.sandbox_broker, "place_exit_bracket", boom)
+    monkeypatch.setattr(agent.broker, "place_exit_bracket", boom)
     monkeypatch.setattr(agent.db, "record_agent_trade", lambda **kw: 1)
 
     agent._arm_exits({"ticker": "AAA", "quantity": 10, "side": "buy"}, 90.0, 120.0)
@@ -873,7 +873,7 @@ def test_a_failed_exit_does_not_undo_the_buy(monkeypatch):
 def test_a_sell_does_not_arm_exits(monkeypatch):
     """An exit under a position being closed would try to sell shares twice."""
     called = []
-    monkeypatch.setattr(agent.sandbox_broker, "place_exit_bracket", lambda *a: called.append(a))
+    monkeypatch.setattr(agent.broker, "place_exit_bracket", lambda *a: called.append(a))
     monkeypatch.setattr(agent, "_cancel_resting_exits", lambda t: [])
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
@@ -890,7 +890,7 @@ def test_a_sell_does_not_arm_exits(monkeypatch):
         lambda *a, **kw: ("out", [{"ticker": "AAA", "side": "sell", "quantity": 1}], []),
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda *a: {"client_order_id": "x", "placed_at": None},
     )
     monkeypatch.setattr(agent.db, "record_agent_trade", lambda **kw: 1)
@@ -1025,7 +1025,7 @@ def test_a_target_below_the_market_is_refused(monkeypatch):
     placed = {}
     monkeypatch.setattr(agent, "get_current_price", lambda t: 97.57)
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda t, q, stop, target: placed.update(stop=stop, target=target) or [],
     )
     monkeypatch.setattr(agent.db, "record_agent_trade", lambda **kw: 1)
@@ -1039,7 +1039,7 @@ def test_a_stop_above_the_market_is_refused(monkeypatch):
     placed = {}
     monkeypatch.setattr(agent, "get_current_price", lambda t: 97.57)
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda t, q, stop, target: placed.update(stop=stop, target=target) or [],
     )
     monkeypatch.setattr(agent.db, "record_agent_trade", lambda **kw: 1)
@@ -1052,7 +1052,7 @@ def test_a_stop_above_the_market_is_refused(monkeypatch):
 def test_both_levels_on_the_wrong_side_arms_nothing(monkeypatch):
     called = []
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
-    monkeypatch.setattr(agent.sandbox_broker, "place_exit_bracket", lambda *a: called.append(a))
+    monkeypatch.setattr(agent.broker, "place_exit_bracket", lambda *a: called.append(a))
 
     agent._arm_exits({"ticker": "AAA", "quantity": 1, "side": "buy"}, 105.0, 95.0)
 
@@ -1065,7 +1065,7 @@ def test_an_unknown_price_does_not_block_arming(monkeypatch):
     placed = {}
     monkeypatch.setattr(agent, "get_current_price", lambda t: None)
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda t, q, stop, target: placed.update(stop=stop, target=target) or [],
     )
     monkeypatch.setattr(agent.db, "record_agent_trade", lambda **kw: 1)
@@ -1087,14 +1087,14 @@ def _reset_world(monkeypatch, held, held_after=None, sell_fails=False, open_mark
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [])
 
     positions = iter([held, held_after if held_after is not None else {}])
-    monkeypatch.setattr(agent.sandbox_broker, "get_positions", lambda: next(positions, {}))
+    monkeypatch.setattr(agent.broker, "get_positions", lambda: next(positions, {}))
 
     def sell(ticker, side, qty):
         if sell_fails:
             raise RuntimeError("market closed")
         return {"client_order_id": "x", "placed_at": None}
 
-    monkeypatch.setattr(agent.sandbox_broker, "place_market_order", sell)
+    monkeypatch.setattr(agent.broker, "place_market_order", sell)
     cleared = []
     monkeypatch.setattr(agent.db, "clear_agent_trades", lambda: cleared.append(1) or 7)
     return cleared
@@ -1128,9 +1128,9 @@ def test_a_reset_refuses_before_touching_anything_when_the_market_is_shut(monkey
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: False)
-    monkeypatch.setattr(agent.sandbox_broker, "get_positions", lambda: {"AAA": 1.0})
+    monkeypatch.setattr(agent.broker, "get_positions", lambda: {"AAA": 1.0})
     monkeypatch.setattr(agent, "_cancel_resting_exits", lambda t: touched.append("cancel") or [{"kind": "stop", "price": 9.0, "quantity": 1}])
-    monkeypatch.setattr(agent.sandbox_broker, "place_market_order", lambda *a: touched.append("sell"))
+    monkeypatch.setattr(agent.broker, "place_market_order", lambda *a: touched.append("sell"))
     monkeypatch.setattr(agent.db, "clear_agent_trades", lambda: touched.append("clear") or 0)
 
     result = agent.reset_book()
@@ -1162,7 +1162,7 @@ def test_the_ledger_survives_if_a_sell_fails(monkeypatch):
 def test_the_ledger_survives_if_the_account_cannot_be_read(monkeypatch):
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
-    monkeypatch.setattr(agent.sandbox_broker, "get_positions", lambda: None)
+    monkeypatch.setattr(agent.broker, "get_positions", lambda: None)
     cleared = []
     monkeypatch.setattr(agent.db, "clear_agent_trades", lambda: cleared.append(1) or 0)
 
@@ -1176,7 +1176,7 @@ def test_a_reset_is_refused_outside_the_sandbox(monkeypatch):
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: False)
     result = agent.reset_book()
     assert result.cleared == 0
-    assert "not in sandbox" in result.refused
+    assert "not in paper mode" in result.refused
 
 
 def test_a_failed_sell_leaves_the_other_positions_protected(monkeypatch):
@@ -1186,13 +1186,13 @@ def test_a_failed_sell_leaves_the_other_positions_protected(monkeypatch):
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
-    monkeypatch.setattr(agent.sandbox_broker, "get_positions", lambda: {"AAA": 1.0, "BBB": 1.0})
+    monkeypatch.setattr(agent.broker, "get_positions", lambda: {"AAA": 1.0, "BBB": 1.0})
     monkeypatch.setattr(agent, "_cancel_resting_exits", lambda t: cancelled.append(t) or [{"kind": "stop", "price": 9.0, "quantity": 1}])
 
     def sell(*a):
         raise RuntimeError("rejected")
 
-    monkeypatch.setattr(agent.sandbox_broker, "place_market_order", sell)
+    monkeypatch.setattr(agent.broker, "place_market_order", sell)
     monkeypatch.setattr(agent.db, "clear_agent_trades", lambda: 0)
 
     agent.reset_book()
@@ -1205,13 +1205,13 @@ def test_exits_left_over_from_a_site_reset_are_cancelled(monkeypatch):
     sell shares the account does not have."""
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
-    monkeypatch.setattr(agent.sandbox_broker, "get_positions", lambda: {})
+    monkeypatch.setattr(agent.broker, "get_positions", lambda: {})
 
     class Stop:
         client_order_id, is_stop = "s1", True
 
     monkeypatch.setattr(agent.db, "get_pending_agent_trades", lambda: [Stop()])
-    monkeypatch.setattr(agent.sandbox_broker, "cancel_order", lambda _id: True)
+    monkeypatch.setattr(agent.broker, "cancel_order", lambda _id: True)
     monkeypatch.setattr(agent.db, "clear_agent_trades", lambda: 3)
 
     result = agent.reset_book()
@@ -1226,7 +1226,7 @@ def test_a_reset_ahead_of_a_site_flatten_disables_the_agent(monkeypatch):
     wipes, leaving the ledger claiming stock that is gone."""
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
-    monkeypatch.setattr(agent.sandbox_broker, "get_positions", lambda: {"AAA": 1.0})
+    monkeypatch.setattr(agent.broker, "get_positions", lambda: {"AAA": 1.0})
     monkeypatch.setattr(agent, "_cancel_resting_exits", lambda t: [{"kind": "stop", "price": 9.0, "quantity": 1}, {"kind": "target", "price": 12.0, "quantity": 1}])
     monkeypatch.setattr(agent.db, "clear_agent_trades", lambda: 5)
     disabled = []
@@ -1245,7 +1245,7 @@ def test_the_normal_reset_still_refuses_a_held_account(monkeypatch):
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: False)
-    monkeypatch.setattr(agent.sandbox_broker, "get_positions", lambda: {"AAA": 1.0})
+    monkeypatch.setattr(agent.broker, "get_positions", lambda: {"AAA": 1.0})
     cleared = []
     monkeypatch.setattr(agent.db, "clear_agent_trades", lambda: cleared.append(1) or 0)
 
@@ -1298,7 +1298,7 @@ def test_the_sandbox_and_the_switch_still_refuse_a_pass(monkeypatch):
     monkeypatch.setattr(agent.watchdog, "is_us_market_hours", lambda: True)
     monkeypatch.setattr(agent, "is_enabled", lambda: True)
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: False)
-    assert "sandbox" in agent.run_once().skipped
+    assert "paper mode" in agent.run_once().skipped
 
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent, "is_enabled", lambda: False)
@@ -1376,11 +1376,11 @@ def test_exits_wait_for_the_buy_to_fill(monkeypatch):
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
     monkeypatch.setattr(agent, "_FILL_POLL_SECONDS", 0)
     monkeypatch.setattr(
-        agent.sandbox_broker, "get_order_detail",
+        agent.broker, "get_order_detail",
         lambda _id: order_of_events.append("poll") or {"status": next(statuses, "FILLED")},
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda *a: order_of_events.append("arm") or [],
     )
     monkeypatch.setattr(agent.db, "record_agent_trade", lambda **kw: 1)
@@ -1399,8 +1399,8 @@ def test_a_buy_that_never_fills_is_left_unguarded_rather_than_shorted(monkeypatc
     armed = []
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
     monkeypatch.setattr(agent, "_FILL_WAIT_SECONDS", 0)
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: {"status": "SUBMITTED"})
-    monkeypatch.setattr(agent.sandbox_broker, "place_exit_bracket", lambda *a: armed.append(a))
+    monkeypatch.setattr(agent.broker, "get_order_detail", lambda _id: {"status": "SUBMITTED"})
+    monkeypatch.setattr(agent.broker, "place_exit_bracket", lambda *a: armed.append(a))
 
     agent._arm_exits(
         {"ticker": "ZBH", "quantity": 3, "side": "buy"}, 95.30, 101.50, client_order_id="x"
@@ -1413,8 +1413,8 @@ def test_a_rejected_buy_stops_the_wait_immediately(monkeypatch):
     armed = []
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
     monkeypatch.setattr(agent, "_FILL_POLL_SECONDS", 0)
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: {"status": "REJECTED"})
-    monkeypatch.setattr(agent.sandbox_broker, "place_exit_bracket", lambda *a: armed.append(a))
+    monkeypatch.setattr(agent.broker, "get_order_detail", lambda _id: {"status": "REJECTED"})
+    monkeypatch.setattr(agent.broker, "place_exit_bracket", lambda *a: armed.append(a))
 
     agent._arm_exits(
         {"ticker": "ZBH", "quantity": 3, "side": "buy"}, 95.30, 101.50, client_order_id="x"
@@ -1435,11 +1435,11 @@ def test_a_buy_with_levels_goes_out_as_one_bracket(monkeypatch):
     fill, so the shares are never owned with nothing protecting them."""
     calls = []
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a: calls.append(a) or {"client_order_id": "x", "exits": []},
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda *a: pytest.fail("a bracketable buy must not go out as a bare market order"),
     )
 
@@ -1454,11 +1454,11 @@ def test_a_refused_bracket_still_buys(monkeypatch):
     this refusal is routine. Failing the trade over it would leave the agent
     unable to act on its own decision."""
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a: (_ for _ in ()).throw(RuntimeError("CANT_USE_UNSETTLE_FUNDS_FOR_COMBO_ORDER")),
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order", lambda *a: {"client_order_id": "fallback"}
+        agent.broker, "place_market_order", lambda *a: {"client_order_id": "fallback"}
     )
 
     result = agent._place(_order(), 98.41, {"ZBH": 95.30}, {"ZBH": 101.50})
@@ -1480,11 +1480,11 @@ def test_a_buy_with_no_usable_stop_gets_one_from_the_stock_s_own_volatility(monk
     calls = []
     monkeypatch.setattr(agent, "atr_stop", lambda ticker, price: 92.00)
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a: calls.append(a) or {"client_order_id": "x", "exits": []},
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda *a: pytest.fail("a derived stop is still a stop — this should bracket"),
     )
 
@@ -1500,7 +1500,7 @@ def test_a_stated_stop_on_the_wrong_side_is_replaced_not_merely_dropped(monkeypa
     calls = []
     monkeypatch.setattr(agent, "atr_stop", lambda ticker, price: 88.00)
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a: calls.append(a) or {"client_order_id": "x", "exits": []},
     )
 
@@ -1514,11 +1514,11 @@ def test_a_buy_with_no_levels_and_no_atr_is_a_plain_market_order(monkeypatch):
     buyable — it just cannot be bracketed."""
     monkeypatch.setattr(agent, "atr_stop", lambda ticker, price: None)
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a: pytest.fail("nothing to bracket with"),
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order", lambda *a: {"client_order_id": "plain"}
+        agent.broker, "place_market_order", lambda *a: {"client_order_id": "plain"}
     )
 
     assert agent._place(_order(), 98.41, {}, {})["client_order_id"] == "plain"
@@ -1529,7 +1529,7 @@ def test_a_wrong_side_level_is_dropped_before_it_reaches_the_bracket(monkeypatch
     does not like, so a level that would execute at once must never be sent."""
     calls = []
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a: calls.append(a) or {"client_order_id": "x", "exits": []},
     )
 
@@ -1541,10 +1541,10 @@ def test_a_wrong_side_level_is_dropped_before_it_reaches_the_bracket(monkeypatch
 
 def test_a_sell_is_never_bracketed(monkeypatch):
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order", lambda *a: pytest.fail("a sell is the exit")
+        agent.broker, "place_bracket_order", lambda *a: pytest.fail("a sell is the exit")
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order", lambda *a: {"client_order_id": "sell"}
+        agent.broker, "place_market_order", lambda *a: {"client_order_id": "sell"}
     )
 
     agent._place(_order(side="sell"), 98.41, {"ZBH": 95.30}, {"ZBH": 101.50})
@@ -1556,16 +1556,16 @@ def test_a_limit_buy_never_brackets(monkeypatch):
     hasn't filled, so this must go out alone, not through place_bracket_order
     or place_market_order."""
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_bracket_order",
+        agent.broker, "place_bracket_order",
         lambda *a: pytest.fail("a limit buy does not bracket"),
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_market_order",
+        agent.broker, "place_market_order",
         lambda *a: pytest.fail("order_type limit must not fall back to a market order"),
     )
     calls = []
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_limit_order",
+        agent.broker, "place_limit_order",
         lambda *a: calls.append(a) or {"client_order_id": "x"},
     )
 
@@ -1580,7 +1580,7 @@ def test_a_limit_buy_never_brackets(monkeypatch):
 
 def test_execute_orders_skips_arming_for_an_unfilled_limit_buy(monkeypatch):
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_limit_order",
+        agent.broker, "place_limit_order",
         lambda *a: {"client_order_id": "x", "placed_at": None},
     )
     monkeypatch.setattr(
@@ -1613,7 +1613,7 @@ def test_execute_orders_cancels_a_pending_entry_order(monkeypatch):
         agent.db, "settle_agent_trade",
         lambda order_id, **kw: settled.update(order_id=order_id, **kw),
     )
-    monkeypatch.setattr(agent.sandbox_broker, "cancel_order", lambda order_id: True)
+    monkeypatch.setattr(agent.broker, "cancel_order", lambda order_id: True)
 
     outcomes = agent._execute_orders(
         [{"ticker": "TSLA", "side": "cancel", "quantity": 0}], agent.AgentRun(), {}, {}, {}, {},
@@ -1636,7 +1636,7 @@ def test_execute_orders_reports_a_cancel_with_nothing_pending(monkeypatch):
 def test_a_limit_buy_with_no_time_in_force_defaults_to_day(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_limit_order",
+        agent.broker, "place_limit_order",
         lambda *a: calls.append(a) or {"client_order_id": "x"},
     )
 
@@ -1896,7 +1896,7 @@ def test_a_buy_that_never_fills_is_recorded_as_unguarded(monkeypatch):
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
     monkeypatch.setattr(agent, "_FILL_WAIT_SECONDS", 0)
     monkeypatch.setattr(agent.db, "record_alert", lambda **kw: alerts.append(kw))
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", lambda _id: {"status": "SUBMITTED"})
+    monkeypatch.setattr(agent.broker, "get_order_detail", lambda _id: {"status": "SUBMITTED"})
 
     agent._arm_exits(_order(), 95.30, 101.50, client_order_id="x")
 
@@ -1911,7 +1911,7 @@ def test_a_broker_refusal_is_recorded_as_unguarded(monkeypatch):
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
     monkeypatch.setattr(agent.db, "record_alert", lambda **kw: alerts.append(kw))
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda *a: (_ for _ in ()).throw(RuntimeError("INVALID_PARAMETER")),
     )
 
@@ -1961,7 +1961,7 @@ def test_an_unguarded_position_is_told_to_the_pass_that_caused_it(monkeypatch):
 def test_a_guarded_position_reports_nothing_unguarded(monkeypatch):
     monkeypatch.setattr(agent, "get_current_price", lambda t: 100.0)
     monkeypatch.setattr(
-        agent.sandbox_broker, "place_exit_bracket",
+        agent.broker, "place_exit_bracket",
         lambda *a: [
             {"kind": "stop", "client_order_id": "s", "placed_at": "now", "price": 95.30, "quantity": 10},
             {"kind": "target", "client_order_id": "t", "placed_at": "now", "price": 101.50, "quantity": 10},
@@ -2049,7 +2049,7 @@ def test_arming_refuses_outside_the_sandbox(monkeypatch):
 
     result = agent.arm_exits_now("INTC")
 
-    assert result["ok"] is False and "sandbox" in result["message"]
+    assert result["ok"] is False and "paper mode" in result["message"]
 
 
 def test_arming_reports_plainly_when_nothing_ended_up_resting(monkeypatch):
@@ -2404,10 +2404,10 @@ def test_moving_a_stop_replaces_rather_than_cancelling(monkeypatch):
     monkeypatch.setattr(agent.db, "get_resting_exits", lambda t: [Row()])
     monkeypatch.setattr(agent.db, "move_resting_exit", lambda i, p: moved.append((i, p)))
     monkeypatch.setattr(
-        agent.sandbox_broker, "replace_exit", lambda *a: replaced.append(a) or True
+        agent.broker, "replace_exit", lambda *a: replaced.append(a) or True
     )
     monkeypatch.setattr(
-        agent.sandbox_broker, "cancel_order",
+        agent.broker, "cancel_order",
         lambda *a: pytest.fail("a replace must not cancel the protection first"),
     )
 
@@ -2428,7 +2428,7 @@ def test_a_level_that_would_execute_at_once_is_refused(monkeypatch):
     monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
     monkeypatch.setattr(agent, "get_current_price", lambda t: 341.70)
     monkeypatch.setattr(
-        agent.sandbox_broker, "replace_exit", lambda *a: pytest.fail("that would sell it now")
+        agent.broker, "replace_exit", lambda *a: pytest.fail("that would sell it now")
     )
 
     result = agent.adjust_exits("GOOG", 400.00, None)
@@ -2447,7 +2447,7 @@ def test_a_level_already_where_it_was_asked_for_is_left_alone(monkeypatch):
     monkeypatch.setattr(agent, "get_current_price", lambda t: 341.70)
     monkeypatch.setattr(agent.db, "get_resting_exits", lambda t: [Row()])
     monkeypatch.setattr(
-        agent.sandbox_broker, "replace_exit", lambda *a: pytest.fail("nothing changed")
+        agent.broker, "replace_exit", lambda *a: pytest.fail("nothing changed")
     )
 
     assert agent.adjust_exits("GOOG", 336.50, None)["ok"] is True

@@ -106,7 +106,7 @@ def test_adjust_moves_the_exit_on_every_lot(monkeypatch):
         lambda t: [_leg(1, 120.0, 37), _leg(2, 94.36, 19), _leg(3, 95.46, 15)],
     )
     monkeypatch.setattr(agent.db, "move_resting_exit", lambda i, p: moved.append((i, p)))
-    monkeypatch.setattr(agent.sandbox_broker, "replace_exit", lambda *a: replaced.append(a) or True)
+    monkeypatch.setattr(agent.broker, "replace_exit", lambda *a: replaced.append(a) or True)
 
     result = agent.adjust_exits("INTC", 118.0, None)
 

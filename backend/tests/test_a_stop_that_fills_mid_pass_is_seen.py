@@ -97,9 +97,9 @@ def test_a_replace_refused_because_the_exit_filled_says_so(monkeypatch):
             "Msg: Order can not be modified"
         )
 
-    monkeypatch.setattr(agent.sandbox_broker, "replace_exit", refuse)
+    monkeypatch.setattr(agent.broker, "replace_exit", refuse)
     monkeypatch.setattr(
-        agent.sandbox_broker, "get_order_detail",
+        agent.broker, "get_order_detail",
         lambda client_order_id: {"status": "FILLED", "filled_price": "120.44"},
     )
 
@@ -124,8 +124,8 @@ def test_a_replace_that_fails_for_an_unknown_reason_keeps_the_brokers_words(monk
     def unreadable(_client_order_id):
         raise RuntimeError("could not read the order")
 
-    monkeypatch.setattr(agent.sandbox_broker, "replace_exit", refuse)
-    monkeypatch.setattr(agent.sandbox_broker, "get_order_detail", unreadable)
+    monkeypatch.setattr(agent.broker, "replace_exit", refuse)
+    monkeypatch.setattr(agent.broker, "get_order_detail", unreadable)
 
     result = agent.adjust_exits("INTC", stop=119.50, target=None)
 

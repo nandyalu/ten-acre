@@ -2,13 +2,13 @@
 
 Everything the app needs, and what happens when you skip each one.
 
-**Only the Webull sandbox keys and a model are required.** Without them the agent refuses to run, because it has no account to trade and nothing to think with. Everything else degrades to something sensible.
+**Only a paper broker and a model are required.** The broker is the Webull sandbox or an Alpaca paper account. Without them the agent refuses to run, because it has no account to trade and nothing to think with. Everything else degrades to something sensible.
 
 **You do not have to work through this page in the dark.** A deployment that is not ready sends you to `/setup`, which lists every requirement, says which are missing, and shows the exact lines to paste. It reports whether a thing is configured and never what it is configured to, so no key can leak through it.
 
 | | Required? | Without it |
 |---|---|---|
-| [Webull sandbox](#webull) | **Yes** | The agent refuses to run |
+| [Webull sandbox](#webull) or [Alpaca paper](#alpaca) | **One of the two** | The agent refuses to run |
 | [Discord webhook](#discord) | No | No notifications. The site is identical |
 | [FRED](#fred) | No | The news analyst infers rates from headlines, and says so in its own report |
 | [Reddit](#reddit) | No | Sentiment comes from a public feed instead. This is the normal path |
@@ -40,6 +40,32 @@ WEBULL_ACCOUNT_ID=DE00000000
 **`WEBULL_ACCOUNT_ID` names the one account this deployment owns, and it has no default.** Leave it empty and the app places no order at all. That is deliberate. The checks above narrow the sandbox's accounts to one, and they narrow to the *same* one for every deployment applying the same rule — so two containers would trade a single book, and afterwards nothing could say which of them placed an order. It takes either the account number or the internal account id, and matches whichever you give it.
 
 Quotes need a stock-quotes market-data subscription on the account. Without it, or after any failure, prices fall back to yfinance automatically.
+
+## Alpaca
+
+A paper brokerage account that needs only an email address. Use it when you do not have a funded Webull account. Set `BROKER=alpaca` to use it.
+
+1. Sign up at [alpaca.markets](https://alpaca.markets/) and open the paper trading account.
+2. Generate the paper account's API keys.
+3. Note the paper account number. It starts with `PA`.
+4. In the paper account's settings, turn shorting off, and set the margin multiplier to 1. A multiplier of 1 makes it a cash account.
+
+```
+BROKER=alpaca
+ALPACA_API_KEY=...
+ALPACA_API_SECRET=...
+ALPACA_ACCOUNT_NUMBER=PA0000000000
+ALPACA_ACCOUNT_CLASS=cash
+```
+
+The app applies the same four guards to Alpaca as to Webull:
+
+- The app knows only Alpaca's paper host. It checks the host again immediately before every order. A live key does not work on the paper host.
+- The account number must start with `PA`.
+- The account class must agree with the account's own margin multiplier: `cash` needs a multiplier of 1, and `margin` needs more than 1. The account must also have shorting turned off.
+- `ALPACA_ACCOUNT_NUMBER` names the one account this deployment owns. It has no default. Leave it empty and the app places no order at all.
+
+Prices come from yfinance when no Webull key is set. Alpaca has no trade event stream in this app, so a fill that happens on its own is found by the 15-minute poll.
 
 ## More news, and grades
 
