@@ -9,14 +9,14 @@ paths:
 
 `dockge/ollama-pool.compose.yaml` describes **two** backends (`ollama-pool`, `ollama-pool-b`) behind an nginx round-robin named `ollama-lb`. That is stale. What actually runs (verified 2026-08-06):
 
-- **Seven** backends: `ollama-pool-a` … `ollama-pool-g`, one AMD card each (three added 2026-08-26). The cards are **RX 6600 (gfx1032, 8 GiB)**, not gfx1030 as an earlier note here claimed. They report as gfx1030 only because every pool container sets `HSA_OVERRIDE_GFX_VERSION=10.3.0` — ROCm's support for gfx1032 is unofficial and the override is what makes them work. Anyone adding cards who trusts the old note would omit it and spend a day on it.
+- **Seven** backends: `ollama-pool-a` … `ollama-pool-g`, one AMD card each (three added 2026-08-26). From 2026-09-26 to 2026-09-27 the riser card of `ollama-pool-f` (PCI `0000:18:00.0`) ran Laya instead, and `-f` is back in the pool since. See "Laya on these cards" below. The cards are **RX 6600 (gfx1032, 8 GiB)**, not gfx1030 as an earlier note here claimed. They report as gfx1030 only because every pool container sets `HSA_OVERRIDE_GFX_VERSION=10.3.0` — ROCm's support for gfx1032 is unofficial and the override is what makes them work. Anyone adding cards who trusts the old note would omit it and spend a day on it.
 
   Each container is pinned to one card at the device level — `/dev/dri/card0` plus `renderD128` for `-a`, `card1`/`renderD129` for `-b`, and so on — which is why `HIP_VISIBLE_DEVICES=0` is correct in every one: it means "the only card I can see", not "card zero". `-e`…`-g` follow the same pattern on `card4`…`card6` with `renderD132`…`renderD134`.
 
   **Every pool container bind-mounts the same host directory** at `/root/.ollama/models` (`/opt/stacks/ollama-gpus/ollama/models`), so a model pulled or built through any one of them is immediately visible to all. There is no per-backend model state to keep in sync, and adding a card needs no model work at all.
 - `ollama-proxy` (image `ollama-proxy:local`) replaced nginx. It is a small FastAPI app: least-active-connections routing, `CONCURRENCY_PER_BACKEND=1`, `WAIT_TIMEOUT=600` (queues rather than 503s), and a `/healthz` endpoint reporting per-backend health and active count. Still on host port 11435.
 
-**Since 2026-09-15 `choose_backend()` picks a direct-slot card before a riser card.** The riser cards (`-d`, `-e`, `-f`, PCIe 2.0 x1) write slower than the four direct cards. `RISER_BACKENDS` (default `ollama-pool-d,ollama-pool-e,ollama-pool-f`) marks them; a riser card is chosen only once every direct card is busy.
+**Since 2026-09-15 `choose_backend()` picks a direct-slot card before a riser card.** The riser cards (`-d`, `-e`, `-f`, PCIe 2.0 x1) write slower than the four direct cards. `RISER_BACKENDS` (default `ollama-pool-d,ollama-pool-e,ollama-pool-f`) marks them; a riser card is chosen only once every direct card is busy. The deployed stack set it to `ollama-pool-d,ollama-pool-e` while `-f` ran Laya, and back to all three on 2026-09-27.
 
 **One analysis uses up to four GPUs, for about three minutes (since 2026-09-13).** The four analysts run at the same time, each with its own request in flight. The Bull/Bear debate, the trader and the risk debate then run in turn, one request at a time. Most of the extra GPU use still comes from running *several analyses at once*.
 
@@ -42,7 +42,7 @@ Benchmarking still has to bypass the proxy, for a different reason: you cannot t
 
 That makes `TRADINGAGENTS_MAX_CONCURRENT_ANALYSES` the knob that decides GPU utilization. With one deployment it should equal the backend count; anything above just queues in the proxy.
 
-**One deployment runs, so it gets all seven.** Set `TRADINGAGENTS_MAX_CONCURRENT_ANALYSES=7`. The two-deployment arithmetic that used to live here — a 4/3 split, then a planned 2/5 — is gone with the second deployment.
+**The deployed value is 1 (checked 2026-09-26).** The agent orders one analysis at a time, and one analysis keeps up to four cards busy. The measurements below chose 7 when batch callers ran many analyses at once. If a change brings that load back, the ceiling is now six, the count of Ollama cards. The two-deployment arithmetic that used to live here — a 4/3 split, then a planned 2/5 — is gone with the second deployment.
 
 **Seven concurrent is the right setting, and fourteen buys nothing.** Both were measured on 2026-09-02 with the same fourteen tickers, twice each:
 
@@ -56,7 +56,7 @@ That makes `TRADINGAGENTS_MAX_CONCURRENT_ANALYSES` the knob that decides GPU uti
 
 **Identical throughput, half the latency, identical machine load.** The CPU saturates before the GPUs do — the cards idle around 37% of the time at either setting — because gemma4's E-series keeps its per-layer embeddings in host RAM. Stacking a second analysis onto a card that is already waiting on the CPU does not make that card produce more.
 
-So `TRADINGAGENTS_MAX_CONCURRENT_ANALYSES=7`, and `_MAX_WATCHLIST = 30` on the 3.05 min/analysis throughput against the 120-minute window.
+So `TRADINGAGENTS_MAX_CONCURRENT_ANALYSES=7` was chosen then, and `_MAX_WATCHLIST = 30` on the 3.05 min/analysis throughput against the 120-minute window.
 
 **Two failures in 28, both at 14 concurrent, and neither was capacity.** The model asked for an indicator that does not exist — `macd_histogram`, `boll_upper` — and the vendor router raised rather than telling the model the valid names. Since 2026-09-02 the error goes back to the model instead.
 
@@ -75,3 +75,32 @@ To check which backends served a run: `docker logs --since 24h ollama-pool-a | g
 The non-obvious part, measured 2026-08-11 on the 8 GiB cards: **the compute graph is what limits context, not the KV cache.** The cache is already `q4_0` (flash attention is on) and costs 2.6 GiB at 96k, while the compute graph at the default `num_batch 512` wants 5.1 GiB and pushes 40% of a llama-3.2-3B's layers onto the CPU. Dropping `num_batch` to 64 fits the full 128k in 6.6 GiB, entirely on the GPU, for 16% slower prefill (411 vs 490 tok/s). So a new build needs `PARAMETER num_batch`, not just `num_ctx`, and `ollama ps` must read `100% GPU` — any CPU split costs far more than the batch size ever will.
 
 Gemma is the exception that made this confusing: `gemma4-e2b-96k` runs at 96k with the default batch because sliding-window attention keeps its compute graph small. Don't reason from it to a Llama of the same size.
+
+## Laya on these cards (tried 2026-09-26, shelved 2026-09-27)
+
+**Nothing runs Laya now.** The grading it would do was measured and shelved on 2026-09-27; see `news_sources.py` and `fetch_audit.py` for the results. `LAYA_URL` is unset in both deployments, and the code treats Laya as optional. What follows is how to run it again on these cards.
+
+It ran as the `laya` service in the `ollama-pool` stack, on the riser card at PCI `0000:18:00.0` (`renderD133`), in place of `ollama-pool-f`. For one evening a separate `laya-pool` stack ran one Laya per card behind an nginx `least_conn` balancer on port 8300, because one `laya-serve` answers one request at a time. The direct cards stay with the analysts, because an analysis runs for minutes and a Laya request runs for milliseconds. On the direct card of `ollama-pool-c`, Laya loaded in 12.4 s against 18.0 s on the riser, and a request took 76 ms against 81 ms. The riser costs load time, not request time.
+
+| | CPU (`laya:local`) | GPU (`laya:rocm`, riser card) |
+|---|---|---|
+| Request, median | 474 ms | 81 ms |
+| Model load | 7.7 s | 18.0 s |
+| First request after start | 0.45 s | 2.5 s in a test, 23.9 s over HTTP |
+
+**Do not share Laya's card with Ollama.** Laya keeps 1.9 GiB when idle and 4.5 GiB after requests, because PyTorch keeps the memory it used. `gemma4-e4b-qat-128k` needs about 6.6 GiB of the 8 GiB, and Ollama moves layers to the CPU when it cannot get them.
+
+Upstream Laya supports only NVIDIA. Three things make the image work on these cards:
+
+- **Build with `TORCH_INDEX=rocm7.2`.** The wheel is `torch 2.14.0+rocm7.2`, and its architecture list has `gfx1030`. The image is 23 GB.
+- **Patch `docker/check_torch.py`.** It knows only `cpu` and `cu*`. A ROCm build has `torch.version.cuda = None`, so the check reads it as `cpu` and stops the build. Read `torch.version.hip` first.
+- **Install `libatomic1` in both Dockerfile stages.** The ROCm wheel needs it, and `python:3.11-slim` does not have it. Without it, `import torch` fails in the build.
+
+The compose service needs these, in addition to `HSA_OVERRIDE_GFX_VERSION=10.3.0` and `HIP_VISIBLE_DEVICES=0` as in the pool:
+
+- **Map the render node under its own name**: `/dev/dri/renderD133:/dev/dri/renderD133`. The KFD topology in `/sys` gives the host's render minor. If the container sees the node as `renderD128`, ROCm finds no GPU. Laya then falls back to the CPU and prints only a warning, and `/health` shows `"device":"cpu"`. The `/dev/dri/by-path/` name does not work in `--device`, because Docker splits the value at each colon of the PCI address.
+- **`group_add: ["44", "993"]`** (video, render). The image runs as uid 10001.
+- **Use a named volume for `/home/laya/.cache`**, not a bind mount. Docker makes a bind mount folder that root owns, and uid 10001 cannot write the model into it. A named volume copies the owner from the image.
+- **`restart: unless-stopped`.** On the first deploy, a DNS failure at startup stopped the container, and it stayed down.
+
+After a reboot, check that `readlink -f /dev/dri/by-path/pci-0000:18:00.0-render` still gives `renderD133`. The `card*` numbers have changed across reboots before: today `card1` is `renderD128`. `curl localhost:8300/health` must show `"device":"cuda"`.
