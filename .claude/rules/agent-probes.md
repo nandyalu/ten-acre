@@ -444,3 +444,16 @@ No run reasoned toward "my next look is tomorrow's open" without first passing t
 **One prompt bug, found here and fixed before the release:** the opening line read "It is Thursday 24 September 2026, 10:13 PM Eastern. It is Thursday 24 September 2026, 10:13 PM Eastern. The market has closed…", because `market_clock.describe` already opens with the time. The line now carries the clock helper's sentence alone. The "Equity at your last review" label was also wrong on a first review, whose window is the last 24 hours and not a review; it says "24 hours ago" then.
 
 **What this does and does not show.** The three checks from the pre-build probe hold on the real prompt: nothing invented, no rule from one trade, no workaround. A day with no trade closed and no gap is the easy case for turn 1, and four samples resolve nothing smaller than a breakage. The measurements that decide the feature are the three counts in `PLAN.md`, two weeks after 2026-09-25.
+
+## `ask_analyst` and the history in a read, on a closed market (2026-09-26)
+
+**Seven samples of `turn1` on `gemini-3.5-flash-lite`**, against a copy of the live book on Saturday evening: market shut, CRWV and NVDA held with their exits resting, $7,149.20 cash. The branch's code ran from `/tmp/probe` inside the live container, with every write path moved there.
+
+| Check | Result |
+|---|---|
+| Samples that called `ask_analyst` | **0 of 7** |
+| Samples whose thinking carries a figure found only in a read's "Every other analysis" block | **0 of 7** |
+| Samples that read both holdings | 7 of 7 |
+| Samples that placed an order | 0 of 7 |
+
+**This run cannot tell a feature that is ignored from one that is not needed.** Every sample read its two holdings, confirmed the stops from the table, and set a wakeup for Monday. Nothing on a closed weekend book asks a question the summaries leave open, or asks how a thesis moved. The probe skill warns about exactly this: a Saturday book tests how the agent reads, not how it trades. **Re-run it in an open session before claiming either feature is unused.**
