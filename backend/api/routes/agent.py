@@ -17,6 +17,7 @@ from fastapi.responses import PlainTextResponse
 
 from backend.api.schemas import (
     AgentEventOut,
+    AgentMemoryNoteOut,
     AgentNoteOut,
     AgentReflectionOut,
     JourneyEntryOut,
@@ -245,6 +246,15 @@ def get_notes():
             ))
     notes.sort(key=lambda n: n.ran_at)
     return list(reversed(notes))
+
+
+@router.get("/memory", response_model=list[AgentMemoryNoteOut])
+def get_memory():
+    """The memory notes the agent holds now, oldest first: the same list
+    that its next prompt shows. The Decisions page shows each pass's own
+    memory orders, and this shows what they left behind.
+    """
+    return [AgentMemoryNoteOut(**entry) for entry in agent.get_memory_entries()]
 
 
 @router.get("/reflections", response_model=list[AgentReflectionOut])

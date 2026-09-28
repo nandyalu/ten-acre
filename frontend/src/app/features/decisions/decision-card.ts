@@ -224,9 +224,26 @@ export class DecisionCard {
   /** `memory` is held out alongside `note` for the same reason: both are the
    * agent writing a sentence, not moving anything, and neither has a ticker
    * or a quantity — rendered here they read as a trade in a stock called "".
-   * A memory note has no display of its own on this page yet, and had none
-   * before either: `_orders_json` never recorded one, so nothing is lost that
-   * the page used to show. */
+   * `turnMemoryIn` shows it instead. */
+  /** The memory orders one turn sent. Only the turns carry them:
+   * `_orders_json` never put one in the pass's own `orders`. */
+  turnMemoryIn(turn: DecisionTurn): AgentEventOrder[] {
+    return (turn.orders ?? []).filter((o) => o.side === 'memory');
+  }
+
+  /** What a memory order did to the list, in words. Empty when the order
+   * names no action: that is an add, or, on a turn recorded before
+   * 2026-09-28, an order whose action was not kept. Run 81's clear is one of
+   * those, so an empty verb must not be read as "added". */
+  memoryVerb(order: AgentEventOrder): string {
+    const action = (order.action ?? '').toLowerCase();
+    if (action === 'clear' || action === 'clear_all') return 'Cleared every note';
+    if (action === 'remove' || action === 'delete' || order.index !== undefined) {
+      return order.index !== undefined ? `Removed note ${order.index + 1}` : 'Removed a note';
+    }
+    return '';
+  }
+
   turnTradesIn(turn: DecisionTurn): AgentEventOrder[] {
     return (turn.orders ?? []).filter((o) => o.side !== 'note' && o.side !== 'memory');
   }

@@ -131,6 +131,21 @@
               }
             </div>
           }
+          @if (turnMemoryIn(turn).length) {
+            <p class="turn-label">Memory</p>
+            <ul class="review-list">
+              @for (order of turnMemoryIn(turn); track $index) {
+                <li>
+                  <p class="agent-note-text">
+                    @if (memoryVerb(order)) {
+                      <strong>{{ memoryVerb(order) }}.</strong>
+                    }
+                    {{ order.reason }}
+                  </p>
+                </li>
+              }
+            </ul>
+          }
           @if (turnTradesIn(turn).length) {
             <ul class="orders">
               @for (order of turnTradesIn(turn); track $index) {

@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
-import { AgentEvent, AgentReflection } from '../../core/models/api.models';
+import { AgentEvent, AgentMemoryNote, AgentReflection } from '../../core/models/api.models';
 import { AgentService } from '../../core/services/agent.service';
 import { DecisionsView } from './decisions-view';
 
@@ -87,6 +87,10 @@ class AgentServiceStub {
   async getReflections(): Promise<AgentReflection[]> {
     if (this.failReviews) throw new Error('network error');
     return this.reviews;
+  }
+
+  async getMemory(): Promise<AgentMemoryNote[]> {
+    return [];
   }
 }
 
@@ -393,7 +397,7 @@ describe('DecisionsView', () => {
       new Date('2026-09-18T13:30:00Z'),
     );
 
-    const head = el.querySelector('.card-head')?.textContent ?? '';
+    const head = el.querySelector('app-decision-card .card-head')?.textContent ?? '';
     expect(head).toContain(`asked to be woken at ${weekday}`);
   });
 
@@ -414,7 +418,7 @@ describe('DecisionsView', () => {
       wakeup,
     );
 
-    const head = el.querySelector('.card-head')?.textContent ?? '';
+    const head = el.querySelector('app-decision-card .card-head')?.textContent ?? '';
     expect(head).toContain(`asked to be woken at ${time}`);
     expect(head).not.toContain(`asked to be woken at ${weekday}`);
   });
@@ -583,6 +587,58 @@ describe('DecisionsView', () => {
     expect(turns[0]?.textContent).toContain('fetched read');
     expect(turns[0]?.textContent).toContain('The analysis holds up.');
     expect(turns[0]?.textContent).toContain('AAPL');
+  });
+
+  it('says what each memory order did, and never shows one as a trade', async () => {
+    /** 2026-09-28: a memory order had no display, so a note written in one
+     * pass and cleared in another left no trace on the page. A turn recorded
+     * before that date kept no action, so it shows the text with no verb. */
+    service.eventsByMonth['2026-09'] = [
+      event({
+        orders: [],
+        refused: [],
+        failed: [],
+        turns: [
+          {
+            prompt: 'p',
+            response: '{}',
+            thinking: null,
+            reasoning: 'Tidying memory.',
+            orders: [
+              {
+                side: 'memory',
+                ticker: '',
+                quantity: 0,
+                reason: 'Bought NVDA, note done.',
+                action: 'clear',
+              },
+              {
+                side: 'memory',
+                ticker: '',
+                quantity: 0,
+                reason: 'Stale.',
+                action: 'remove',
+                index: 1,
+              },
+              { side: 'memory', ticker: '', quantity: 0, reason: 'Watch cash for NVDA.' },
+            ],
+          },
+        ],
+      }),
+    ];
+
+    const el = await render();
+
+    const turn = el.querySelector('.turn');
+    const lines = Array.from(turn?.querySelectorAll('.review-list .agent-note-text') ?? []).map(
+      (n) => n.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(lines).toEqual([
+      'Cleared every note. Bought NVDA, note done.',
+      'Removed note 2. Stale.',
+      'Watch cash for NVDA.',
+    ]);
+    expect(turn?.querySelector('.orders')).toBeNull();
   });
 
   it('keeps the flat layout for a pass that kept no turn at all', async () => {
@@ -992,7 +1048,7 @@ describe('DecisionsView', () => {
       service.eventsByMonth['2026-09'] = [fallen, fine];
 
       const el = await render();
-      const cards = Array.from(el.querySelectorAll('.card'));
+      const cards = Array.from(el.querySelectorAll('app-decision-card .card'));
 
       expect(cards[0]?.textContent).toContain('Answered through the text fallback');
       expect(cards[1]?.textContent).not.toContain('Answered through the text fallback');

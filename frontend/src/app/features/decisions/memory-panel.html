@@ -1,0 +1,32 @@
+<section class="card">
+  <div class="card-head">
+    <h2>What it remembers now</h2>
+    <p class="hint">
+      Each <app-term key="memory-note" /> goes back into every prompt until the agent clears it or
+      its evening review removes it. The passes and reviews below show when each one was written.
+    </p>
+  </div>
+  <div class="card-body">
+    @if (loading()) {
+      <div class="skeleton" style="height: 2.5rem"></div>
+    } @else if (failed()) {
+      <p class="hint">The memory notes could not be read. The passes below are not affected.</p>
+    } @else if (!notes().length) {
+      <p class="hint">
+        It holds no memory notes now. A note appears here when a pass writes one, and goes when a
+        pass clears it.
+      </p>
+    } @else {
+      <ol class="review-list">
+        @for (note of notes(); track $index) {
+          <li>
+            <p class="agent-note-text">{{ note.text }}</p>
+            @if (origin(note)) {
+              <p class="hint">{{ origin(note) }}</p>
+            }
+          </li>
+        }
+      </ol>
+    }
+  </div>
+</section>

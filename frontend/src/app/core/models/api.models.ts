@@ -430,6 +430,11 @@ export interface AgentEventOrder {
   stop?: number | null;
   /** The level an `adjust` moves the take-profit to. */
   target?: number | null;
+  /** On a `memory` order: `clear` or `remove`. Absent on an add, and on
+   * every memory order recorded before 2026-09-28, when it was not kept. */
+  action?: string;
+  /** On a `memory` remove: the 0-based position of the note it named. */
+  index?: number;
 }
 
 /** One decision pass, with the words that produced it.
@@ -532,6 +537,15 @@ export interface AgentEvent {
  * number it cannot see, a rule that contradicts another. Its own shape
  * rather than `AgentEventOrder` reused: a note has no ticker and no
  * quantity, so giving it either here would invite rendering it as an order. */
+/** One note the agent keeps for itself, from GET /api/agent/memory
+ * (2026-09-28). The list is the one its next prompt shows. `written` and
+ * `source` are null on a note stored before 2026-09-24. */
+export interface AgentMemoryNote {
+  text: string;
+  written: string | null;
+  source: string | null;
+}
+
 export interface AgentNote {
   id: number;
   ran_at: string;

@@ -3784,6 +3784,14 @@ def _order_detail(order: dict) -> dict:
                 continue
         else:
             detail[key] = str(value)
+    # A memory order is an add, a clear or a remove, and only `action` and
+    # `index` say which. Kept since 2026-09-28: before that the record held
+    # the text alone, and a clear read the same as an add.
+    if order.get("side") == "memory":
+        if order.get("action"):
+            detail["action"] = str(order["action"])
+        if isinstance(order.get("index"), int):
+            detail["index"] = order["index"]
     return detail
 
 

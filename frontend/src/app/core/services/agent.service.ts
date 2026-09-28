@@ -11,6 +11,7 @@ import {
   ActionResult,
   UnprotectedPosition,
   AgentEvent,
+  AgentMemoryNote,
   AgentNote,
   AgentReflection,
   JourneyEntry,
@@ -80,6 +81,12 @@ export class AgentService {
    * fetches once on its own, the same way getEventMonths() does. */
   async getNotes(): Promise<AgentNote[]> {
     return firstValueFrom(this.http.get<AgentNote[]>('/api/agent/notes'));
+  }
+
+  /** The memory notes the agent holds now, oldest first. One flat fetch like
+   * getNotes(): at most ten short notes. */
+  async getMemory(): Promise<AgentMemoryNote[]> {
+    return firstValueFrom(this.http.get<AgentMemoryNote[]>('/api/agent/memory'));
   }
 
   /** The system message the next pass gets — the rules that never change

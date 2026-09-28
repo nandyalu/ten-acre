@@ -78,6 +78,7 @@ def stub_every_route(monkeypatch):
     monkeypatch.setattr(agent_routes, "get_curve", lambda: [])
     monkeypatch.setattr(agent_routes, "get_unprotected", lambda: [])
     monkeypatch.setattr(agent_routes, "get_notes", lambda: [])
+    monkeypatch.setattr(agent_routes, "get_memory", lambda: [])
     monkeypatch.setattr(agent_routes, "get_events", lambda limit=30, month=None: [])
     monkeypatch.setattr(agent_routes, "get_event_months", lambda: [])
     monkeypatch.setattr(agent_routes, "get_journey_entries", lambda days=10, month=None: [])

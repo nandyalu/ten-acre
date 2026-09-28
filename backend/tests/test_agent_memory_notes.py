@@ -91,3 +91,31 @@ def test_build_prompt_includes_memory_notes():
     prompt = agent.build_prompt(book, [], {})
     assert "## Your persistent memory notes across passes" in prompt
     assert "- Keep cash buffer at 10%" in prompt
+
+
+def test_a_turn_records_what_a_memory_order_did():
+    """The Decisions page says whether a memory order added, cleared or
+    removed a note. Before 2026-09-28 the turn kept the text alone, so run
+    81's clear read the same as an add."""
+    answer = json.dumps({"reasoning": "r", "orders": [
+        {"side": "memory", "reason": "Clearing outdated note", "action": "clear"},
+        {"side": "memory", "reason": "Stale", "action": "remove", "index": 2},
+        {"side": "memory", "reason": "Keep cash for NVDA"},
+        {"side": "buy", "ticker": "AAPL", "quantity": 1, "action": "buy"},
+    ]})
+    turn = agent._turn("prompt", answer)
+    memory = [o for o in turn["orders"] if o["side"] == "memory"]
+    assert memory[0]["action"] == "clear"
+    assert memory[1]["action"] == "remove" and memory[1]["index"] == 2
+    assert "action" not in memory[2]
+    buy = next(o for o in turn["orders"] if o["side"] == "buy")
+    assert "action" not in buy
+
+
+def test_the_memory_route_returns_what_the_next_prompt_shows():
+    from backend.api.routes import agent as agent_routes
+
+    agent.set_memory_notes(["Old note", {"text": "New note", "written": "2026-09-27", "source": "reflection"}])
+    notes = agent_routes.get_memory()
+    assert [n.text for n in notes] == agent.get_memory_notes()
+    assert notes[1].written == "2026-09-27" and notes[1].source == "reflection"

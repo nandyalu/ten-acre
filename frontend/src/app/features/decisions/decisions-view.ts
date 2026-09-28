@@ -8,6 +8,7 @@ import { readerDateKey, readerDateLabel } from '../../shared/market-time';
 import { CopyButton } from '../../shared/copy-button';
 import { Markdown } from '../../shared/markdown';
 import { DecisionCard } from './decision-card';
+import { MemoryPanel } from './memory-panel';
 import { ReflectionCard } from './reflection-card';
 
 /** One calendar day within a month: its evening review, when it had one,
@@ -45,7 +46,7 @@ function utcMonth(instant: string): string {
 @Component({
   selector: 'app-decisions-view',
   standalone: true,
-  imports: [CopyButton, DecisionCard, Markdown, ReflectionCard, RouterLink, Term],
+  imports: [CopyButton, DecisionCard, Markdown, MemoryPanel, ReflectionCard, RouterLink, Term],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './decisions-view.html',
 })

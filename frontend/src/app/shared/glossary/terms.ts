@@ -149,6 +149,13 @@ export const TERMS: Term[] = [
     long: 'Naming no time falls back to the following open, and a final pass always runs five minutes before the close whatever the agent asked for, so no position goes into the night unreviewed. Before 2026-09-05 this ran once a day at a fixed clock time; the agent now owns its own schedule entirely.',
   },
   {
+    id: 'memory-note',
+    label: 'memory note',
+    short:
+      'A note the agent writes to itself that goes back into every prompt until the agent or its evening review removes it. The note for the next pass lasts one pass; a memory note stays.',
+    long: 'It may keep ten, each up to 500 characters, and the oldest goes when an eleventh arrives. A pass adds one or clears them all; the evening review may add, rewrite or remove one. The Decisions page shows the notes it holds now, and each pass shows the memory orders it sent.',
+  },
+  {
     id: 'evening-review',
     label: 'evening review',
     short:

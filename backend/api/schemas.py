@@ -506,6 +506,19 @@ class AgentNoteOut(Schema):
     would_have_done: str | None = None
 
 
+class AgentMemoryNoteOut(Schema):
+    """One note the agent keeps for itself across passes (``side: memory``).
+
+    Not an ``AgentNoteOut``: a note goes to whoever maintains the agent, and
+    a memory note goes back into every prompt the agent reads. ``written``
+    and ``source`` are null on a note stored before 2026-09-24.
+    """
+
+    text: str
+    written: str | None = None
+    source: str | None = None
+
+
 class ReflectionNoteOut(Schema):
     kind: str = "other"
     pass_id: int | None = None
