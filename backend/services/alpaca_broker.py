@@ -14,7 +14,9 @@ narrow. None of them widens. An account must pass every one.
    module.** Paper keys and live keys are different key pairs, and a live key
    is refused by the paper host. ``_assert_paper()`` runs immediately before
    every order and checks the host again, so an edit that adds a live host
-   fails at the first order.
+   fails at the first order. **The one other host is ``DATA_HOST``, for
+   market data.** Only ``_market_data`` reaches it, and it can send a GET and
+   nothing else. No order can go there.
 2. **The account number carries the ``PA`` prefix.** Every Alpaca paper
    account number starts with it, and a live one does not.
 3. **The account class is resolved from the account's own margin multiplier.**
@@ -43,6 +45,7 @@ narrow. None of them widens. An account must pass every one.
 import datetime
 import logging
 import os
+import re
 import uuid
 
 import requests
@@ -52,6 +55,25 @@ log = logging.getLogger("ten-acre.alpaca_broker")
 PAPER_HOST = "https://paper-api.alpaca.markets"
 _HOST = PAPER_HOST
 _TIMEOUT = 20
+
+# Prices and screens, read-only. Paper keys and live keys read the same data.
+DATA_HOST = "https://data.alpaca.markets"
+# Free keys may not read the live consolidated feed ("subscription does not
+# permit querying recent SIP data"). IEX alone is about 4% of the volume, so
+# its daily volume fails the candidate volume floor for almost every name. The
+# consolidated feed 15 minutes late gives the true volume, and a screen for a
+# one-to-two-week swing does not need the last 15 minutes. Checked live on
+# 2026-09-29.
+_DATA_FEED = "delayed_sip"
+# One malformed symbol makes Alpaca refuse the whole snapshot batch with a
+# 400. A text source can give "^GSPC" or "BTC-USD", so those are dropped
+# before the request. A well-formed symbol that does not exist is only left
+# out of the answer.
+_SYMBOL = re.compile(r"^[A-Z][A-Z.]{0,9}$")
+# Webull refuses a delisted symbol. Alpaca answers with its last bar, weeks
+# old: EA's came back dated 2026-08-04 on 2026-09-29, with 48.7M shares. The
+# longest normal gap between two sessions is four days, a holiday weekend.
+_MAX_BAR_AGE = datetime.timedelta(days=5)
 
 _PAPER_ACCOUNT_PREFIX = "PA"
 _ACCOUNT_CLASSES = ("CASH", "MARGIN")
@@ -104,10 +126,18 @@ def _assert_sandbox() -> None:
 
 
 def _request(method: str, path: str, **kwargs):
+    return _send(method, _HOST, path, **kwargs)
+
+
+def _market_data(path: str, **params):
+    return _send("GET", DATA_HOST, path, params=params)
+
+
+def _send(method: str, host: str, path: str, **kwargs):
     key, secret = _keys()
     response = requests.request(
         method,
-        f"{_HOST}{path}",
+        f"{host}{path}",
         headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
         timeout=_TIMEOUT,
         **kwargs,
@@ -511,3 +541,46 @@ def get_order_detail(client_order_id: str) -> dict | None:
         "filled_quantity": order.get("filled_qty"),
         "alpaca": order,
     }
+
+
+def most_active(top: int) -> list[str]:
+    """The symbols with the most shares traded today, busiest first."""
+    body = _market_data("/v1beta1/screener/stocks/most-actives", by="volume", top=top) or {}
+    return [row["symbol"] for row in body.get("most_actives", []) if row.get("symbol")]
+
+
+def day_gainers(top: int) -> list[str]:
+    """The symbols that rose most today, largest rise first."""
+    body = _market_data("/v1beta1/screener/stocks/movers", top=top) or {}
+    return [row["symbol"] for row in body.get("gainers", []) if row.get("symbol")]
+
+
+def get_snapshots(tickers: list[str]) -> list[dict]:
+    """One batched snapshot, in the row shape of Webull's screener.
+
+    The keys are ``symbol``, ``price``, ``volume`` and ``change_ratio``, so
+    ``candidates._to_candidate`` reads a row from either broker the same way.
+    A snapshot has no company name, so ``name`` is empty. A symbol whose
+    last daily bar is older than ``_MAX_BAR_AGE`` is left out, as delisted.
+    """
+    symbols = [t for t in dict.fromkeys(tickers) if _SYMBOL.match(t)]
+    if not symbols:
+        return []
+    body = _market_data("/v2/stocks/snapshots", symbols=",".join(symbols), feed=_DATA_FEED) or {}
+    rows = []
+    oldest = datetime.datetime.now(datetime.timezone.utc) - _MAX_BAR_AGE
+    for symbol, snap in body.items():
+        day = (snap or {}).get("dailyBar") or {}
+        if not day.get("t") or datetime.datetime.fromisoformat(day["t"]) < oldest:
+            continue
+        price = ((snap or {}).get("latestTrade") or {}).get("p") or day.get("c")
+        previous = ((snap or {}).get("prevDailyBar") or {}).get("c")
+        rows.append({
+            "symbol": symbol,
+            "price": price,
+            "volume": day.get("v"),
+            "change_ratio": price / previous - 1 if price and previous else None,
+            "name": "",
+        })
+    return rows
+

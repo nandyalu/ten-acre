@@ -28,6 +28,7 @@ paths:
 - **One exit makes an `oto`.** Alpaca's `bracket` needs both a stop and a target.
 - **Unsettled cash** is `cash − buying_power` on a cash account, an inference to check once a sell settles on paper. Alpaca does not refuse a bracket against unsettled funds, so Webull's fallback path never runs.
 - **No trade stream.** `trade_stream.start` returns at once under Alpaca. Fills that happen on their own settle on the 15-minute poll.
+- **The candidate screen comes from Alpaca's data host (2026-09-29).** There is no Webull client, so without it the menu was empty, the prompt dropped every research rule, and the agent waited in cash for signals it had no way to order. `DATA_HOST` is the one other host in the module, and only `_market_data` reaches it, with a GET. `most_active` and `day_gainers` give symbols. `get_snapshots` prices them in Webull's row shape on the `delayed_sip` feed: free keys may not read live SIP, and IEX volume is about 4% of the market, which fails the volume floor. It drops a symbol whose last daily bar is more than 5 days old, because Alpaca answers a delisted symbol (EA, LBRDK) with its last bar where Webull refuses it. Alpaca's most-actives includes ETFs, so `candidates._listed` removes them with Nasdaq Trader's symbol directory, which also gives the names.
 
 ## What is proved and what is not
 

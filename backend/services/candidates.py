@@ -1,4 +1,8 @@
-"""Candidate tickers to consider following, from Webull's screener.
+"""Candidate tickers to consider following, from the broker's screener.
+
+Webull's screener when a Webull client exists. Alpaca's otherwise, on an
+Alpaca paper deployment, which has no Webull client at all. Without one of the
+two the menu is empty, and the agent has no way to research a new name.
 
 This proposes; it never follows anything on its own. The reason is arithmetic:
 one analysis takes about seven minutes of GPU, so an eight-ticker watchlist is
@@ -13,15 +17,17 @@ worst possible thing to put in front of a swing-trading account of a few
 thousand dollars. Price and volume floors turn the same feed into names like
 INTC, NVDA and SMCI.
 
-Two more screens hand back bare tickers instead of a priced Webull row:
+Two more screens hand back bare tickers instead of a priced screener row:
 QuiverQuant's congressional stock-trade table and Yahoo Finance's public
-trending-tickers feed. Both are verified against a real Webull snapshot
+trending-tickers feed. Both are verified against a real broker snapshot
 before they can pass the same price/volume/move floors as everything else —
 a ticker pulled from a scraped page is not trusted data until priced.
 
 Blocking (HTTP + DB) — call via asyncio.to_thread.
 """
 import ast
+import csv
+import datetime
 import json
 import logging
 import re
@@ -31,7 +37,7 @@ import urllib.request
 from dataclasses import dataclass
 
 from backend.database import db
-from backend.services import listings, quotes
+from backend.services import alpaca_broker, listings, quotes
 
 log = logging.getLogger("ten-acre.candidates")
 
@@ -203,41 +209,90 @@ def _trending_tickers() -> set[str]:
     return {str(r.get("symbol", "")).strip().upper() for r in rows if r.get("symbol")}
 
 
+# Nasdaq Trader's symbol directory: every US-listed symbol, its name, and a
+# Y/N ETF column. Nasdaq writes it once a day. Alpaca has no ETF flag on an
+# asset, and a match on the name misses ETFs like GLD ("SPDR Gold Shares").
+_SYMBOL_DIRECTORY = (
+    "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
+    "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt",
+)
+_listed_cache: tuple[datetime.date, dict[str, tuple[str, bool]]] | None = None
+
+
+def _listed() -> dict[str, tuple[str, bool]]:
+    """Each listed ticker's name and whether it is an ETF, read once a day.
+
+    Empty when a file cannot be read. Then no ETF is filtered out, because a
+    menu with ETFs is better than no menu. A failed read is not kept, so the
+    next screen tries again.
+    """
+    global _listed_cache
+    today = datetime.date.today()
+    if _listed_cache and _listed_cache[0] == today:
+        return _listed_cache[1]
+    listed: dict[str, tuple[str, bool]] = {}
+    for url in _SYMBOL_DIRECTORY:
+        text = _fetch_text(url, headers=_BROWSER_HEADERS)
+        if text is None:
+            log.warning("No symbol directory, so ETFs are not filtered from the candidates")
+            return {}
+        for row in csv.DictReader(text.splitlines(), delimiter="|"):
+            ticker = (row.get("Symbol") or row.get("ACT Symbol") or "").strip().upper()
+            if ticker and row.get("Test Issue") != "Y" and row.get("ETF") in ("Y", "N"):
+                listed[ticker] = ((row.get("Security Name") or "").strip(), row["ETF"] == "Y")
+    _listed_cache = (today, listed)
+    return listed
+
+
 def fetch_candidates() -> list[Candidate]:
     """Screened names not already tracked.
 
-    Two Webull screens, deliberately: the most active gives liquid names that
+    Two broker screens, deliberately: the most active gives liquid names that
     are simply busy, and the day's gainers give names that are moving. Two
     text sources add names a price/volume screen cannot see at all — a
     congressional trade, a name suddenly searched for — but they hand back
     bare tickers, not priced rows, so they are verified against a real
-    Webull snapshot before they can reach the same filters as everything
+    broker snapshot before they can reach the same filters as everything
     else. Nothing here is a recommendation — it is raw material an analysis
     is spent on, and the analysis is what decides anything.
 
     Each text source keeps `_RESERVED_SLOTS` of the menu for itself, most
-    liquid of its own names first; Webull fills the rest, most liquid first.
+    liquid of its own names first; the broker screens fill the rest, most
+    liquid first.
     """
     client = quotes.get_api_client()
-    if client is None:
-        log.info("No Webull client — cannot screen for candidates")
-        return []
-    from webull.data.quotes.screener import Screener
+    if client is not None:
+        from webull.data.quotes.screener import Screener
 
-    screener = Screener(client)
-    found: dict[str, Candidate] = {}
-    screens = (
-        ("most active", lambda: screener.get_most_active("US_STOCK", page_size=_PAGE_SIZE)),
-        (
-            "day gainers",
-            # rank_type/sort_by are enums the SDK does not validate: a wrong
-            # value returns zero rows rather than an error, which is how three
-            # earlier guesses failed silently.
-            lambda: screener.get_gainers_losers(
-                "DAY_1", "US_STOCK", "CHANGE_RATIO", page_size=_PAGE_SIZE, direction="DESC"
+        screener = Screener(client)
+        snapshots = quotes.get_snapshots
+        screens = (
+            ("most active", lambda: screener.get_most_active("US_STOCK", page_size=_PAGE_SIZE)),
+            (
+                "day gainers",
+                # rank_type/sort_by are enums the SDK does not validate: a wrong
+                # value returns zero rows rather than an error, which is how three
+                # earlier guesses failed silently.
+                lambda: screener.get_gainers_losers(
+                    "DAY_1", "US_STOCK", "CHANGE_RATIO", page_size=_PAGE_SIZE, direction="DESC"
+                ),
             ),
-        ),
-    )
+        )
+    elif alpaca_broker.is_paper():
+        # Alpaca's screens give symbols only: most-actives has no price and
+        # movers has no volume. A snapshot prices both, so every row reaches
+        # the same floors as a Webull row. Its most-actives list includes ETFs,
+        # which Webull's US_STOCK screen does not; `_listed` removes them below.
+        snapshots = alpaca_broker.get_snapshots
+        screens = (
+            ("most active", lambda: snapshots(alpaca_broker.most_active(_PAGE_SIZE))),
+            ("day gainers", lambda: snapshots(alpaca_broker.day_gainers(_PAGE_SIZE))),
+        )
+    else:
+        log.info("No Webull client and no Alpaca paper keys — cannot screen for candidates")
+        return []
+
+    found: dict[str, Candidate] = {}
     for source, call in screens:
         try:
             rows = _rows(call())
@@ -270,7 +325,7 @@ def fetch_candidates() -> list[Candidate]:
             if ticker not in found and ticker not in wanted:
                 wanted[ticker] = source
     if wanted:
-        for row in quotes.get_snapshots(list(wanted)[:100]):
+        for row in snapshots(list(wanted)[:100]):
             ticker = str(row.get("symbol", "")).strip().upper()
             source = wanted.get(ticker)
             candidate = _to_candidate(row, source) if source else None
@@ -282,9 +337,13 @@ def fetch_candidates() -> list[Candidate]:
     # enough here — a held name is a tracked name.
     tracked = {t.upper() for t in db.get_watchlist()}
     inactive = {t.upper() for t in listings.inactive_tickers()}
+    # An ETF has no earnings or filings for the analysts to read, and a
+    # leveraged one decays over a one-to-two-week hold.
+    listed = _listed()
     fresh = [
         c for c in found.values()
         if c.ticker not in tracked and c.ticker not in inactive
+        and not listed.get(c.ticker, ("", False))[1]
     ]
 
     picked: list[Candidate] = []
@@ -298,6 +357,9 @@ def fetch_candidates() -> list[Candidate]:
         (c for c in fresh if c.source not in _RESERVED_SLOTS), key=lambda c: c.volume, reverse=True
     )
     picked.extend(webull[: MAX_PROPOSED - len(picked)])
+    # An Alpaca snapshot has no company name.
+    for c in picked:
+        c.name = c.name or listed.get(c.ticker, ("", False))[0][:40]
     return picked
 
 

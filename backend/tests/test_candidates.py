@@ -11,6 +11,8 @@ import pytest
 
 from backend.services import candidates
 
+_real_listed = candidates._listed
+
 
 def _row(symbol="AAA", price=50.0, volume=5_000_000, change=0.03, name="A Corp"):
     return {
@@ -20,6 +22,12 @@ def _row(symbol="AAA", price=50.0, volume=5_000_000, change=0.03, name="A Corp")
         "change_ratio": str(change),
         "name": name,
     }
+
+
+@pytest.fixture(autouse=True)
+def no_symbol_directory(monkeypatch):
+    """Never reach Nasdaq Trader from a test. No directory filters nothing."""
+    monkeypatch.setattr(candidates, "_listed", lambda: {})
 
 
 @pytest.fixture
@@ -143,7 +151,40 @@ def test_a_failing_screen_does_not_lose_the_other(screened, monkeypatch):
 
 def test_no_client_means_no_candidates(monkeypatch):
     monkeypatch.setattr(candidates.quotes, "get_api_client", lambda: None)
+    monkeypatch.setattr(candidates.alpaca_broker, "is_paper", lambda: False)
     assert candidates.fetch_candidates() == []
+
+
+def test_an_alpaca_deployment_screens_through_alpaca(monkeypatch):
+    """An Alpaca deployment has no Webull client. Without this screen the
+    agent saw no menu and could research nothing (2026-09-29)."""
+    alpaca = candidates.alpaca_broker
+    monkeypatch.setattr(candidates.quotes, "get_api_client", lambda: None)
+    monkeypatch.setattr(alpaca, "is_paper", lambda: True)
+    monkeypatch.setattr(alpaca, "most_active", lambda top: ["BUSY", "PENNY", "FUND"])
+    monkeypatch.setattr(alpaca, "day_gainers", lambda top: ["MOVER", "PUMP"])
+    rows = {
+        "BUSY": _row("BUSY", volume=9_000_000, name=""),
+        "PENNY": _row("PENNY", price=0.5, name=""),
+        "MOVER": _row("MOVER", change=0.08, name=""),
+        "PUMP": _row("PUMP", change=2.0, name=""),
+        "TREND": _row("TREND", volume=2_000_000, name=""),
+        "FUND": _row("FUND", volume=90_000_000, name=""),
+    }
+    monkeypatch.setattr(alpaca, "get_snapshots", lambda tickers: [rows[t] for t in tickers if t in rows])
+    listed = {t: (f"{t} Inc", False) for t in rows} | {"FUND": ("A Bond ETF", True)}
+    monkeypatch.setattr(candidates, "_listed", lambda: listed)
+    monkeypatch.setattr(candidates.db, "get_watchlist", lambda: [])
+    monkeypatch.setattr(candidates.listings, "inactive_tickers", lambda: [])
+    monkeypatch.setattr(candidates, "_congress_tickers", lambda: set())
+    monkeypatch.setattr(candidates, "_trending_tickers", lambda: {"TREND"})
+
+    picked = candidates.fetch_candidates()
+
+    assert [(c.ticker, c.source) for c in picked] == [
+        ("TREND", "trending (Yahoo Finance)"), ("BUSY", "most active"), ("MOVER", "day gainers"),
+    ]
+    assert [c.name for c in picked] == ["TREND Inc", "BUSY Inc", "MOVER Inc"]
 
 
 def test_a_pump_that_cleared_the_price_floor_is_still_filtered(screened):
@@ -279,3 +320,28 @@ def test_text_sources_are_fetched_as_a_browser(monkeypatch):
     assert set(seen) == {candidates._TRENDING_URL, candidates._CONGRESS_URL}
     for url, headers in seen.items():
         assert headers and headers.get("User-Agent", "").startswith("Mozilla"), url
+
+
+def test_the_symbol_directory_marks_etfs_and_names(monkeypatch):
+    files = {
+        "nasdaqlisted": (
+            "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"
+            "INTC|Intel Corporation - Common Stock|Q|N|N|100|N|N\n"
+            "ZXZZT|NASDAQ TEST STOCK|G|Y|N|100|N|N\n"
+            "File Creation Time: 0929202611:01|||||||\n"
+        ),
+        "otherlisted": (
+            "ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol\n"
+            "GLD|SPDR Gold Shares|P|GLD|Y|40|N|GLD\n"
+            "File Creation Time: 0929202612:11||||||\n"
+        ),
+    }
+    monkeypatch.setattr(candidates, "_listed_cache", None)
+    monkeypatch.setattr(
+        candidates, "_fetch_text", lambda url, **kw: next(v for k, v in files.items() if k in url)
+    )
+    assert _real_listed() == {
+        "INTC": ("Intel Corporation - Common Stock", False),
+        "GLD": ("SPDR Gold Shares", True),
+    }
+

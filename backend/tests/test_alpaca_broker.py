@@ -5,6 +5,7 @@ so a mock cannot satisfy them. The rest replace ``_request`` with a fake
 Alpaca that answers from a dict.
 """
 import ast
+import datetime
 import pathlib
 import re
 
@@ -179,3 +180,29 @@ def test_the_selector_picks_by_name_and_refuses_a_typo(monkeypatch):
         broker.name()
     monkeypatch.delenv("BROKER")
     assert broker.name() == "webull"
+
+
+def test_a_snapshot_reads_as_a_screener_row(monkeypatch):
+    asked = {}
+    today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT04:00:00Z")
+
+    def market_data(path, **params):
+        asked.update(params)
+        return {"AAA": {
+            "latestTrade": {"p": 11.0},
+            "dailyBar": {"c": 10.9, "v": 2_500_000, "t": today},
+            "prevDailyBar": {"c": 10.0},
+        }, "GONE": {  # delisted: Alpaca still answers with its last bar
+            "latestTrade": {"p": 50.0},
+            "dailyBar": {"c": 50.0, "v": 9_000_000, "t": "2026-08-04T04:00:00Z"},
+            "prevDailyBar": {"c": 50.0},
+        }}
+
+    monkeypatch.setattr(alpaca_broker, "_market_data", market_data)
+    [row] = alpaca_broker.get_snapshots(["AAA", "^GSPC", "BTC-USD", "AAA"])
+    # One malformed symbol makes Alpaca refuse the whole batch.
+    assert asked["symbols"] == "AAA"
+    assert asked["feed"] == "delayed_sip"
+    assert row["symbol"] == "AAA" and row["price"] == 11.0 and row["volume"] == 2_500_000
+    assert row["change_ratio"] == pytest.approx(0.1)
+
