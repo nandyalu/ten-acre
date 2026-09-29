@@ -31,6 +31,7 @@ See .claude/skills/probe-the-prompt/SKILL.md for how to read what comes back.
 import argparse
 import datetime
 import json
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from backend import paths
@@ -341,7 +342,15 @@ def ask(base_url: str, system: str, user: str, tools=None, prose: bool = False) 
         return _ask_gemini_text(system, user) if prose else _ask_gemini(system, user, tools)
     from openai import OpenAI
 
-    client = OpenAI(base_url=base_url, api_key="ollama", timeout=900)
+    from tradingagents.llm_clients.api_key_env import get_api_key_env
+
+    # The same registry the app itself reads for a hosted openai-compatible
+    # provider (see analysis._models_auth_header). "ollama" is the keyless
+    # local pool's placeholder and stays the default so that case is unchanged.
+    provider = str(analysis.DEFAULT_CONFIG.get("llm_provider") or "").lower()
+    env_name = get_api_key_env(provider)
+    api_key = (os.environ.get(env_name) if env_name else None) or "ollama"
+    client = OpenAI(base_url=base_url, api_key=api_key, timeout=900)
     started = time.monotonic()
     raw = client.chat.completions.create(
         model=analysis.get_model(),
