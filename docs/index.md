@@ -16,7 +16,7 @@ Nothing is analysed automatically, holdings included. A **research** order commi
 
 At every pass the agent reads its book, its signals, its own track record, and the bill it is running up, and answers with orders.
 
-**It also says when to wake it next.** It sets its own cadence through the session, so it can take a profit, cut a loss, or commission research while the move it is reading is still happening. Naming no time means it is asked again at the following open — a fallback, not a plan — and a final pass always runs five minutes before the close, whatever it asked for, so no position goes into the night unreviewed.
+**It also says when to wake it next.** It sets its own cadence through the session, so it can take a profit, cut a loss, or commission research while the move it is reading is still happening. Naming no time means it is asked again at the following open — a fallback, not a plan — and a final pass always runs fifteen minutes before the close, whatever it asked for, so no position goes into the night unreviewed.
 
 The app records each decision with its price and time horizon, then grades it automatically once that horizon arrives — against reality, against SPY, and against the analysis's own price target.
 

@@ -146,7 +146,7 @@ export const TERMS: Term[] = [
     label: 'decision pass',
     short:
       'The moment the agent reads its book and answers with orders. Not a fixed time — the agent names its own next one, so this happens whenever it asked to be woken.',
-    long: 'Naming no time falls back to the following open, and a final pass always runs five minutes before the close whatever the agent asked for, so no position goes into the night unreviewed. Before 2026-09-05 this ran once a day at a fixed clock time; the agent now owns its own schedule entirely.',
+    long: 'Naming no time falls back to the following open, and a final pass always runs fifteen minutes before the close whatever the agent asked for, so no position goes into the night unreviewed. Before 2026-09-05 this ran once a day at a fixed clock time; the agent now owns its own schedule entirely.',
   },
   {
     id: 'memory-note',

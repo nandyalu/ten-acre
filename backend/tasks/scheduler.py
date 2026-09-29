@@ -454,8 +454,8 @@ def restore_agent_task() -> None:
 def _ran_recently(now: datetime.datetime, within=datetime.timedelta(minutes=30)) -> bool:
     """True when a pass has already run in the last half hour.
 
-    Guards the end-of-day pass. An agent that asked to be woken at 3:45 has
-    reviewed the day; waking it again at 3:55 spends a prompt to be told the
+    Guards the end-of-day pass. An agent that asked to be woken at 3:30 has
+    reviewed the day; waking it again at 3:45 spends a prompt to be told the
     same thing.
     """
     runs = agent.db.get_agent_runs(limit=1)
@@ -478,8 +478,8 @@ def _take_final_pass(now: datetime.datetime) -> bool:
     close reviews nothing. The date guard is belt to ``_ran_recently``'s
     braces: one final pass a session.
 
-    The time comes from ``market_clock.next_final_pass``: five minutes before
-    that session's close, so a 1:00 PM half-day gets a 12:55 pass.
+    The time comes from ``market_clock.next_final_pass``: fifteen minutes before
+    that session's close, so a 1:00 PM half-day gets a 12:45 pass.
     """
     global _final_pass_at, _last_final_pass
     if _final_pass_at is None or now < _final_pass_at:

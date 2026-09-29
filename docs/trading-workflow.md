@@ -17,7 +17,7 @@ Two posts arrive before the US market opens.
 
 **Whenever the agent asked to be woken next. This is the post to read.**
 
-The agent names its own next wakeup at the end of every pass, so this does not land at a fixed time — naming none means it is asked again at the following open, and a final pass always runs five minutes before the close regardless. It says what the agent bought, sold, adjusted, commissioned and untracked, and it quotes its own reasoning. On a pass it did nothing, it says nothing.
+The agent names its own next wakeup at the end of every pass, so this does not land at a fixed time — naming none means it is asked again at the following open, and a final pass always runs fifteen minutes before the close regardless. It says what the agent bought, sold, adjusted, commissioned and untracked, and it quotes its own reasoning. On a pass it did nothing, it says nothing.
 
 Then open the **Events** page. The Discord post is the summary; Events has the prompt the agent actually saw and the answer it actually gave, word for word.
 

@@ -201,7 +201,7 @@ A vendor figure is an estimate, not the invoice. Two billed readings so far came
 A simulated Webull account the model trades on its own, inside a budget you set (default $10,000).
 It runs on its own schedule, not a fixed one.
 
-Every decision pass ends with the agent naming when it wants to be asked again — five minutes to four days out. Naming nothing means it is asked at the following open, and a final pass always runs five minutes before the close, whatever it asked for, so no position goes into the night unreviewed.
+Every decision pass ends with the agent naming when it wants to be asked again — five minutes to four days out. Naming nothing means it is asked at the following open, and a final pass always runs fifteen minutes before the close, whatever it asked for, so no position goes into the night unreviewed.
 And whenever an intraday analysis is triggered during market hours, by an unusual move or a volume spike, it decides again on the spot, at most once every 30 minutes.
 
 The split is deliberate. A pass the agent scheduled itself is a plan it already made — it can wake before the open to see what has gone stale and commission a fresh look, or through the day to reassess a position.
@@ -369,7 +369,7 @@ A handful of jobs still run on a clock; everything else is the agent's own choic
 | 12:45 | **Regime snapshot** — VIX, SPY vs its 200-day average, and the 10Y–3M yield spread, shown as 🟢/🟡/🔴 |
 | 13:00 | **Earnings check** — if a tracked ticker reports within 2 days, the agent is woken and told. Nothing is analysed unless it asks |
 | 13:30–20:00 (9:30–16:00 ET) | **Watchdog**, every 15 minutes — flags a move of 5% or more, volume at 2x the average or more, a stop breach, or a target touch. A big move or a volume spike wakes the agent, which decides whether it is worth paying to study |
-| 5 min before the close (15:55 ET; 12:55 on a half-day) | **Final pass** — the agent is asked once more before the close, whatever it asked for, so no position goes into the night unreviewed |
+| 15 min before the close (15:45 ET; 12:45 on a half-day) | **Final pass** — the agent is asked once more before the close, whatever it asked for, so no position goes into the night unreviewed |
 | 21:30 | **Daily grading** — grades and posts matured signals, then rewrites the journal. Stays after the close because grading reads the day's closing price |
 | Fri 23:00 | **Weekly digest** — the week's outcomes, the win-rate trend, alerts, and the book |
 

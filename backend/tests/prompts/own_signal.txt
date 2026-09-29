@@ -161,7 +161,7 @@ Nothing has been analysed on these yet — they are screened for being liquid an
 
 ## Your next wakeup
 
-You will next be asked at the time you name in next_wakeup. If you name none, or a time after 2026-09-21T15:55 Eastern, you are asked at 2026-09-21T15:55 Eastern, the last pass before today's close.
+You will next be asked at the time you name in next_wakeup. If you name none, or a time after 2026-09-21T15:45 Eastern, you are asked at 2026-09-21T15:45 Eastern, the last pass before today's close.
 
 ---
 

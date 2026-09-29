@@ -53,6 +53,8 @@ Newest first.
 
 **2026-09-29 — on an Alpaca paper deployment, the candidate menu is no longer empty.** `fetch_candidates` used to return nothing when no Webull client existed. It now screens Alpaca's own most-actives and day-gainers lists, prices each row with an Alpaca snapshot, and drops ETFs using Nasdaq's daily symbol directory. Without this, an Alpaca deployment had no way to propose a new ticker to the agent.
 
+**2026-09-29 — the final pass before the close now runs fifteen minutes ahead, not five.** At 3:55 the agent read "closes in 4m" and decided it had no time to order research, read it, and trade. An analysis takes about 7 minutes, 11 at most, so five minutes never left room for one. `FINAL_PASS_LEAD` and the wakeup text the agent reads both moved to fifteen minutes.
+
 **2026-09-28 — a memory order's own record now says whether it added, cleared or removed a note.** `_order_detail` kept the order's text alone before this, so a turn that cleared the memory list read back exactly like one that added a note. Run 81's clear is one of the turns this affects.
 
 **2026-09-27 — five changes reached the agent only today, with a redeploy.** The container that ran from the evening of 2026-09-25 until today was built at `55b102c`, before `e135760`. So the two entries dated 2026-09-25 — a stop the trade stream catches wakes the agent, and a wake during a pass gets a pass after it — were not live on 2026-09-25 or 2026-09-26. Nor were the three dated 2026-09-26: `ask_analyst`, the history in a read, and the extra news sources. All five are live from 2026-09-27. The Laya grade on news items is not: `LAYA_URL` stays unset, because the grades were measured and shelved the same day.

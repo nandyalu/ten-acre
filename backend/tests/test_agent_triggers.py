@@ -414,6 +414,19 @@ def test_the_final_pass_is_skipped_after_a_recent_pass(wakeup_stub, monkeypatch)
     assert wakeup_stub == []
 
 
+def test_a_wakeup_the_agent_asked_for_runs_inside_the_cooldown(wakeup_stub, monkeypatch):
+    """The half-hour cooldown holds back only the final pass the scheduler
+    adds. A time the agent chose itself still runs, however recent the last
+    pass was."""
+    monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _et(15, 45))
+    monkeypatch.setattr(scheduler, "_ran_recently", lambda now, **k: True)
+    monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: _et(15, 45))
+
+    _final_pass_comes_round(monkeypatch)
+
+    assert wakeup_stub == ["Alarm"]
+
+
 def test_the_final_pass_moves_to_the_next_session_whether_or_not_it_ran(wakeup_stub, monkeypatch):
     """If it moved only after a pass it ran, one skipped session would leave
     it due, and the agent task would run again at once, in a loop."""

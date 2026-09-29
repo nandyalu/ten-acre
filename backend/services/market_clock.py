@@ -37,7 +37,12 @@ MAX_WAKEUP = datetime.timedelta(days=4)
 # agent asked for, so no position goes into the night unreviewed. A lead, not a
 # clock time, since 2026-09-18: it was ``time(15, 55)``, which on a 1:00 PM
 # half-day fell after the close, so those days never had one.
-FINAL_PASS_LEAD = datetime.timedelta(minutes=5)
+#
+# **Fifteen minutes since 2026-09-29, and five before that.** At 3:55 the
+# agent read "closes in 4m" and decided it had no time to order research,
+# read it and trade. An analysis takes about 7 minutes, 11 at most, so fifteen
+# leaves time for all three before the close.
+FINAL_PASS_LEAD = datetime.timedelta(minutes=15)
 
 
 def now_et(now: datetime.datetime | None = None) -> datetime.datetime:
