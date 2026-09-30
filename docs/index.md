@@ -8,7 +8,7 @@ Ten Acre is a self-hosted experiment. An agent gets a simulated brokerage accoun
 
 A web dashboard and a Discord channel report what it did.
 
-**No real money is involved and no order can reach a real account.** Webull access is the sandbox only.
+**No real money is involved and no order can reach a real account.** The broker is Webull's sandbox or Alpaca's paper host, and nothing else.
 
 ## What runs on the agent's own schedule
 
@@ -48,7 +48,7 @@ Once the container is up, the app takes over from the documentation: a deploymen
 
 ## Ground rules
 
-- **The app never places a real order.** Every order goes to Webull's sandbox, and the agent refuses to run at all when the app holds production credentials.
+- **The app never places a real order.** Every order goes to Webull's sandbox or to Alpaca paper. On Webull the agent refuses to run without the sandbox flag. The Alpaca module knows only the paper host.
 - Signals come from a small local model. Treat each one as a structured second opinion, not as a fact.
 - **A single analysis is one sample.** The model runs at temperature 1, so the same ticker on the same day has returned opposite decisions.
 - Nothing here is financial advice.

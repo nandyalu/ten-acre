@@ -198,7 +198,7 @@ A vendor figure is an estimate, not the invoice. Two billed readings so far came
 
 ## The auto trader
 
-A simulated Webull account the model trades on its own, inside a budget you set (default $10,000).
+A simulated account the model trades on its own, on Webull's sandbox or on Alpaca paper, inside a budget you set (default $10,000).
 It runs on its own schedule, not a fixed one.
 
 Every decision pass ends with the agent naming when it wants to be asked again — five minutes to four days out. Naming nothing means it is asked at the following open, and a final pass always runs fifteen minutes before the close, whatever it asked for, so no position goes into the night unreviewed.

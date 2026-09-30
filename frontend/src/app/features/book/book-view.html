@@ -28,8 +28,8 @@
   @if (book(); as b) {
     @if (!b.sandbox) {
       <p class="notice notice-warn">
-        <span aria-hidden="true">⚠️</span> Webull is not in sandbox mode, so the agent refuses every
-        order. Nothing here will change until sandbox credentials are configured.
+        <span aria-hidden="true">⚠️</span> The broker is not in paper mode, so the agent refuses
+        every order. Nothing here will change until paper credentials are configured.
       </p>
     } @else if (!b.enabled) {
       <p class="notice notice-info">

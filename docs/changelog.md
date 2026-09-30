@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-09-30
+
+- **Docs** — README, docs/index.md, docs/overview.md and docs/deploying.md now name Alpaca paper as the second broker, alongside the Webull sandbox, instead of only setup.md. The Book page's broker warning now says "paper mode" and "paper credentials" in place of naming Webull, to match the broker-neutral check behind it (`broker.is_paper()`).
+
 ## 2026-09-29
 
 - **Tooling** — `probe_prompt.py` now sends the real key for a hosted OpenAI-compatible provider, read from the same provider registry `analysis._models_auth_header` uses. Before this it always sent the placeholder key `"ollama"`, so a probe against any provider but Google or the local pool failed to authenticate.

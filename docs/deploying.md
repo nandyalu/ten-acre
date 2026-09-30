@@ -7,7 +7,7 @@
 | | Why | Can you skip it? |
 |---|---|---|
 | **Docker** | The recommended way to run it, as one image | Yes. See "Without Docker" below |
-| **Webull sandbox credentials** | The agent's account, and real-time quotes | **No.** The agent refuses to run without them |
+| **A paper broker** | The agent's account. Webull sandbox credentials, or Alpaca paper keys with `BROKER=alpaca` (see [Credentials](setup.md#alpaca)) | **No.** The agent refuses to run without one |
 | **The account number to trade** | Names which simulated account this container owns | **No.** Without it the app places no order at all |
 | **A model** | Either a local GPU pool or a hosted API key | No, but either works |
 | A Discord webhook URL | Notifications | Yes — the site is identical without it |
@@ -183,6 +183,8 @@ journalctl -u ten-acre -f
 ## Every environment variable
 
 ### Required
+
+These are the Webull values. With `BROKER=alpaca`, set `ALPACA_API_KEY`, `ALPACA_API_SECRET`, `ALPACA_ACCOUNT_NUMBER` (`PA…`, no default for the same reason as below) and `ALPACA_ACCOUNT_CLASS` in their place. See [Credentials](setup.md#alpaca).
 
 | Variable | What it does |
 |---|---|

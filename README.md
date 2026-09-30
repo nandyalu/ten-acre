@@ -26,7 +26,7 @@ Ten Acre is a self-hosted experiment. An agent gets a simulated brokerage accoun
 
 The agent runs a multi-agent AI analysis ([TradingAgents](TradingAgents/README.md)) on the stocks it chooses to watch. The app records every call that analysis makes and grades each one against reality, against a SPY buy-and-hold, and against the analysis's own price target.
 
-**No real money is involved and no order can reach a real account.** Webull access is the sandbox only.
+**No real money is involved and no order can reach a real account.** The broker is Webull's sandbox or Alpaca's paper host, and nothing else.
 
 ## Nobody can nudge it, and that is the point
 
@@ -82,7 +82,7 @@ It answers with a list of actions, and Python refuses what cannot be executed as
 ## Quick start
 
 1. Get two files: [`compose.example.yaml`](compose.example.yaml), saved as `compose.yaml`, and [`.env.example`](.env.example), saved as `.env`. No clone is needed.
-2. Fill in `.env`: `WEBULL_APP_KEY`, `WEBULL_APP_SECRET`, **`WEBULL_SANDBOX=1`**, **`WEBULL_ACCOUNT_ID`**, and your model settings. Optionally `DISCORD_WEBHOOK_URL` for notifications. The agent refuses to trade without the sandbox flag, and places no order without the account id. See [Credentials](docs/setup.md).
+2. Fill in `.env`: `WEBULL_APP_KEY`, `WEBULL_APP_SECRET`, **`WEBULL_SANDBOX=1`**, **`WEBULL_ACCOUNT_ID`**, and your model settings. Optionally `DISCORD_WEBHOOK_URL` for notifications. The agent refuses to trade without the sandbox flag, and places no order without the account id. To use Alpaca paper in place of Webull, set `BROKER=alpaca` and the four `ALPACA_` values instead. See [Credentials](docs/setup.md).
 3. `docker compose up -d`. It pulls the published image, `ghcr.io/nandyalu/ten-acre`, for x86-64. Every setting in the compose file is commented, and it reads its values from `.env`. The container applies its own database migrations at startup.
 4. Open the dashboard. If anything is missing it sends you to **`/setup`**, which names each requirement and shows the lines to paste for it.
 5. Switch the agent on in Settings. **That day becomes day one** — the start date is stamped then and never moves. It starts with an empty watchlist and buys its first research at the next decision pass.
@@ -91,7 +91,7 @@ It answers with a list of actions, and Python refuses what cannot be executed as
 
 ## Honesty notes
 
-- **The app never places a real order.** Every order goes to Webull's sandbox, and the agent refuses to run at all when the app holds production credentials.
+- **The app never places a real order.** Every order goes to Webull's sandbox or to Alpaca paper. On Webull the agent refuses to run without the sandbox flag. The Alpaca module knows only the paper host.
 - Signals come from a small local model. Treat each one as a structured second opinion, not as a fact — the scorecard exists to show how much to trust it.
 - **A single analysis is one sample.** The model runs at temperature 1, so the same ticker on the same day has returned opposite decisions. The scorecard's by-model breakdown is the only honest way to compare two models.
 - Nothing here is financial advice.
