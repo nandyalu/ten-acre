@@ -9,7 +9,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 ## 2026-09-30
 
 - **Tooling** — `backend/services/watchdog.py` now defines its market-hours constants before it imports `bars`. The two modules import each other, so a script that loaded `watchdog` first, such as the intraday backfill, failed. A test now imports each of four modules first in a fresh process. The app loads `bars` first and was not affected.
-- **Data** — With `BROKER=alpaca` and no Webull client, the 1-minute bars behind the charts now come from Alpaca's bars endpoint (`alpaca_broker.get_minute_bars`). Before this, such a deployment had no intraday chart. Daily bars are unchanged.
+- **Data** — With `BROKER=alpaca` and no Webull client, the 1-minute bars behind the charts now come from Alpaca's bars endpoint (`alpaca_broker.get_minute_bars`), on the `sip` feed and about 16 minutes behind, because a free key may not read newer `sip` bars and the bars endpoint refuses `delayed_sip`. Before this, such a deployment had no intraday chart. Daily bars are unchanged.
 - **The site** — The ticker page has a "Latest analysis" card: the call, the price, the time horizon, why the analysis ran and the rationale. The timeline shows the time of each record on the reader's clock, and its empty text no longer tells the reader to run an analysis.
 - **Docs** — README, docs/index.md, docs/overview.md and docs/deploying.md now name Alpaca paper as the second broker, alongside the Webull sandbox, instead of only setup.md. The Book page's broker warning now says "paper mode" and "paper credentials" in place of naming Webull, to match the broker-neutral check behind it (`broker.is_paper()`).
 

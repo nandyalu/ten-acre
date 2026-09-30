@@ -592,15 +592,23 @@ def get_snapshots(tickers: list[str]) -> list[dict]:
 # the longest market closure.
 _MINUTE_LOOKBACK = datetime.timedelta(days=10)
 
+# The bars endpoint refuses ``delayed_sip`` ("invalid feed", checked live on
+# 2026-09-30); only the snapshot endpoint takes it. A free key may read ``sip``
+# bars that end at least 15 minutes ago, so a request ends no later than this
+# before now. One minute more than the limit keeps a slow clock inside it.
+_SIP_DELAY = datetime.timedelta(minutes=16)
+
 
 def get_minute_bars(ticker: str, count: int, end: datetime.datetime | None = None) -> list[dict]:
-    """The last ``count`` 1-minute bars up to ``end`` (default: now), newest
-    first, in Alpaca's own shape: ``t`` (RFC 3339, UTC), ``o``, ``h``, ``l``,
-    ``c``, ``v``. Pre-market and after-hours minutes are included.
+    """The last ``count`` 1-minute bars up to ``end``, newest first, in
+    Alpaca's own shape: ``t`` (RFC 3339, UTC), ``o``, ``h``, ``l``, ``c``,
+    ``v``. Pre-market and after-hours minutes are included. ``end`` is at most
+    ``_SIP_DELAY`` before now, which is also the default.
     """
-    end = end or datetime.datetime.now(datetime.timezone.utc)
-    if end.tzinfo is None:
+    latest = datetime.datetime.now(datetime.timezone.utc) - _SIP_DELAY
+    if end is not None and end.tzinfo is None:
         end = end.replace(tzinfo=datetime.timezone.utc)
+    end = min(end, latest) if end is not None else latest
     body = _market_data(
         f"/v2/stocks/{ticker}/bars",
         timeframe="1Min",
@@ -608,6 +616,6 @@ def get_minute_bars(ticker: str, count: int, end: datetime.datetime | None = Non
         end=end.isoformat(),
         limit=count,
         sort="desc",
-        feed=_DATA_FEED,
+        feed="sip",
     ) or {}
     return body.get("bars") or []

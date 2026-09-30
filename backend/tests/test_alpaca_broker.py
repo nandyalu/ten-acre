@@ -208,7 +208,7 @@ def test_a_snapshot_reads_as_a_screener_row(monkeypatch):
 
 
 
-def test_minute_bars_page_backward_from_the_end_on_the_delayed_feed(monkeypatch):
+def test_minute_bars_page_backward_from_the_end_on_the_sip_feed(monkeypatch):
     asked = {}
 
     def market_data(path, **params):
@@ -221,11 +221,25 @@ def test_minute_bars_page_backward_from_the_end_on_the_delayed_feed(monkeypatch)
 
     assert asked["path"] == "/v2/stocks/AAPL/bars"
     assert asked["timeframe"] == "1Min" and asked["limit"] == 1200 and asked["sort"] == "desc"
-    assert asked["feed"] == "delayed_sip"
+    # The bars endpoint refuses delayed_sip with HTTP 400.
+    assert asked["feed"] == "sip"
     assert asked["end"] == end.isoformat()
     # Alpaca starts at today's midnight without a start, which would cut a page short.
     assert asked["start"] < "2026-09-29"
     assert bar["t"] == "2026-09-29T19:59:00Z"
+
+
+def test_minute_bars_never_ask_for_the_last_fifteen_minutes(monkeypatch):
+    """A free key may read sip bars only once they are 15 minutes old."""
+    asked = {}
+    monkeypatch.setattr(alpaca_broker, "_market_data", lambda path, **params: asked.update(params) or {})
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    alpaca_broker.get_minute_bars("AAPL", 30)
+    assert datetime.datetime.fromisoformat(asked["end"]) <= now - datetime.timedelta(minutes=15)
+
+    alpaca_broker.get_minute_bars("AAPL", 30, now)
+    assert datetime.datetime.fromisoformat(asked["end"]) <= now - datetime.timedelta(minutes=15)
 
 
 def test_no_minute_bars_reads_as_an_empty_page(monkeypatch):
