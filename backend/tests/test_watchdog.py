@@ -3,6 +3,8 @@ the market-hours gate. Snapshots and positions are constructed in memory."""
 import datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from backend.database.models import Signal
 from backend.services.ticker_book import AgentPosition
 from backend.services.watchdog import AlertConfig, DailySnapshot, evaluate_ticker, is_us_market_hours
@@ -216,3 +218,17 @@ def test_thresholds_come_from_config():
         config=config,
     )
     assert sorted(a.alert_type for a in alerts) == ["big_move", "stop_loss", "volume"]
+
+
+@pytest.mark.parametrize("module", ["watchdog", "bars", "intraday", "market_clock"])
+def test_each_module_imports_first_in_a_fresh_process(module):
+    """bars and watchdog import each other. The app happens to load bars
+    first; the intraday backfill script loaded watchdog first and failed."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", f"import backend.services.{module}"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr

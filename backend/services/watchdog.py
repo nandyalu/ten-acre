@@ -31,17 +31,20 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 from tradingagents.dataflows.stockstats_utils import yf_retry
 
-from backend.database import db
-from backend.database.models import Signal
-from backend.services import bars, intraday, listings, ticker_book
-from backend.services.ticker_book import AgentPosition
-from backend.services.signals import price_crossed_target
-
-log = logging.getLogger("ten-acre.watchdog")
-
+# Defined before the service imports below. bars imports these three from this
+# module, so a process that imports watchdog before bars would otherwise meet
+# a half-built module and fail, as the intraday backfill script did.
 US_MARKET_TZ = ZoneInfo("America/New_York")
 _MARKET_OPEN = datetime.time(9, 30)
 _MARKET_CLOSE = datetime.time(16, 0)
+
+from backend.database import db  # noqa: E402
+from backend.database.models import Signal  # noqa: E402
+from backend.services import bars, intraday, listings, ticker_book  # noqa: E402
+from backend.services.ticker_book import AgentPosition  # noqa: E402
+from backend.services.signals import price_crossed_target  # noqa: E402
+
+log = logging.getLogger("ten-acre.watchdog")
 
 EARNINGS_LOOKAHEAD_DAYS = 2
 
