@@ -30,7 +30,7 @@ import logging
 import os
 import threading
 
-from quiv import Event, Quiv, QuivError, TaskNotFoundError, TaskStatus, call_on_main
+from quiv import Event, JobCancelledError, Quiv, QuivError, TaskNotFoundError, TaskStatus, call_on_main
 
 from backend.database import db
 from backend.services import (
@@ -150,8 +150,9 @@ def _research_for_agent(tickers: list[str]) -> dict[str, str]:
     `agent.run_once` is sync and runs on the agent task's quiv thread; an
     analysis is async work owned by the main loop. ``call_on_main`` runs it
     there and waits. When the app shuts down, quiv sets the job's stop event,
-    the wait ends with ``JobCancelledError`` and the analysis is cancelled;
-    the agent reports that as research that did not finish. Installed on the
+    the wait ends with ``JobCancelledError`` and the analysis is cancelled.
+    This function returns that as a failure with a plain reason, so the
+    agent reads it as research that did not finish. Installed on the
     agent at startup so that module stays synchronous, with no import of this
     one.
 
@@ -163,15 +164,30 @@ def _research_for_agent(tickers: list[str]) -> dict[str, str]:
     for ticker in tickers:
         log.info("Running the analysis the agent asked for: %s", ticker)
     failures: dict[str, str] = {}
-    call_on_main(
-        analysis.run_analyses,
-        list(tickers),
-        on_failure=lambda ticker: notify(
-            f"Analysis failed for {ticker} — check the logs."
-        ),
-        trigger="commissioned",
-        failures=failures,
-    )
+    try:
+        call_on_main(
+            analysis.run_analyses,
+            list(tickers),
+            on_failure=lambda ticker: notify(
+                f"Analysis failed for {ticker} — check the logs."
+            ),
+            trigger="commissioned",
+            failures=failures,
+        )
+    except JobCancelledError:
+        # **The agent reads this reason in its next prompt (2026-09-28).**
+        # quiv's own message names `call_on_main` and a function address,
+        # and pass 54 recorded exactly that. run_analyses reports failures
+        # only, so a ticker that finished before the shutdown gets this
+        # reason too. With one analysis at a time that needs two researches
+        # in one pass and a shutdown between them.
+        log.info("The app shut down while %s was analysed", ", ".join(tickers))
+        for ticker in tickers:
+            failures.setdefault(
+                ticker,
+                "The app shut down while this analysis ran, and the shutdown "
+                "stopped it. An analysis that does not finish is not charged.",
+            )
     return failures
 
 
@@ -356,7 +372,7 @@ def _forget_wakes_seen_by(looked_at: datetime.datetime | None) -> None:
 def _stored_wakeup() -> datetime.datetime:
     """The agent's chosen time, from the last stored run, the same way
     ``agent.wakeup_due`` reads it: the next open when the run named none."""
-    runs = agent.db.get_agent_runs(limit=1)
+    runs = agent.db.get_agent_runs(limit=1, answered=True)
     if not runs:
         return market_clock.next_open()
     wanted = runs[0].next_wakeup
@@ -458,7 +474,7 @@ def _ran_recently(now: datetime.datetime, within=datetime.timedelta(minutes=30))
     reviewed the day; waking it again at 3:55 spends a prompt to be told the
     same thing.
     """
-    runs = agent.db.get_agent_runs(limit=1)
+    runs = agent.db.get_agent_runs(limit=1, answered=True)
     if not runs:
         return False
     ran_at = runs[0].ran_at

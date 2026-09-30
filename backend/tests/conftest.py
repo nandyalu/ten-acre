@@ -163,8 +163,10 @@ def isolated_agent_runs(monkeypatch):
         rows.append(row)
         return row.id
 
-    def get(limit=None):
+    def get(limit=None, answered=False):
         newest = sorted(rows, key=lambda row: row.ran_at, reverse=True)
+        if answered:
+            newest = [row for row in newest if not row.unanswered]
         return newest if limit is None else newest[:limit]
 
     monkeypatch.setattr(db, "record_agent_run", record)
@@ -194,8 +196,10 @@ def isolated_reflections(monkeypatch):
         rows.append(row)
         return row.id
 
-    def get(limit=None):
+    def get(limit=None, answered=False):
         newest = sorted(rows, key=lambda row: row.ran_at, reverse=True)
+        if answered:
+            newest = [row for row in newest if not row.unanswered]
         return newest if limit is None else newest[:limit]
 
     monkeypatch.setattr(db, "record_reflection", record)

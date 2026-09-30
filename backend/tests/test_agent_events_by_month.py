@@ -20,7 +20,7 @@ def _run(ran_at: str, **over) -> AgentRun:
 @pytest.fixture
 def fake_runs(monkeypatch):
     def set_runs(runs: list[AgentRun]):
-        monkeypatch.setattr(db, "get_agent_runs", lambda limit=None: runs)
+        monkeypatch.setattr(db, "get_agent_runs", lambda limit=None, **_: runs)
 
     return set_runs
 
@@ -125,7 +125,7 @@ def test_the_events_route_without_a_month_keeps_the_old_recent_behaviour(client,
     """The Overview page's small recent-activity feed calls this with no
     month at all — that must keep working exactly as before, since the new
     parameter is additive, not a replacement."""
-    monkeypatch.setattr(db, "get_agent_runs", lambda limit=None: [_run("2026-09-01T13:35:00", id=1)])
+    monkeypatch.setattr(db, "get_agent_runs", lambda limit=None, **_: [_run("2026-09-01T13:35:00", id=1)])
 
     response = client.get("/api/agent/events", params={"limit": 5})
 

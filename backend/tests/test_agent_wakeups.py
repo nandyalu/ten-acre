@@ -216,14 +216,14 @@ def test_a_due_wakeup_is_reported(monkeypatch):
     """Read from the stored run, not memory: the pass that asked and the pass
     that answers are different processes an hour apart."""
     wanted = datetime.datetime(2026, 9, 3, 15, 0, tzinfo=datetime.timezone.utc)
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit: [_Run(next_wakeup=wanted)])
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit, **_: [_Run(next_wakeup=wanted)])
 
     assert agent.wakeup_due(at(11, 30)) is not None  # 15:00 UTC == 11:00 ET
 
 
 def test_a_future_wakeup_is_not_due_yet(monkeypatch):
     wanted = datetime.datetime(2026, 9, 3, 18, 0, tzinfo=datetime.timezone.utc)
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit: [_Run(next_wakeup=wanted)])
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit, **_: [_Run(next_wakeup=wanted)])
 
     assert agent.wakeup_due(at(11, 0)) is None
 
@@ -233,7 +233,7 @@ def test_a_naive_stored_time_is_read_as_utc(monkeypatch):
     local would move the wakeup by the host's offset."""
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit: [_Run(next_wakeup=datetime.datetime(2026, 9, 3, 15, 0))],
+        lambda limit, **_: [_Run(next_wakeup=datetime.datetime(2026, 9, 3, 15, 0))],
     )
 
     assert agent.wakeup_due(at(11, 30)) is not None
@@ -249,7 +249,7 @@ def test_a_pass_that_asked_for_nothing_falls_back_to_the_next_open(monkeypatch):
     the parser dropped the zone label."""
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit: [_Run(next_wakeup=None, ran_at=datetime.datetime(2026, 9, 4, 20, 0))],
+        lambda limit, **_: [_Run(next_wakeup=None, ran_at=datetime.datetime(2026, 9, 4, 20, 0))],
     )
 
     # **The Monday here is Labor Day**, which this test used to use as its
@@ -264,7 +264,7 @@ def test_the_fallback_does_not_fire_early(monkeypatch):
     stay quiet, or it becomes the fixed pass under another name."""
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit: [_Run(next_wakeup=None, ran_at=datetime.datetime(2026, 9, 4, 20, 0))],
+        lambda limit, **_: [_Run(next_wakeup=None, ran_at=datetime.datetime(2026, 9, 4, 20, 0))],
     )
 
     assert agent.wakeup_due(datetime.datetime(2026, 9, 4, 17, 0, tzinfo=ET)) is None
@@ -272,7 +272,7 @@ def test_the_fallback_does_not_fire_early(monkeypatch):
 
 def test_a_first_ever_run_is_scheduled_for_the_next_open(monkeypatch):
     """An empty database must not mean an agent that never starts."""
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit: [])
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit, **_: [])
 
     assert agent.wakeup_due(at(15, 0)) is not None
 
@@ -285,7 +285,7 @@ def test_a_pass_that_only_researched_counts_as_acting(monkeypatch):
     so a research-only pass reading as idle would be exactly backwards."""
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit: [_Run(orders=json.dumps([{"side": "research", "ticker": "INTC"}]))],
+        lambda limit, **_: [_Run(orders=json.dumps([{"side": "research", "ticker": "INTC"}]))],
     )
 
     assert agent._recent_wakeups()[0]["acted"] is True
@@ -296,13 +296,13 @@ def test_a_pass_that_only_left_a_note_is_still_idle(monkeypatch):
     tell the agent its cadence is earning more than it is."""
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit: [_Run(orders=json.dumps([{"side": "note", "reason": "I need X"}]))],
+        lambda limit, **_: [_Run(orders=json.dumps([{"side": "note", "reason": "I need X"}]))],
     )
 
     assert agent._recent_wakeups()[0]["acted"] is False
 
 
 def test_unreadable_orders_do_not_crash_the_history(monkeypatch):
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit: [_Run(orders="not json")])
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit, **_: [_Run(orders="not json")])
 
     assert agent._recent_wakeups()[0]["acted"] is False

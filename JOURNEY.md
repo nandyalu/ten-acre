@@ -51,6 +51,25 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-28 — incident: Google's model service failed for three hours, the agent's INTC research never ran, and the passes that got no answer left no record.** Times are Eastern.
+
+- **9:30 to 10:03.** Eight passes asked Gemini and got `503 UNAVAILABLE` ("This model is currently experiencing high demand") on the `decide` call and on the text fallback. Each pass raised, and none of them wrote an `agentrun` row. The Decisions page shows no pass before 10:08.
+- **10:08.** A pass got an answer through the text fallback. At 10:14 it ordered research on INTC, which had dropped 5%.
+- **10:14 to 12:26.** The analysis ran inside the pass and failed seven times. The errors were 503s and 429s on the free tier's per-day and per-minute limits (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`). The wait between attempts grew to ten minutes. The pass held the agent task for 2h 18m, so no other pass could run.
+- **12:26.** The container restarted with a paid-tier key, and the shutdown stopped the analysis. Pass 54 recorded the research with `"refused_by": "broker"` and the reason `call_on_main(<function run_analyses ...>) was stopped: the job's stop event was set`. INTC got no signal and the agent paid no charge.
+
+**What the record for this morning supports.** It shows one pass where the agent was asked nine times. The agent did less than it chose to: it ordered research that never arrived, and for 2h 18m no pass could run. Read the morning as an outage, not as patience. The failure line on pass 54 is wrong about who refused: the broker did nothing. The key change itself is infrastructure, because the model (`gemini-3.5-flash-lite`) and its settings are the same.
+
+**What changes, from this entry forward:**
+
+- **A pass that gets no answer on its first turn now writes a row.** `skipped` says why, and a new column, `unanswered`, is true. Every reader of "the previous pass" skips these rows. Without that, a failed pass would move the start of "What was noticed since your last pass", drop the note the agent left, and cancel the last pass before the close.
+- **A later turn that gets no answer now ends the pass and records it.** Before, the exception discarded the whole pass, including the orders that earlier turns had placed.
+- **Research that a shutdown stops now says so in plain words**, and `refusals` labels a failed research `analysis`, not `broker`.
+
+**Evidence change.** `unanswered` is false on every row before this date, and passes that got no answer before this date wrote no row. A count of failed passes from the table starts today. On earlier rows, a research entry with `"refused_by": "broker"` means the analysis failed, not the broker.
+
+**Not changed, and still false.** A failed research still reaches the next prompt under "Orders the broker would not take", and that section opens by saying the broker rejected each order. That has been false for research since 2026-09-16. A fix changes the prompt, so it waits for its own entry and a probe.
+
 **2026-09-25 — a stop that the trade stream catches now wakes the agent and reaches its prompt.** The stream settles a fill within a second and then posted it to Discord only. A settled order is no longer pending, so the watchdog's own settle found nothing, and the agent got no `stop_fill` alert and no wake. It learned of the sale at its next own wakeup. A limit buy that filled was missed the same way. Only the deployment that holds the stream was affected; the other settles on the 15-minute poll, which always announced both.
 
 **2026-09-25 — a wake that comes during a pass now gets a pass after it, and a pass no longer skips when the evening review is running.** Every pass now runs in one quiv task, and the jobs do their work on quiv's threads instead of handing it to the main loop. Two things the agent sees change. Before, a watchdog alert or an earnings wake that came while a pass ran was dropped, and the agent heard of it at its next own wakeup. Now it is kept, and the next pass starts when the running one ends. It is dropped only when the running pass built its last prompt after the event, because that pass has already seen it. Before, a pass that came due while the evening review held the lock was skipped. Now it waits for the review. The record changes too: quiv's job history now carries the real duration and the real failure of each pass, where before every job showed a one-millisecond success. See "One quiv task runs every pass" in `.claude/rules/agent.md`.

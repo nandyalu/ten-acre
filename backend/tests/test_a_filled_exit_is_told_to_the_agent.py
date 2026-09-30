@@ -79,7 +79,7 @@ def test_the_alerts_window_starts_at_the_last_look(monkeypatch):
         ran_at=now - datetime.timedelta(minutes=1),
         looked_at=now - datetime.timedelta(minutes=10),
     )
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1: [previous])
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1, **_: [previous])
     monkeypatch.setattr(
         agent.db, "get_recent_alerts",
         lambda limit=200: [

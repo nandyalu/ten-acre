@@ -26,7 +26,7 @@ def _run(ran_at: str, orders: list[dict] | None = None, **over) -> AgentRun:
 @pytest.fixture
 def fake_runs(monkeypatch):
     def set_runs(runs: list[AgentRun]):
-        monkeypatch.setattr(db, "get_agent_runs", lambda limit=None: runs)
+        monkeypatch.setattr(db, "get_agent_runs", lambda limit=None, **_: runs)
 
     return set_runs
 

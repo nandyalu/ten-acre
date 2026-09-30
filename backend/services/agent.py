@@ -3049,7 +3049,7 @@ def wakeup_due(now: datetime.datetime | None = None) -> datetime.datetime | None
     agent's answer cannot be read, and it makes a bad parse cost one pass
     rather than the experiment.
     """
-    runs = db.get_agent_runs(limit=1)
+    runs = db.get_agent_runs(limit=1, answered=True)
     if not runs:
         # Nothing has ever run. The next open is the first sensible moment.
         return market_clock.next_open(now)
@@ -3106,7 +3106,7 @@ def _recent_wakeups() -> list[dict]:
     earning more than it is.
     """
     out: list[dict] = []
-    for row in reversed(db.get_agent_runs(limit=_WAKEUPS_SHOWN)):
+    for row in reversed(db.get_agent_runs(limit=_WAKEUPS_SHOWN, answered=True)):
         acted = bool((row.placed or 0) or (row.adjusted or 0))
         # Research and untracks live in the orders JSON rather than in a count
         # column, so a pass that only commissioned research would otherwise
@@ -3169,7 +3169,7 @@ def _recent_alerts() -> list[dict]:
     section that claims to say what has happened since you last looked has to
     mean it. With no previous pass to measure from, 24 hours is the fallback.
     """
-    runs = db.get_agent_runs(limit=1)
+    runs = db.get_agent_runs(limit=1, answered=True)
     # **From the previous pass's last look, not from when it was recorded
     # (2026-09-23).** A stop that fills after the last prompt of a pass is
     # built, and before the pass is recorded, was in no prompt at all.
@@ -3233,7 +3233,7 @@ def _last_planned_wakeup() -> "datetime.datetime | None":
 
     Stored as naive UTC, like every timestamp in the database.
     """
-    runs = db.get_agent_runs(limit=1)
+    runs = db.get_agent_runs(limit=1, answered=True)
     wanted = getattr(runs[0], "next_wakeup", None) if runs else None
     if not isinstance(wanted, datetime.datetime):
         return None
@@ -3269,7 +3269,7 @@ def _last_pass_notes() -> list[str]:
     revised = _review_note()
     if revised is not None:
         return [revised]
-    runs = db.get_agent_runs(limit=1)
+    runs = db.get_agent_runs(limit=1, answered=True)
     if not runs:
         return []
     raw = str(getattr(runs[0], "wakeup_note", None) or "").strip()
@@ -3299,7 +3299,7 @@ def _review_note() -> str | None:
     review = db.get_latest_reflection()
     if review is None or not str(getattr(review, "wakeup_note", None) or "").strip():
         return None
-    runs = db.get_agent_runs(limit=1)
+    runs = db.get_agent_runs(limit=1, answered=True)
     if runs:
         ran_at = runs[0].ran_at
         reviewed_at = review.ran_at
@@ -3486,7 +3486,7 @@ def _recent_broker_failures() -> list[dict]:
     prompt for nothing.
     """
     out: list[dict] = []
-    for row in db.get_agent_runs(limit=_FAILURE_LOOKBACK_RUNS):
+    for row in db.get_agent_runs(limit=_FAILURE_LOOKBACK_RUNS, answered=True):
         if not row.failures:
             continue
         try:
@@ -3992,6 +3992,8 @@ class AgentRun:
     # When the last prompt of this pass was built. The next pass shows the
     # alerts raised after it — see _recent_alerts. None on a skipped pass.
     looked_at: datetime.datetime | None = None
+    # True when the model never answered the first turn. See _record_unanswered.
+    unanswered: bool = False
     # What the agent asked us for: a tool it lacks, data it cannot see, a rule
     # it finds contradictory. Nothing reads these automatically and nothing
     # acts on them — they are evidence about the prompt and the tool set, which
@@ -5206,13 +5208,27 @@ def run_once(woke_because: str | None = None, should_stop=None) -> AgentRun:
         # Read before _decide collects the alerts, so an alert that lands while
         # the model thinks is after this time and the next pass shows it.
         looked_at = datetime.datetime.now(datetime.timezone.utc)
-        decision = _decide(
-            book, signals, prices, closed=closed,
-            regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
-            outcomes=outcomes, budget=budget,
-            researched_now=researched, woke_because=woke_because,
-            pass_notes=notes_this_pass,
-        )
+        try:
+            decision = _decide(
+                book, signals, prices, closed=closed,
+                regime_line=current_regime_line(), horizon_days=_horizon_days(), menu=menu,
+                outcomes=outcomes, budget=budget,
+                researched_now=researched, woke_because=woke_because,
+                pass_notes=notes_this_pass,
+            )
+        except Exception as exc:
+            if run is None:
+                _record_unanswered(exc, woke_because)
+                raise
+            # **A later turn that gets no answer ends the pass, and the pass
+            # is recorded (2026-09-28).** The earlier turns may have placed
+            # orders. Raising here discarded the whole pass, and the trades
+            # stayed in the book with no pass to explain them.
+            log.exception(
+                "Turn %d got no answer; the pass ends with what the earlier turns did",
+                act_turn + 1,
+            )
+            break
         reasoning, accepted, rejected = decision
         # getattr, because Decision unpacks like the tuple it replaced and a caller
         # may still hand back a plain one — several tests patch _decide that way.
@@ -5341,13 +5357,16 @@ def _refusals_json(run: "AgentRun") -> str | None:
     the second is the venue saying no to something reasonable. Reading a month
     of runs, those point at different fixes.
     """
+    # A research lands in run.failed when its analysis did not finish, and
+    # the broker never saw it. It was labelled "broker" until 2026-09-28.
     entries = [
         {"ticker": r.ticker, "side": r.side, "quantity": r.quantity,
          "why": r.why, "refused_by": "screening"}
         for r in run.rejected
     ] + [
         {"ticker": o.get("ticker"), "side": o.get("side"), "quantity": o.get("quantity"),
-         "why": why, "refused_by": "broker"}
+         "why": why,
+         "refused_by": "analysis" if o.get("side") == "research" else "broker"}
         for o, why in run.failed
     ]
     if not entries:
@@ -5364,6 +5383,21 @@ def _skip(why: str) -> "AgentRun":
     run = AgentRun(skipped=why)
     _record_run(run)
     return run
+
+
+def _record_unanswered(exc: Exception, woke_because: str | None) -> None:
+    """Record a pass whose first turn got no answer from the model.
+
+    Until 2026-09-28 such a pass raised and wrote nothing. That morning Google
+    answered eight passes in a row with 503, and the record showed a quiet
+    open where the agent had been asked eight times and could not answer.
+
+    The row is marked ``unanswered``, so readers of "the previous pass" skip
+    it. The caller raises again afterwards, so the scheduler still treats the
+    pass as failed and asks again at the next backstop.
+    """
+    why = f"The model did not answer, so this pass decided nothing: {exc}"
+    _record_run(AgentRun(skipped=why[:500], woke_because=woke_because, unanswered=True))
 
 
 def _commission_research(order: dict, run: "AgentRun") -> None:
@@ -5526,6 +5560,7 @@ def _record_run(run: "AgentRun") -> None:
             # wake that started the pass however many turns it ran to.
             woke_because=run.woke_because,
             looked_at=run.looked_at,
+            unanswered=run.unanswered,
         )
     except Exception:
         log.exception("Could not record the agent run")
