@@ -14,7 +14,7 @@
 services:
   ten-acre:
     # `latest` moves to each new release when you pull. A version tag such as
-    # :v0.4.0 holds one version until you change it, so a new release cannot
+    # :v0.5.0 holds one version until you change it, so a new release cannot
     # change the experiment by surprise.
     image: ghcr.io/nandyalu/ten-acre:latest
     container_name: ten-acre
