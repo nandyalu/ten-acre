@@ -140,7 +140,7 @@ def test_a_pass_at_its_planned_time_reads_as_before():
 
 def test_the_planned_time_is_read_as_utc_from_the_database(monkeypatch):
     stored = datetime.datetime(2026, 9, 14, 13, 25)  # naive, as the column holds it
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1: [types.SimpleNamespace(next_wakeup=stored)])
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1, **_: [types.SimpleNamespace(next_wakeup=stored)])
 
     assert agent._last_planned_wakeup() == PLANNED
 

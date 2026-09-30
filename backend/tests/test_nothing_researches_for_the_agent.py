@@ -164,7 +164,7 @@ def test_alerts_older_than_the_last_pass_are_dropped(monkeypatch):
 
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit=1: [types.SimpleNamespace(ran_at=now - datetime.timedelta(hours=3))],
+        lambda limit=1, **_: [types.SimpleNamespace(ran_at=now - datetime.timedelta(hours=3))],
     )
     monkeypatch.setattr(
         agent.db, "get_recent_alerts",
@@ -176,7 +176,7 @@ def test_alerts_older_than_the_last_pass_are_dropped(monkeypatch):
 
 def test_with_no_previous_pass_it_falls_back_to_a_day(monkeypatch):
     now = datetime.datetime.now(datetime.timezone.utc)
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1: [])
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1, **_: [])
     monkeypatch.setattr(
         agent.db, "get_recent_alerts",
         lambda limit=8: [

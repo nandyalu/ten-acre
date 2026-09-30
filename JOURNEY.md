@@ -55,6 +55,25 @@ Newest first.
 
 **2026-09-29 — the final pass before the close now runs fifteen minutes ahead, not five.** At 3:55 the agent read "closes in 4m" and decided it had no time to order research, read it, and trade. An analysis takes about 7 minutes, 11 at most, so five minutes never left room for one. `FINAL_PASS_LEAD` and the wakeup text the agent reads both moved to fifteen minutes.
 
+**2026-09-28 — incident: Google's model service failed for three hours, the agent's INTC research never ran, and the passes that got no answer left no record.** Times are Eastern.
+
+- **9:30 to 10:03.** Eight passes asked Gemini and got `503 UNAVAILABLE` ("This model is currently experiencing high demand") on the `decide` call and on the text fallback. Each pass raised, and none of them wrote an `agentrun` row. The Decisions page shows no pass before 10:08.
+- **10:08.** A pass got an answer through the text fallback. At 10:14 it ordered research on INTC, which had dropped 5%.
+- **10:14 to 12:26.** The analysis ran inside the pass and failed seven times. The errors were 503s and 429s on the free tier's per-day and per-minute limits (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`). The wait between attempts grew to ten minutes. The pass held the agent task for 2h 18m, so no other pass could run.
+- **12:26.** The container restarted with a paid-tier key, and the shutdown stopped the analysis. Pass 54 recorded the research with `"refused_by": "broker"` and the reason `call_on_main(<function run_analyses ...>) was stopped: the job's stop event was set`. INTC got no signal and the agent paid no charge.
+
+**What the record for this morning supports.** It shows one pass where the agent was asked nine times. The agent did less than it chose to: it ordered research that never arrived, and for 2h 18m no pass could run. Read the morning as an outage, not as patience. The failure line on pass 54 is wrong about who refused: the broker did nothing. The key change itself is infrastructure, because the model (`gemini-3.5-flash-lite`) and its settings are the same.
+
+**What changes, from this entry forward:**
+
+- **A pass that gets no answer on its first turn now writes a row.** `skipped` says why, and a new column, `unanswered`, is true. Every reader of "the previous pass" skips these rows. Without that, a failed pass would move the start of "What was noticed since your last pass", drop the note the agent left, and cancel the last pass before the close.
+- **A later turn that gets no answer now ends the pass and records it.** Before, the exception discarded the whole pass, including the orders that earlier turns had placed.
+- **Research that a shutdown stops now says so in plain words**, and `refusals` labels a failed research `analysis`, not `broker`.
+
+**Evidence change.** `unanswered` is false on every row before this date, and passes that got no answer before this date wrote no row. A count of failed passes from the table starts today. On earlier rows, a research entry with `"refused_by": "broker"` means the analysis failed, not the broker.
+
+**Not changed, and still false.** A failed research still reaches the next prompt under "Orders the broker would not take", and that section opens by saying the broker rejected each order. That has been false for research since 2026-09-16. A fix changes the prompt, so it waits for its own entry and a probe.
+
 **2026-09-28 — a memory order's own record now says whether it added, cleared or removed a note.** `_order_detail` kept the order's text alone before this, so a turn that cleared the memory list read back exactly like one that added a note. Run 81's clear is one of the turns this affects.
 
 **2026-09-27 — five changes reached the agent only today, with a redeploy.** The container that ran from the evening of 2026-09-25 until today was built at `55b102c`, before `e135760`. So the two entries dated 2026-09-25 — a stop the trade stream catches wakes the agent, and a wake during a pass gets a pass after it — were not live on 2026-09-25 or 2026-09-26. Nor were the three dated 2026-09-26: `ask_analyst`, the history in a read, and the extra news sources. All five are live from 2026-09-27. The Laya grade on news items is not: `LAYA_URL` stays unset, because the grades were measured and shelved the same day.

@@ -820,11 +820,13 @@ def record_agent_run(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     seconds: float | None = None,
+    unanswered: bool = False,
     *,
     _session: Session = None,
 ) -> int:
     row = AgentRun(
         ran_at=ran_at,
+        unanswered=unanswered,
         next_wakeup=next_wakeup,
         wakeup_note=wakeup_note,
         woke_because=woke_because,
@@ -857,17 +859,26 @@ def record_agent_run(
 
 
 @read_session
-def get_agent_runs(limit: int | None = None, *, _session: Session = None) -> list[AgentRun]:
+def get_agent_runs(
+    limit: int | None = None, *, answered: bool = False, _session: Session = None
+) -> list[AgentRun]:
     """Decision passes, oldest first — the spine of the journey.
 
     ``limit`` keeps the *newest* that many, then still returns them oldest
     first, so a caller that wants a recent window does not have to reverse the
     journey's ordering to get one.
+
+    ``answered`` leaves out the passes the model never answered. A caller that
+    means "the previous pass" wants this: such a pass has no note, no wakeup
+    and no last look, and reading it as the previous pass loses all three.
     """
-    query = select(AgentRun).order_by(AgentRun.ran_at)
+    base = select(AgentRun)
+    if answered:
+        base = base.where(AgentRun.unanswered == False)  # noqa: E712
+    query = base.order_by(AgentRun.ran_at)
     if limit is not None:
         newest = _session.exec(
-            select(AgentRun).order_by(AgentRun.ran_at.desc()).limit(limit)
+            base.order_by(AgentRun.ran_at.desc()).limit(limit)
         ).all()
         return list(reversed(newest))
     return list(_session.exec(query).all())

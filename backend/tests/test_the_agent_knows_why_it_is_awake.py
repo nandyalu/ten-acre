@@ -150,7 +150,7 @@ def test_the_reason_reaches_run_once(monkeypatch):
 def test_the_note_is_read_from_the_previous_pass(monkeypatch):
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit=1: [types.SimpleNamespace(wakeup_note="what I was waiting for")],
+        lambda limit=1, **_: [types.SimpleNamespace(wakeup_note="what I was waiting for")],
     )
 
     assert agent._last_wakeup_note() == "what I was waiting for"
@@ -161,7 +161,7 @@ def test_an_early_wake_still_shows_the_note(monkeypatch):
     Read from the newest run rather than matched to the alarm that fired."""
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit=1: [types.SimpleNamespace(wakeup_note="waiting for the open")],
+        lambda limit=1, **_: [types.SimpleNamespace(wakeup_note="waiting for the open")],
     )
     prompt = agent.build_prompt(
         _book(), [], {},
@@ -196,7 +196,7 @@ def test_reading_a_pre_2026_09_17_row_still_works(monkeypatch):
     as the one note it always was, no migration required."""
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit=1: [types.SimpleNamespace(wakeup_note="what I was waiting for")],
+        lambda limit=1, **_: [types.SimpleNamespace(wakeup_note="what I was waiting for")],
     )
 
     assert agent._last_pass_notes() == ["what I was waiting for"]
@@ -205,7 +205,7 @@ def test_reading_a_pre_2026_09_17_row_still_works(monkeypatch):
 def test_reading_several_notes_back_in_order(monkeypatch):
     monkeypatch.setattr(
         agent.db, "get_agent_runs",
-        lambda limit=1: [types.SimpleNamespace(
+        lambda limit=1, **_: [types.SimpleNamespace(
             wakeup_note=agent._encode_wakeup_notes(["ruled out HPE at $59.83", "watching AVGO for $366.16"]),
         )],
     )
@@ -216,7 +216,7 @@ def test_reading_several_notes_back_in_order(monkeypatch):
 
 
 def test_no_runs_is_an_empty_list_not_none(monkeypatch):
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1: [])
+    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit=1, **_: [])
 
     assert agent._last_pass_notes() == []
 
@@ -391,7 +391,7 @@ def test_the_events_route_hands_the_reason_to_the_page(monkeypatch):
         ran_at=datetime.datetime(2026, 9, 21, 13, 35),
         woke_because=scheduler._WOKE_BECAUSE["Unguarded position"],
     )
-    monkeypatch.setattr(database, "get_agent_runs", lambda limit=None: [row])
+    monkeypatch.setattr(database, "get_agent_runs", lambda limit=None, **_: [row])
 
     response = TestClient(app).get("/api/agent/events", params={"limit": 5})
 

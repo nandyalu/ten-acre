@@ -242,6 +242,13 @@ class AgentRun(SQLModel, table=True):
     failed: int = 0
     adjusted: int = 0
     skipped: str | None = None
+    # **True when the model never answered the pass's first turn**, and
+    # ``skipped`` then says why. Such a pass decided nothing, so every reader
+    # of "the previous pass" skips it: the agent's note, its planned wakeup
+    # and the start of "What was noticed" all stay with the last pass that
+    # answered. Until 2026-09-28 such a pass wrote no row at all, so this is
+    # false on every row before that date. See the JOURNEY.md entry.
+    unanswered: bool = False
     # **The prompt the model was given and the answer it returned, verbatim.**
     # Counts and a one-line reasoning describe a decision; these are the
     # decision. Behaviour here is mostly prompt, so a month of runs across

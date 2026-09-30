@@ -67,7 +67,7 @@ def task(monkeypatch):
     monkeypatch.setattr(scheduler, "_last_final_pass", None)
     monkeypatch.setattr(scheduler.market_clock, "next_final_pass", lambda *a: _in(86400))
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: True)
-    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit: [_Run(_in(86400))])
+    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit, **_: [_Run(_in(86400))])
     monkeypatch.setattr(scheduler.market_clock, "now_et", lambda *a: _now().astimezone(scheduler.market_clock.US_MARKET_TZ))
     return state
 
@@ -81,7 +81,7 @@ def _near_now(when):
 
 def test_the_task_runs_at_the_time_the_agent_chose(task, monkeypatch):
     chosen = _in(120)
-    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit: [_Run(chosen)])
+    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit, **_: [_Run(chosen)])
 
     scheduler.restore_agent_task()
 
@@ -92,7 +92,7 @@ def test_the_task_runs_at_the_time_the_agent_chose(task, monkeypatch):
 def test_a_time_far_ahead_still_leaves_the_backstop(task, monkeypatch):
     """The task runs at least every five minutes. A run with nothing due does
     nothing, and it guards a restore that set a wrong time."""
-    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit: [_Run(_in(7200))])
+    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit, **_: [_Run(_in(7200))])
 
     scheduler.restore_agent_task()
 
@@ -103,7 +103,7 @@ def test_a_time_already_past_runs_at_once(task, monkeypatch):
     """The container was down when the wakeup came due. Ask the agent now
     rather than dropping the time it chose. A past ``run_at`` runs at once."""
     past = _now() - datetime.timedelta(hours=1)
-    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit: [_Run(past.replace(tzinfo=None))])
+    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit, **_: [_Run(past.replace(tzinfo=None))])
 
     scheduler.restore_agent_task()
 
@@ -112,7 +112,7 @@ def test_a_time_already_past_runs_at_once(task, monkeypatch):
 
 def test_a_restore_with_no_runs_at_all_still_adds_the_task(task, monkeypatch):
     """A fresh database must not mean an agent that never starts."""
-    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit: [])
+    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit, **_: [])
 
     scheduler.restore_agent_task()
 
@@ -238,7 +238,7 @@ def test_an_unserved_wakeup_waits_for_the_backstop(task, passes, monkeypatch):
     """A pass that fails, or an agent switched off, leaves the wakeup in the
     past. Without this the task would run again at once, in a loop."""
     past = _now() - datetime.timedelta(minutes=10)
-    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit: [_Run(past)])
+    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit, **_: [_Run(past)])
     monkeypatch.setattr(scheduler.agent, "is_enabled", lambda: False)
 
     scheduler.agent_pass()
@@ -346,7 +346,7 @@ def test_the_time_a_pass_chooses_is_kept_by_a_real_quiv(monkeypatch):
         stored["wakeup"] = _in(1)
         return _stand_in_run()
 
-    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit: [_Run(stored["wakeup"])])
+    monkeypatch.setattr(scheduler.agent.db, "get_agent_runs", lambda limit, **_: [_Run(stored["wakeup"])])
     monkeypatch.setattr(scheduler.agent, "wakeup_due", lambda now: stored["wakeup"] if stored["wakeup"] <= now else None)
     monkeypatch.setattr(scheduler.agent, "run_once", run_once)
 
