@@ -584,3 +584,30 @@ def get_snapshots(tickers: list[str]) -> list[dict]:
         })
     return rows
 
+
+
+# How far back a page of minute bars may reach. Alpaca starts a bars request
+# at the beginning of the current day unless told otherwise, so a page that
+# ends on a Monday morning needs a start from the week before. Ten days spans
+# the longest market closure.
+_MINUTE_LOOKBACK = datetime.timedelta(days=10)
+
+
+def get_minute_bars(ticker: str, count: int, end: datetime.datetime | None = None) -> list[dict]:
+    """The last ``count`` 1-minute bars up to ``end`` (default: now), newest
+    first, in Alpaca's own shape: ``t`` (RFC 3339, UTC), ``o``, ``h``, ``l``,
+    ``c``, ``v``. Pre-market and after-hours minutes are included.
+    """
+    end = end or datetime.datetime.now(datetime.timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=datetime.timezone.utc)
+    body = _market_data(
+        f"/v2/stocks/{ticker}/bars",
+        timeframe="1Min",
+        start=(end - _MINUTE_LOOKBACK).isoformat(),
+        end=end.isoformat(),
+        limit=count,
+        sort="desc",
+        feed=_DATA_FEED,
+    ) or {}
+    return body.get("bars") or []

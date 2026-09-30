@@ -376,7 +376,7 @@ A handful of jobs still run on a clock; everything else is the agent's own choic
 ## Data sources
 
 - **Webull OpenAPI**: gives real-time snapshot quotes for every "price right now" check — the agent's fills, alert checks, book values. This needs a stock-quotes market-data subscription on the account. Without that subscription, or after any failure, the app falls back to yfinance automatically. Webull also takes the agent's orders, **on the sandbox only** — the agent refuses to run when the app holds production credentials.
-  Since 2026-09-08 Webull is also tried **first** for daily history, and it serves the 1-minute bars behind the intraday chart. Its history endpoint pages back with no real depth ceiling — over 2,000 bars deep in testing.
+  Since 2026-09-08 Webull is also tried **first** for daily history, and it serves the 1-minute bars behind the intraday chart, or Alpaca serves them when `BROKER=alpaca` and the app has no Webull client. Its history endpoint pages back with no real depth ceiling — over 2,000 bars deep in testing.
 - **yfinance**: the fallback for daily bars, and the sole source of the earnings calendar, the VIX and treasury-yield indices, and the quote fallback. It is kept rather than removed because it is what already produces this app's "possibly delisted" false positives and its rate-limit refusals, and a Webull outage must not take the whole daily cache down with it.
 
 ## Storage

@@ -1,4 +1,5 @@
-"""1-minute intraday price bars, sourced from Webull's history-bar endpoint.
+"""1-minute intraday price bars, sourced from Webull's history-bar endpoint,
+or from Alpaca's bars endpoint on a deployment with no Webull client.
 
 Unlike the daily bar cache (backend/services/bars.py), which reads through
 yfinance, this reads through Webull. yfinance enforces a hard 8-day window on
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 
 from backend.database import db
 from backend.database.models import IntradayBar
-from backend.services import quotes
+from backend.services import alpaca_broker, quotes
 
 log = logging.getLogger("ten-acre.intraday")
 
@@ -115,6 +116,8 @@ def fetch_bars(
     """
     market_data = quotes._get_market_data()
     if market_data is None:
+        if timespan is None and alpaca_broker.is_paper():
+            return _fetch_from_alpaca(ticker, count, end_time)
         return None
     from webull.data.common.category import Category
     from webull.data.common.timespan import Timespan
@@ -153,6 +156,45 @@ def fetch_bars(
         quotes.remember_category(ticker, category)
         return sorted(_parse_bars(raw), key=lambda b: b["timestamp"])
     return None
+
+
+def _fetch_from_alpaca(
+    ticker: str, count: int, end_time: datetime.datetime | None
+) -> list[dict] | None:
+    """One page of 1-minute bars from Alpaca, oldest first, in the shape
+    ``_parse_bars`` gives. None when the call fails.
+
+    **Only the regular session is kept.** Alpaca also returns pre-market and
+    after-hours minutes, and Webull does not. ``bars._todays_bar_from_minutes``
+    reads the stored minutes of a day as that day's session, so an after-hours
+    minute would change the day's close, high and low. The page can then hold
+    fewer than ``count`` bars, which ``backfill`` does not need.
+    """
+    from backend.services.watchdog import _MARKET_CLOSE, _MARKET_OPEN, US_MARKET_TZ  # avoids a top-level cycle
+
+    try:
+        raw = alpaca_broker.get_minute_bars(ticker, count, _as_utc(end_time) if end_time else None)
+    except Exception as exc:
+        log.warning("Alpaca minute bars failed for %s: %s", ticker, exc)
+        return None
+    out = []
+    for bar in raw:
+        try:
+            ts = datetime.datetime.fromisoformat(bar["t"]).astimezone(datetime.timezone.utc)
+            local = ts.astimezone(US_MARKET_TZ).time()
+            if not _MARKET_OPEN <= local < _MARKET_CLOSE:
+                continue
+            out.append({
+                "timestamp": ts.replace(tzinfo=None),
+                "open": float(bar["o"]),
+                "high": float(bar["h"]),
+                "low": float(bar["l"]),
+                "close": float(bar["c"]),
+                "volume": float(bar["v"]),
+            })
+        except (KeyError, TypeError, ValueError) as exc:
+            log.warning("Skipping unreadable Alpaca minute bar %r: %s", bar, exc)
+    return sorted(out, key=lambda b: b["timestamp"])
 
 
 def backfill(ticker: str, since: datetime.datetime | None = None) -> int:

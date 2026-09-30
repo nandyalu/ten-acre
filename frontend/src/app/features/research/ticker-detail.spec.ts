@@ -193,7 +193,13 @@ class TickersServiceStub {
 }
 
 interface Exposed {
-  timeline: () => { kind: string; date: string; title: string; outcome?: string | null }[];
+  timeline: () => {
+    kind: string;
+    date: string;
+    at: number;
+    title: string;
+    outcome?: string | null;
+  }[];
   activeSignal: () => { id: number } | null;
   stopLevel: () => number | null;
   targetLevel: () => number | null;
@@ -237,19 +243,36 @@ describe('TickerDetailPage', () => {
 
   it('merges signals, alerts, and trades into one newest-first timeline', async () => {
     const c = await create();
-    const kinds = c.timeline().map((e) => `${e.date}:${e.kind}`);
+    const kinds = c.timeline().map((e) => `${new Date(e.at).toISOString()}:${e.kind}`);
     expect(kinds).toEqual([
-      '2026-08-04:signal',
-      '2026-08-03:alert',
-      '2026-07-08:trade',
-      '2026-07-01:signal',
+      '2026-08-04T14:00:00.000Z:signal',
+      '2026-08-03T14:00:00.000Z:alert',
+      '2026-07-08T14:32:00.000Z:trade',
+      '2026-07-01T11:00:00.000Z:signal',
     ]);
+  });
+
+  it('shows the time of each entry, not only its date', async () => {
+    const c = await create();
+    for (const entry of c.timeline()) {
+      expect(entry.date).toMatch(/\d{1,2}:\d{2}/);
+    }
   });
 
   it('carries the graded outcome onto the timeline entry', async () => {
     const c = await create();
-    const old = c.timeline().find((e) => e.date === '2026-07-01');
+    const old = c.timeline().at(-1);
     expect(old?.outcome).toBe('pass');
+  });
+
+  it('shows the newest analysis beside the timeline, with a link to all of it', async () => {
+    await create();
+    const card = [...element.querySelectorAll('section.card')].find((el) =>
+      el.querySelector('h2')?.textContent?.includes('Latest analysis'),
+    );
+    expect(card?.querySelector('a')?.getAttribute('href')).toBe('/signals/2');
+    expect(card?.textContent).toContain('The normal morning run over the whole watchlist');
+    expect(card?.textContent).toContain('$180.00');
   });
 
   it('draws the newest signal levels, not an older one', async () => {

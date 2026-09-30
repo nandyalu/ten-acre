@@ -51,3 +51,22 @@ export function parseRationale(raw: string | null | undefined): RationaleSection
   }
   return sections;
 }
+
+/** Why an analysis ran, in plain words.
+ *
+ * A signal produced because the stock just moved sharply is the analyst
+ * reacting to a move the price already holds. A scheduled one is not
+ * reacting to anything. Those deserve different weight, and the agent is
+ * shown the same distinction in its own prompt.
+ */
+export function whyItRan(trigger: string): string {
+  return (
+    {
+      sweep: 'The normal morning run over the whole watchlist',
+      commissioned: 'The agent paid for it and asked to see it the same day',
+      move: 'The stock moved unusually, so this reacts to a move already in the price',
+      earnings: 'The company reports earnings soon',
+      manual: 'Run by hand, outside the schedule',
+    }[trigger] ?? trigger
+  );
+}

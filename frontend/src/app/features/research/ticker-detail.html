@@ -207,7 +207,7 @@
           <div class="empty">
             <span class="empty-icon" aria-hidden="true">🕘</span>
             <strong>Nothing recorded yet</strong>
-            <span>Run an analysis to get the first signal, or record a trade.</span>
+            <span>The agent has not researched or traded this ticker yet.</span>
           </div>
         } @else {
           <ol class="timeline">
@@ -237,6 +237,75 @@
               </li>
             }
           </ol>
+        }
+      </section>
+
+      <!-- The reason behind the stop, the target and any position above:
+           the newest analysis, beside the record of what came after it. -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Latest analysis</h2>
+          @if (activeSignal(); as s) {
+            <a [routerLink]="['/signals', s.id]">Full analysis →</a>
+          }
+        </div>
+        @if (activeSignal(); as s) {
+          <div class="card-body">
+            <dl class="meta-grid">
+              <div>
+                <dt>Analysed</dt>
+                <dd>{{ analysedAt(s) }}</dd>
+              </div>
+              <div>
+                <dt>Call</dt>
+                <dd><app-decision-badge [decision]="s.decision" /></dd>
+              </div>
+              <div>
+                <dt>Price at signal</dt>
+                <dd>${{ s.price_at_signal.toFixed(2) }}</dd>
+              </div>
+              @if (s.entry_price !== null) {
+                <div>
+                  <dt>Entry</dt>
+                  <dd>${{ s.entry_price.toFixed(2) }}</dd>
+                </div>
+              }
+              @if (s.time_horizon_text) {
+                <div>
+                  <dt>Time horizon</dt>
+                  <dd>{{ s.time_horizon_text }}</dd>
+                </div>
+              }
+              <div>
+                <dt>Graded on</dt>
+                <dd>{{ s.evaluation_date }}</dd>
+              </div>
+              @if (s.trigger) {
+                <div>
+                  <dt>Why it ran</dt>
+                  <dd>{{ whyItRan(s.trigger) }}</dd>
+                </div>
+              }
+              @if (s.model) {
+                <div>
+                  <dt>Model</dt>
+                  <dd>{{ s.model }}</dd>
+                </div>
+              }
+            </dl>
+            @for (part of rationaleParts(s.rationale); track $index) {
+              @if (part.label) {
+                <p class="rationale-label">{{ part.label }}</p>
+              }
+              <p class="prose">{{ part.text }}</p>
+            }
+          </div>
+        } @else {
+          <div class="empty">
+            <span class="empty-icon" aria-hidden="true">🧠</span>
+            <strong>No analysis yet</strong>
+            <span>The agent has not asked for research on this ticker.</span>
+          </div>
         }
       </section>
     </div>

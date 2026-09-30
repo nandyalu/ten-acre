@@ -65,6 +65,61 @@ def market_data(monkeypatch):
 
 def test_no_client_means_no_bars(monkeypatch):
     monkeypatch.setattr(intraday.quotes, "_get_market_data", lambda: None)
+    monkeypatch.setattr(intraday.alpaca_broker, "is_paper", lambda: False)
+
+    assert intraday.fetch_bars("AAPL") is None
+
+
+def _alpaca_bar(t: str, price: float) -> dict:
+    return {"t": t, "o": price, "h": price + 1, "l": price - 1, "c": price, "v": 100}
+
+
+def test_without_webull_minutes_come_from_alpaca_regular_session_only(monkeypatch):
+    monkeypatch.setattr(intraday.quotes, "_get_market_data", lambda: None)
+    monkeypatch.setattr(intraday.alpaca_broker, "is_paper", lambda: True)
+    asked = {}
+
+    def get_minute_bars(ticker, count, end=None):
+        asked.update(ticker=ticker, count=count, end=end)
+        return [  # newest first, as Alpaca sends them with sort=desc
+            _alpaca_bar("2026-09-29T20:00:00Z", 13.0),  # 16:00 ET, after hours
+            _alpaca_bar("2026-09-29T19:59:00Z", 12.0),  # 15:59 ET
+            _alpaca_bar("2026-09-29T13:30:00Z", 11.0),  # 09:30 ET
+            _alpaca_bar("2026-09-29T13:29:00Z", 10.0),  # 09:29 ET, pre-market
+        ]
+
+    monkeypatch.setattr(intraday.alpaca_broker, "get_minute_bars", get_minute_bars)
+    end = datetime.datetime(2026, 9, 29, 21, 0)
+    bars = intraday.fetch_bars("AAPL", count=4, end_time=end)
+
+    assert asked == {"ticker": "AAPL", "count": 4, "end": end.replace(tzinfo=datetime.timezone.utc)}
+    assert [b["timestamp"] for b in bars] == [
+        datetime.datetime(2026, 9, 29, 13, 30), datetime.datetime(2026, 9, 29, 19, 59),
+    ]
+    assert bars[0]["close"] == 11.0
+
+
+def test_alpaca_never_answers_for_daily_bars(monkeypatch):
+    """Daily bars fall back to yfinance in bars.py; only minutes come from Alpaca."""
+    from webull.data.common.timespan import Timespan
+
+    monkeypatch.setattr(intraday.quotes, "_get_market_data", lambda: None)
+    monkeypatch.setattr(intraday.alpaca_broker, "is_paper", lambda: True)
+    monkeypatch.setattr(
+        intraday.alpaca_broker, "get_minute_bars", lambda *a, **k: pytest.fail("minute bars asked for a daily fetch"),
+    )
+
+    assert intraday.fetch_bars("AAPL", timespan=Timespan.D) is None
+
+
+def test_a_failed_alpaca_call_reads_as_could_not_ask(monkeypatch):
+    monkeypatch.setattr(intraday.quotes, "_get_market_data", lambda: None)
+    monkeypatch.setattr(intraday.alpaca_broker, "is_paper", lambda: True)
+
+    def refuse(*a, **k):
+        raise RuntimeError("Alpaca refused GET /v2/stocks/AAPL/bars: HTTP 429")
+
+    monkeypatch.setattr(intraday.alpaca_broker, "get_minute_bars", refuse)
 
     assert intraday.fetch_bars("AAPL") is None
 
@@ -221,6 +276,7 @@ def test_capture_recent_asks_for_the_capture_window(market_data, monkeypatch):
 
 def test_capture_recent_writes_nothing_when_the_fetch_fails(monkeypatch):
     monkeypatch.setattr(intraday.quotes, "_get_market_data", lambda: None)
+    monkeypatch.setattr(intraday.alpaca_broker, "is_paper", lambda: False)
     monkeypatch.setattr(
         intraday.db, "upsert_intraday_bars",
         lambda *a: pytest.fail("must not write when there is nothing to write"),

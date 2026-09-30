@@ -9,13 +9,19 @@ import { WatchlistService } from '../../core/services/watchlist.service';
 import { DecisionBadge } from '../../shared/decision-badge';
 import { PriceChart } from '../../shared/price-chart';
 import { ALERT_TYPES } from '../../shared/alert-types';
+import { readerDateTime } from '../../shared/market-time';
+import { parseRationale, whyItRan } from '../../shared/rationale';
 
 /** One row in the merged history: a signal, an alert, or a trade, all reduced
  * to what a timeline needs. The three come from different tables and carry
  * different fields, so the page flattens them rather than rendering three
  * lists the reader has to interleave by eye. */
 interface TimelineEntry {
+  /** The reader's date and time, or the bare date on a signal with no
+   * recorded time. */
   date: string;
+  /** Milliseconds since the epoch, for ordering. */
+  at: number;
   kind: 'signal' | 'alert' | 'trade';
   icon: string;
   title: string;
@@ -76,6 +82,15 @@ export class TickerDetailPage {
    * superseded, not merely graded. */
   protected readonly activeSignal = computed<Signal | null>(() => this.signals()[0] ?? null);
 
+  protected readonly rationaleParts = parseRationale;
+  protected readonly whyItRan = whyItRan;
+
+  /** When the active signal's analysis ran. A row from before timestamps were
+   * kept shows its date alone. */
+  protected analysedAt(s: Signal): string {
+    return s.created_at ? readerDateTime(s.created_at) : s.signal_date;
+  }
+
   protected readonly stopLevel = computed(() => this.activeSignal()?.stop_loss ?? null);
   protected readonly targetLevel = computed(() => this.activeSignal()?.price_target ?? null);
 
@@ -119,7 +134,7 @@ export class TickerDetailPage {
 
     for (const s of this.signals()) {
       entries.push({
-        date: s.signal_date,
+        ...this.when(s.created_at, s.signal_date),
         kind: 'signal',
         icon: '🧠',
         title: `${s.decision} signal`,
@@ -130,7 +145,7 @@ export class TickerDetailPage {
     }
     for (const a of this.alerts()) {
       entries.push({
-        date: a.created_at.slice(0, 10),
+        ...this.when(a.created_at),
         kind: 'alert',
         icon: ALERT_TYPES[a.alert_type]?.icon ?? '•',
         title: ALERT_TYPES[a.alert_type]?.label ?? a.alert_type,
@@ -139,7 +154,7 @@ export class TickerDetailPage {
     }
     for (const t of this.trades()) {
       entries.push({
-        date: t.date,
+        ...this.when(t.filled_at, t.date),
         kind: 'trade',
         icon: '💵',
         title: t.side === 'buy' ? 'buy' : 'sell',
@@ -147,8 +162,16 @@ export class TickerDetailPage {
       });
     }
 
-    return entries.sort((a, b) => b.date.localeCompare(a.date));
+    return entries.sort((a, b) => b.at - a.at);
   });
+
+  /** A recorded instant on the reader's clock. A signal written before
+   * timestamps were kept has only its date, so it shows the date alone rather
+   * than a midnight it never recorded. */
+  private when(instant: string | null, fallbackDate?: string): Pick<TimelineEntry, 'date' | 'at'> {
+    if (instant) return { date: readerDateTime(instant), at: new Date(instant).getTime() };
+    return { date: fallbackDate ?? '', at: new Date(fallbackDate ?? 0).getTime() };
+  }
 
   constructor() {
     void this.refresh();
