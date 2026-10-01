@@ -457,3 +457,16 @@ No run reasoned toward "my next look is tomorrow's open" without first passing t
 | Samples that placed an order | 0 of 7 |
 
 **This run cannot tell a feature that is ignored from one that is not needed.** Every sample read its two holdings, confirmed the stops from the table, and set a wakeup for Monday. Nothing on a closed weekend book asks a question the summaries leave open, or asks how a thesis moved. The probe skill warns about exactly this: a Saturday book tests how the agent reads, not how it trades. **Re-run it in an open session before claiming either feature is unused.**
+
+## Four changes against holding cash, on a pinned open market (2026-09-30)
+
+**What was probed:** seven samples an arm of `gemini-3.5-flash-lite` on a free key, through the forced `decide` call with fetches. Each arm ran on a copy of this machine's book ($8,868 cash of $10,928, 15 ORCL), on a frozen copy of `backend/`, with the clock pinned to Thursday 1 October 10:15 AM Eastern by `time-machine` in a scratch wrapper. **The candidate screen must run before the clock is pinned**: Webull signs each request with a timestamp and refuses a skewed one with `CLOCK_SKEW_EXCEEDED`, and the first runs of this probe had an empty menu for that reason. The arms are cumulative, in the order the changes were made. The full write-up is in the 2026-09-30 JOURNEY.md entries.
+
+| Change | Scenario | Before | After | Verdict |
+|---|---|---|---|---|
+| Removed "Doing nothing is a valid answer" and "Your recent wakeups" | the book as it is, `turn1` and `early` | acted 1 and 1 of 7 | acted 2 and 1 of 7 | Broke nothing. Before, samples quoted both texts as reasons to hold; after, nothing replaced them. Behaviour did not move. |
+| "Paying for research" calls research the main tool, at $50 for a thousand | the book as it is, `turn1` and `early` | research 2 and 1 of 7 | research 3 and 2 of 7 | Unconfirmed. No sample quoted the $50, and one still wrote "Research costs $0.05, so I need to be strategic". |
+| Legend: the levels are a reference, not a limit | NVDA Overweight edited to 10% under the price | bought 2, researched 5 of 7 | bought 0, researched 7 of 7 | Unconfirmed. No sample in either arm treated the Entry as a limit; the STALE marker sent them to research, and none quoted the legend. |
+| Stop-fill wake asks what the freed cash does | a 10:05 NVDA stop-fill alert added | researched a replacement 4 of 7 | 7 of 7 | Supportive. At the noise floor's edge, unanimous after, and one sample paraphrased it: "I have to decide where to redeploy my available cash". |
+
+**At 2.7% past its Entry, a fresh Overweight was bought by 7 of 7 samples, sized from the stop** (8 to 10 NVDA, about 1.5% of the book at risk). The "entry is a limit" habit seen live on 9/16 did not appear at either distance; it predates the STALE marker of 2026-09-22.
