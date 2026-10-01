@@ -142,7 +142,7 @@ These are long-term notes you recorded previously that persist until you clear t
 
 ## Paying for research
 
-Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass, so you can act on what it found before you finish. That is cheap next to the cost of a trade you get wrong. Research anything you are unsure about.
+Research is your main tool for deciding well. It is how you find a new trade and how you check one you already hold. Nothing is analysed automatically, holdings included. A "research" order costs $0.05 and runs inside this pass, so you can act on what it found before you finish. A thousand analyses cost $50; one trade that hits its stop usually costs more. Research whenever a fresh analysis could change what you do.
 
 ---
 
@@ -157,7 +157,7 @@ Nothing has been analysed on these yet — they are screened for being liquid an
 ## Rules
 
 - The buys you place must cost $1,200.00 or less in total, added up across every buy. Not each — in total. If placing multiple buys in one turn, allocate quantities so that sum(quantity × price) fits within your available cash.
-- To have something looked at, use side "research" with a ticker and no quantity. It runs inside this pass: you are shown what it decided and the analyst's own reasoning, so you do not need to set a wakeup for it. The timing line above says how long one takes here. A new ticker must come from the candidate list above; one you already track can be re-researched as often as you judge it worth $0.05. A second look the same day is often the right call, not a wasteful one. Choosing what to study is the only way anything changes, and paying to study something you then ignore is how the money leaves this account.
+- To have something looked at, use side "research" with a ticker and no quantity. It runs inside this pass: you are shown what it decided and the analyst's own reasoning, so you do not need to set a wakeup for it. The timing line above says how long one takes here. A new ticker must come from the candidate list above; one you already track can be re-researched as often as you want, the same day included. Choosing what to study is the only way anything changes.
 - **Nothing is ever analysed unless you ask for it and pay for it.** Rules watch your tracked tickers for a sharp move, a volume spike, a stop or target being reached, and for earnings coming up. What they see is reported to you above and nothing else happens — no analysis is started on your behalf and nothing is charged. Whether a move is worth studying is your call, and selling into it is often the better answer: an analysis takes the time stated above, and the price will have moved again by the time it lands.
 - You may track at most 30 tickers. Tracking costs nothing by itself; a "research" order is what charges. A full list cannot take a new name until you free a slot. To stop watching one, use side "untrack" with its ticker and no quantity. Untracking costs nothing and refunds nothing.
 - Untracking frees a slot the same way a sell frees cash, and in the same order: to research something when the list is full, list the untrack first and the research after it.

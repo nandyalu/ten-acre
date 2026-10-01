@@ -1267,12 +1267,19 @@ def describe_research_price(price: float) -> list[str]:
     small one: $0.05 against a $10,000 book is five thousandths of one percent,
     and one trade the agent gets wrong costs a hundred times more. See the
     2026-09-22 entry in JOURNEY.md.
+
+    **It opens with what research is for (2026-09-30).** The agent still weighed
+    the charge after that change, and on 9/29 it named a new candidate and
+    then held cash. The thousand-analyses figure is also a number that appears
+    nowhere else in the prompt, so a probe can tell whether this section was read.
     """
     return [
-        f"Nothing is analysed automatically, holdings included. A \"research\" order "
-        f"costs ${price:,.2f} and runs inside this pass, so you can act on what it "
-        "found before you finish. That is cheap next to the cost of a trade you get "
-        "wrong. Research anything you are unsure about.",
+        "Research is your main tool for deciding well. It is how you find a new trade "
+        "and how you check one you already hold. Nothing is analysed automatically, "
+        f"holdings included. A \"research\" order costs ${price:,.2f} and runs inside "
+        "this pass, so you can act on what it found before you finish. A thousand "
+        f"analyses cost ${price * 1000:,.0f}; one trade that hits its stop usually "
+        "costs more. Research whenever a fresh analysis could change what you do.",
     ]
 
 
@@ -1442,11 +1449,8 @@ def describe_rules(
                     if answer_by_tool
                     else "  candidate list above; one you already track can be re-researched as"
                 ),
-                "  often as you judge it worth $0.05. A second look the same day is",
-                "  often the right call, not a wasteful one.",
-                "  Choosing what to study is the only way anything changes,",
-                "  and paying to study something you then ignore is how the money leaves",
-                "  this account.",
+                "  often as you want, the same day included. Choosing what to study is the",
+                "  only way anything changes.",
                 "- **Nothing is ever analysed unless you ask for it and pay for it.**",
                 "  Rules watch your tracked tickers for a sharp move, a volume spike, a",
                 "  stop or target being reached, and for earnings coming up. What they see",
