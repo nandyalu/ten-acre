@@ -4,6 +4,16 @@
 
 For each change by date, see [the changelog](changelog.md) and [the journey](journey.md).
 
+## v0.5.1 — 2026-10-01
+
+- **A pass that a stop fill starts now asks what the freed cash does next.** The wake reason says the sale's money is cash again, and asks the agent to put it into a position, pay for research on a replacement, or keep it as cash by choice. On one deployment cash went from 1% to 81% of the book as three stops fired and no pass replaced them. In probes, research on a replacement went from 15 of 21 samples to 21 of 21.
+- **Research is now the agent's main tool in the prompt, and its price heads the candidate list.** "Paying for research" says what research is for and that a thousand analyses cost $50. The research rule no longer says that ignored research "is how the money leaves this account". The `candidates` result opens with the price and says research is how a listed name becomes a trade. In probes, research went from 7 of 21 samples to 16 of 21. The $0.05 charge did not change.
+- **A market buy may carry its own `stop` and `target`.** A level the agent leaves out is still the signal's, or a 2×ATR stop when the signal has none. Python refuses, and never moves, a stop at or above the price, a target at or below it, and any level on a limit buy.
+- **The signals legend says Entry, Stop and Target are reference points, not limits.** One deployment waited three days in cash for INTC to come back to its Entry while the price ran 10% past it.
+- **The rule "Doing nothing is a valid answer, and often the right one" and the "Your recent wakeups" section are gone.** Both were added to stop wakeups at the minimum interval. The agent quoted them as its reason to hold cash, and on most days it asked for the next morning.
+- **The Decisions page on the live dashboard shows a pass while it runs.** The card shows when the pass started, what the agent was told on waking, the turn, what the pass is doing now and the research it waits on. It reads the new read-only route `GET /api/agent/pass`. The public site does not show it.
+- **Each prompt change has a probe record** in `.claude/rules/agent-probes.md`, with 7 to 21 samples an arm on a copy of the book and the clock set to an open market.
+
 ## v0.5.0 — 2026-09-30
 
 - **Alpaca paper is a second broker, selected with `BROKER=alpaca`.** Alpaca paper keys need only an email address, where Webull OpenAPI needs a funded account and an access application. Set `ALPACA_API_KEY`, `ALPACA_API_SECRET` and `ALPACA_ACCOUNT_NUMBER`, and `ALPACA_ACCOUNT_CLASS` (`cash` by default). `webull` stays the default, so an existing deployment changes nothing. The four guards apply in Alpaca's terms: the paper host only, a `PA` account number, the class from the account's margin multiplier with shorting off, and no fallback account. Fills settle on the 15-minute poll, because the Webull trade stream does not start. Fills and an OCO on a real position are not proved yet, so run `backend/scripts/alpaca_paper_check.py` during a session first.
