@@ -568,7 +568,14 @@ _WOKE_BECAUSE = {
     "Event-driven": "A rule watching your tickers spotted something. You did not ask for this pass.",
     "Earnings": "A company you track reports earnings soon. You did not ask for this pass.",
     "Final": "This is the last pass before the close. Anything you want done today has to be done now.",
-    "Stop fill": "A resting stop or target closed one of your positions on its own. You did not ask for this pass.",
+    # The second half since 2026-09-30: a stop-fill pass used to hold the cash
+    # and ask for the next morning, and cash went from 1% to 81% of the book.
+    "Stop fill": (
+        "A resting stop or target closed one of your positions on its own, and the "
+        "money from that sale is cash again. You did not ask for this pass. Decide "
+        "what that cash does next: go into a position, pay for research on a "
+        "replacement, or stay as cash by choice."
+    ),
     "Unguarded position": "A position of yours has nothing resting under it to protect it. You did not ask for this pass.",
 }
 # **No reason here promises a section.** One did — "see what it was, below" —
