@@ -12,6 +12,7 @@ import {
   UnprotectedPosition,
   AgentEvent,
   AgentMemoryNote,
+  PassInProgress,
   AgentNote,
   AgentReflection,
   JourneyEntry,
@@ -81,6 +82,12 @@ export class AgentService {
    * fetches once on its own, the same way getEventMonths() does. */
   async getNotes(): Promise<AgentNote[]> {
     return firstValueFrom(this.http.get<AgentNote[]>('/api/agent/notes'));
+  }
+
+  /** The decision pass running now, if any. Polled by the Decisions page on
+   * the live build only. */
+  async getPassInProgress(): Promise<PassInProgress> {
+    return firstValueFrom(this.http.get<PassInProgress>('/api/agent/pass'));
   }
 
   /** The memory notes the agent holds now, oldest first. One flat fetch like

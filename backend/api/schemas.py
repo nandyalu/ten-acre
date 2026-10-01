@@ -506,6 +506,20 @@ class AgentNoteOut(Schema):
     would_have_done: str | None = None
 
 
+class PassInProgressOut(Schema):
+    """The decision pass running now. ``running`` is false between passes,
+    and every other field is then null or empty. Not in the static snapshot:
+    it describes this second, and the public site is a record."""
+
+    running: bool
+    started_at: datetime | None = None
+    woke_because: str | None = None
+    turn: int | None = None
+    doing: str | None = None
+    # Tickers being analysed now, mapped to when each started.
+    research: dict[str, datetime] = {}
+
+
 class AgentMemoryNoteOut(Schema):
     """One note the agent keeps for itself across passes (``side: memory``).
 

@@ -4758,6 +4758,7 @@ def _research_and_report(tickers: list[str]) -> tuple[list[str], dict[str, str]]
     if not tickers:
         return refused, failed
     log.info("Running %s and waiting for the result, in the same pass", ", ".join(tickers))
+    _pass_doing("Waiting for research on " + ", ".join(tickers))
     try:
         # What stopped each analysis that did not finish. A runner that
         # reports nothing — a test double — reports no failures.
@@ -5047,7 +5048,40 @@ def _fold_in(run, decision, reasoning, rejected, book) -> None:
     run.book = book
 
 
+# **The pass in progress, for the operator's dashboard (2026-10-01).** Held
+# in memory: quiv runs the pass on a thread of this process, so the API reads
+# it directly. None between passes. Nothing reads it back into a prompt.
+_current_pass: dict | None = None
+
+
+def current_pass() -> dict | None:
+    """A copy of the pass in progress, or None when no pass is running."""
+    return dict(_current_pass) if _current_pass is not None else None
+
+
+def _pass_doing(what: str, **more) -> None:
+    """Say what the pass in progress is doing now. Does nothing between passes."""
+    if _current_pass is not None:
+        _current_pass.update(doing=what, **more)
+
+
 def run_once(woke_because: str | None = None, should_stop=None) -> AgentRun:
+    """One decision pass, with what it is doing visible to the dashboard
+    while it runs. See ``_run_once``."""
+    global _current_pass
+    _current_pass = {
+        "started_at": datetime.datetime.now(datetime.timezone.utc),
+        "woke_because": woke_because,
+        "turn": 0,
+        "doing": "Building the prompt",
+    }
+    try:
+        return _run_once(woke_because, should_stop)
+    finally:
+        _current_pass = None
+
+
+def _run_once(woke_because: str | None = None, should_stop=None) -> AgentRun:
     """One decision pass: settle fills, build the book, ask the model, screen
     the answer, place what survives.
 
@@ -5164,6 +5198,7 @@ def run_once(woke_because: str | None = None, should_stop=None) -> AgentRun:
         # Read before _decide collects the alerts, so an alert that lands while
         # the model thinks is after this time and the next pass shows it.
         looked_at = datetime.datetime.now(datetime.timezone.utc)
+        _pass_doing("Asking the model", turn=act_turn + 1)
         try:
             decision = _decide(
                 book, signals, prices, closed=closed,
@@ -5255,6 +5290,7 @@ def run_once(woke_because: str | None = None, should_stop=None) -> AgentRun:
             log.info("The answer repeats the previous turn's orders; ending the pass")
             break
         last_signature = signature
+        _pass_doing("Carrying out its orders")
         did = _execute_orders(accepted, run, prices, stops, targets, signal_by_ticker, researched)
         # Settle again on the way out, and re-read the book. A market order placed
         # in session hours fills in well under a second, but nothing would notice

@@ -9,6 +9,7 @@ import { CopyButton } from '../../shared/copy-button';
 import { Markdown } from '../../shared/markdown';
 import { DecisionCard } from './decision-card';
 import { MemoryPanel } from './memory-panel';
+import { PassInProgress } from './pass-in-progress';
 import { ReflectionCard } from './reflection-card';
 
 /** One calendar day within a month: its evening review, when it had one,
@@ -46,7 +47,16 @@ function utcMonth(instant: string): string {
 @Component({
   selector: 'app-decisions-view',
   standalone: true,
-  imports: [CopyButton, DecisionCard, Markdown, MemoryPanel, ReflectionCard, RouterLink, Term],
+  imports: [
+    CopyButton,
+    DecisionCard,
+    Markdown,
+    MemoryPanel,
+    PassInProgress,
+    ReflectionCard,
+    RouterLink,
+    Term,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './decisions-view.html',
 })
@@ -224,6 +234,23 @@ export class DecisionsView {
       return;
     }
     void this.expandMonth(month);
+  }
+
+  /** A pass the page watched has ended. Fetch the newest month again, so the
+   * pass it just recorded appears without a reload. A failure here leaves
+   * the page as it was; the next visit shows the pass. */
+  protected async passEnded(): Promise<void> {
+    try {
+      const months = this.withReviewMonths(await this.agent.getEventMonths(), this.reviews());
+      this.months.set(months);
+      if (!months.length) return;
+      const cache = new Map(this.eventsByMonth());
+      cache.delete(months[0]);
+      this.eventsByMonth.set(cache);
+      await this.expandMonth(months[0]);
+    } catch {
+      // Nothing to do: the record is stored, and a reload shows it.
+    }
   }
 
   private async expandMonth(month: string): Promise<void> {

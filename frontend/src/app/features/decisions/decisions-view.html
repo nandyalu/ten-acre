@@ -18,6 +18,8 @@
     <a routerLink="/decisions/notes">See every note it has left →</a>
   </p>
 
+  <app-pass-in-progress (ended)="passEnded()" />
+
   <app-memory-panel />
 
   @if (loadingMonths()) {

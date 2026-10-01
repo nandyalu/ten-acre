@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-10-01
+
+- **The site** — The Decisions page on the live dashboard shows a card while a decision pass runs: when it started, what the agent was told on waking, the turn, what the pass is doing now (asking the model, carrying out orders, or waiting for research), and each analysis it waits on. It asks `GET /api/agent/pass` every 15 seconds, and when the pass ends it fetches the newest month again so the pass appears. The public site never asks, and the snapshot exporter writes no file for it, because it describes the current second.
+
 ## 2026-09-30
 
 - **The site** — The Experiment page no longer quotes "Doing nothing is a valid answer, and often the right one" under a day with no trades. The agent's prompt dropped that rule on 2026-09-30, so the page now says only "It made no trades that day."

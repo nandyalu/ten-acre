@@ -540,6 +540,18 @@ export interface AgentEvent {
 /** One note the agent keeps for itself, from GET /api/agent/memory
  * (2026-09-28). The list is the one its next prompt shows. `written` and
  * `source` are null on a note stored before 2026-09-24. */
+/** The decision pass running now (`GET /api/agent/pass`). Live build only:
+ * the static snapshot never writes it. */
+export interface PassInProgress {
+  running: boolean;
+  started_at: string | null;
+  woke_because: string | null;
+  turn: number | null;
+  doing: string | null;
+  /** Tickers being analysed now, mapped to when each started. */
+  research: Record<string, string>;
+}
+
 export interface AgentMemoryNote {
   text: string;
   written: string | null;

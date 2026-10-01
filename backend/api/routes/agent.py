@@ -21,6 +21,7 @@ from backend.api.schemas import (
     AgentNoteOut,
     AgentReflectionOut,
     JourneyEntryOut,
+    PassInProgressOut,
     AgentBookOut,
     AgentComparisonOut,
     AgentEquityPointOut,
@@ -30,7 +31,7 @@ from backend.api.schemas import (
     UnprotectedPositionOut,
 )
 from backend.database import db
-from backend.services import agent, agent_book, agent_performance, broker, journey, quotes, ticker_book
+from backend.services import agent, agent_book, agent_performance, analysis, broker, journey, quotes, ticker_book
 from backend.services.positions import get_shown_price
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -291,6 +292,16 @@ def get_reflections(limit: int = 30):
         )
         for row in db.get_reflections(limit=limit)
     ]
+
+
+@router.get("/pass", response_model=PassInProgressOut)
+def get_pass_in_progress():
+    """Whether a decision pass is running now, and what it is doing. Read-only:
+    it reports a pass, and nothing here can start or stop one."""
+    now = agent.current_pass()
+    if now is None:
+        return PassInProgressOut(running=False)
+    return PassInProgressOut(running=True, research=analysis.in_flight(), **now)
 
 
 @router.get("/system-prompt")
