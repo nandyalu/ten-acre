@@ -197,10 +197,6 @@ _FAILURES_SHOWN = 5
 _FAILURE_LOOKBACK_RUNS = 3
 
 
-# How many past wakeups to report. Enough to show a pattern, few enough that
-# the agent does not spend its attention reading its own log.
-_WAKEUPS_SHOWN = 6
-
 _MEMORY_NOTES_KEY = "agent_memory_notes"
 _MEMORY_NOTE_MAX_CHARS = 500
 _MAX_MEMORY_NOTES = 10
@@ -361,51 +357,6 @@ def describe_analysis_timing(
                 started = started.replace(tzinfo=datetime.timezone.utc)
             parts.append(f"{ticker} ({(here - started).total_seconds() / 60:.0f} min so far)")
         lines.append("Being analysed right now: " + ", ".join(parts) + ".")
-    return lines
-
-
-def describe_recent_wakeups(wakeups: list[dict], brief: bool = False) -> list[str]:
-    """What the agent's own chosen cadence has produced.
-
-    **A wakeup costs it nothing, so the obvious failure is asking for the
-    minimum every time** and spending the session on passes that do nothing.
-    Pricing a wakeup was rejected: the work is trivial and a charge would be an
-    invented cost dressed up as a rule, which is the mistake the research
-    timing deliberately avoids.
-
-    This is feedback instead of a limit. The agent is shown how its last
-    several wakeups turned out and left to draw the conclusion. Whether it
-    learns to space them is a result worth having, and a cap would have
-    answered that question before it was asked.
-    """
-    if not wakeups:
-        return []
-    recent = wakeups[-_WAKEUPS_SHOWN:]
-    idle = sum(1 for w in recent if not w.get("acted"))
-    if brief:
-        # The count is the feedback; the six timestamps were the cost. On the
-        # tool channel (2026-09-17) the list is one line, and the advice
-        # below stays.
-        lines = [
-            f"Your last {len(recent)} wakeups: {len(recent) - idle} led to an action, "
-            f"{idle} did nothing."
-        ]
-    else:
-        lines = ["Your recent wakeups, and whether each one led to an action:"]
-        for w in recent:
-            at = w.get("at", "")
-            lines.append(f"- {at}: {'acted' if w.get('acted') else 'did nothing'}")
-    if idle == len(recent) and len(recent) >= 3:
-        lines.append(
-            f"All {idle} did nothing. Waking more often does not make the market move — "
-            "if there is nothing to react to, ask for a later time and spend the "
-            "attention when something has actually changed."
-        )
-    elif idle:
-        lines.append(
-            f"{idle} of the last {len(recent)} did nothing. Pick the next time for when "
-            "you expect something to have changed, not out of habit."
-        )
     return lines
 
 
@@ -1615,7 +1566,6 @@ def build_prompt(
     max_watchlist: int = 0,
     failures: list[dict] | None = None,
     unsettled_cash: float = 0.0,
-    wakeups: list[dict] | None = None,
     analysis_minutes: list[float] | None = None,
     running_analyses: dict | None = None,
     readings: list[str] | None = None,
@@ -1778,7 +1728,6 @@ def build_prompt(
             ("Orders the broker would not take", describe_recent_failures(failures or [])),
             ("How long an analysis takes",
              describe_analysis_timing(analysis_minutes or [], running_analyses or {})),
-            ("Your recent wakeups", describe_recent_wakeups(wakeups or [], brief=answer_by_tool)),
         ]),
         ("Now", [
             ("The time", describe_clock()),
@@ -2633,7 +2582,6 @@ _FIXED_RULES = [
         "fields of decide: call them by themselves, and call decide once you have "
         "what you need.",
     },
-    "- Doing nothing is a valid answer, and often the right one.",
     "- You decide when you are next asked, and nothing else does. Put "
     "\"next_wakeup\" beside your orders as an ISO datetime — "
     "\"2026-09-11T09:00\" is Eastern, and a trailing Z or an offset is read as "
@@ -3100,41 +3048,6 @@ def _unsettled_cash() -> float:
         return 0.0
 
 
-def _recent_wakeups() -> list[dict]:
-    """The last several passes, and whether each one did anything.
-
-    Read from the stored runs, not held in memory: a wakeup the agent asked for
-    at 10am is judged by a pass that runs in a different process an hour later.
-
-    "Acted" counts orders placed, exits adjusted, research commissioned and
-    names untracked. **A note does not count**, for the same reason it does not
-    count anywhere else — a pass that only said something is still an idle
-    pass, and letting it read as action would tell the agent its cadence is
-    earning more than it is.
-    """
-    out: list[dict] = []
-    for row in reversed(db.get_agent_runs(limit=_WAKEUPS_SHOWN, answered=True)):
-        acted = bool((row.placed or 0) or (row.adjusted or 0))
-        # Research and untracks live in the orders JSON rather than in a count
-        # column, so a pass that only commissioned research would otherwise
-        # read as idle — which is exactly backwards, since choosing what to
-        # study is the only way anything new enters the account.
-        if not acted and row.orders:
-            try:
-                sides = {o.get("side") for o in json.loads(row.orders)}
-                acted = bool(sides & {"buy", "sell", "adjust", "research", "untrack"})
-            except (ValueError, AttributeError, TypeError):
-                pass
-        at = row.ran_at
-        if at is not None and at.tzinfo is None:
-            at = at.replace(tzinfo=datetime.timezone.utc)
-        out.append({
-            "at": market_clock.now_et(at).strftime("%-I:%M %p") if at else "",
-            "acted": acted,
-        })
-    return out
-
-
 _EARNINGS_KEY = "earnings_due"
 _ALERTS_SHOWN = 8
 
@@ -3533,9 +3446,6 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
     # Orders the broker would not take on recent passes. Read once and given to
     # both attempts, so the retry sees the same history the first answer did.
     recent_failures = _recent_broker_failures()
-    # Read once and shared with the retry too. The retry is the same pass, so
-    # its cadence history has not changed.
-    recent_wakeups = _recent_wakeups()
     # What the rules noticed, and who reports soon. Read once and shared with
     # every turn of this pass, for the same reason as everything above.
     alerts = _recent_alerts()
@@ -3583,7 +3493,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         book, signals, prices, closed=closed, regime_line=regime_line,
         horizon_days=horizon_days, menu=menu, price=research.get_price(),
         watchlist=watchlist, max_watchlist=_max_watchlist(),
-        failures=recent_failures, unsettled_cash=unsettled, wakeups=recent_wakeups,
+        failures=recent_failures, unsettled_cash=unsettled,
         analysis_minutes=analysis_minutes, running_analyses=running_analyses,
         outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
@@ -3675,7 +3585,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              price=research.get_price(),
                              watchlist=watchlist, max_watchlist=_max_watchlist(),
                              failures=recent_failures, unsettled_cash=unsettled,
-                             wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
+                             analysis_minutes=analysis_minutes,
                              running_analyses=running_analyses, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,
@@ -3714,7 +3624,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                          price=research.get_price(),
                          watchlist=watchlist, max_watchlist=_max_watchlist(),
                          failures=recent_failures, unsettled_cash=unsettled,
-                         wakeups=recent_wakeups, analysis_minutes=analysis_minutes,
+                         analysis_minutes=analysis_minutes,
                          running_analyses=running_analyses, outcomes=outcomes,
                              alerts=alerts, earnings=earnings,
                              researched_now=researched_now,

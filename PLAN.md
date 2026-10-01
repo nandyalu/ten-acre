@@ -60,7 +60,7 @@ The agent reviews its own day once, after the close. It speaks to the maintainer
 - **Turn 2 sees turn 1.** The context is already there, and the guard against working around a reported gap needs something to point at. The probe below checks whether turn 1 primes turn 2 toward workarounds.
 - **Both turns run daily to start.** The memory churn count after two weeks decides whether turn 2 moves to weekly. Weekly from day one would hide the churn we want to see.
 - **The reflection's wakeup note replaces the final pass's note in the morning prompt.** Two notes on one subject would be two copies, and the model reconciles copies and keeps one. The record keeps both.
-- **The reflection has its own table.** It is not a pass. The passes table feeds "your recent wakeups" and the idle-pass logic, and a reflection must not count there.
+- **The reflection has its own table.** It is not a pass. The passes table feeds the next wakeup and the last note, and a reflection must not count there.
 - **Memory notes get a date and a source.** The source is `pass` or `reflection`. The review in turn 2 needs the date to judge whether a note has earned its place.
 
 ### When it runs

@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-09-30
 
+- **The site** — The Experiment page no longer quotes "Doing nothing is a valid answer, and often the right one" under a day with no trades. The agent's prompt dropped that rule on 2026-09-30, so the page now says only "It made no trades that day."
 - **Tooling** — `backend/services/watchdog.py` now defines its market-hours constants before it imports `bars`. The two modules import each other, so a script that loaded `watchdog` first, such as the intraday backfill, failed. A test now imports each of four modules first in a fresh process. The app loads `bars` first and was not affected.
 - **Data** — With `BROKER=alpaca` and no Webull client, the 1-minute bars behind the charts now come from Alpaca's bars endpoint (`alpaca_broker.get_minute_bars`), on the `sip` feed and about 16 minutes behind, because a free key may not read newer `sip` bars and the bars endpoint refuses `delayed_sip`. Before this, such a deployment had no intraday chart. Daily bars are unchanged.
 - **The site** — The ticker page has a "Latest analysis" card: the call, the price, the time horizon, why the analysis ran and the rationale. The timeline shows the time of each record on the reader's clock, and its empty text no longer tells the reader to run an analysis.

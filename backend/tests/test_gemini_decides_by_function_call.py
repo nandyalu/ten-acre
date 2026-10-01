@@ -649,22 +649,6 @@ def test_the_tool_prompt_keeps_the_track_record_totals_and_the_hold_pattern():
     assert "Of the 2 you bought on a Hold signal, 0 made money." in by_json
 
 
-def test_the_tool_prompt_counts_the_wakeups_instead_of_listing_them():
-    import backend.tests.test_agent as _t
-    wakeups = [
-        {"at": "Mon 9:30 AM", "acted": True}, {"at": "Mon 11:00 AM", "acted": False},
-        {"at": "Mon 3:00 PM", "acted": False},
-    ]
-
-    by_tool = agent.build_prompt(_t._book(), [], {}, wakeups=wakeups, answer_by_tool=True)
-    by_json = agent.build_prompt(_t._book(), [], {}, wakeups=wakeups, answer_by_tool=False)
-
-    assert "Your last 3 wakeups: 1 led to an action, 2 did nothing." in by_tool
-    assert "Mon 11:00 AM" not in by_tool
-    assert "2 of the last 3 did nothing." in by_tool
-    assert "- Mon 11:00 AM: did nothing" in by_json
-
-
 def test_the_two_system_messages_share_every_rule_that_is_not_about_reading():
     assert "JSON only" in agent.SYSTEM_PROMPT
     assert "JSON only" not in agent.SYSTEM_PROMPT_TOOL

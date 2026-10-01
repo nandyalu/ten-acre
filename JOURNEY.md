@@ -51,6 +51,8 @@ Entries before 2026-09-11 were swept under these rules; anything that failed all
 
 Newest first.
 
+**2026-09-30 — the rule "Doing nothing is a valid answer, and often the right one" is gone, and so is the "Your recent wakeups" section.** Both were added to stop the agent from waking at the minimum interval. On the two Gemini deployments they made it cautious instead. It quoted the rule as its reason to hold in 11 of 80 passes. The wakeup count told it to "ask for a later time" after idle passes, and on most days it then asked for the next morning. The deployment on this machine held 81% of its book in cash for two days. The last pass before the close still runs whatever time the agent names.
+
 **2026-09-29 — on an Alpaca paper deployment, the candidate menu is no longer empty.** `fetch_candidates` used to return nothing when no Webull client existed. It now screens Alpaca's own most-actives and day-gainers lists, prices each row with an Alpaca snapshot, and drops ETFs using Nasdaq's daily symbol directory. Without this, an Alpaca deployment had no way to propose a new ticker to the agent.
 
 **2026-09-29 — the final pass before the close now runs fifteen minutes ahead, not five.** At 3:55 the agent read "closes in 4m" and decided it had no time to order research, read it, and trade. An analysis takes about 7 minutes, 11 at most, so five minutes never left room for one. `FINAL_PASS_LEAD` and the wakeup text the agent reads both moved to fifteen minutes.

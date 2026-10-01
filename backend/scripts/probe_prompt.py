@@ -122,7 +122,6 @@ def build_prompts() -> dict:
         watchlist=sorted(db.get_watchlist()),
         max_watchlist=agent._max_watchlist(),
         failures=agent._recent_broker_failures(),
-        wakeups=agent._recent_wakeups(),
         analysis_minutes=analysis.recent_durations(),
         running_analyses=analysis.in_flight(),
         alerts=agent._recent_alerts(),

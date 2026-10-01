@@ -69,42 +69,6 @@ def test_a_fenced_reply_is_read():
     assert (got.hour, got.minute) == (10, 30)
 
 
-# --- what the agent is told about its own cadence ------------------------------
-
-
-def _wakeups(*acted):
-    return [{"at": f"{9 + i}:00 AM", "acted": a} for i, a in enumerate(acted)]
-
-
-def test_nothing_is_said_before_there_is_a_history():
-    assert agent.describe_recent_wakeups([]) == []
-
-
-def test_an_all_idle_run_is_named_plainly():
-    """The failure this exists to catch: asking for the minimum every time and
-    spending the session on passes that do nothing."""
-    said = "\n".join(agent.describe_recent_wakeups(_wakeups(False, False, False, False)))
-    assert "All 4 did nothing" in said
-    assert "ask for a later time" in said
-
-
-def test_a_mixed_run_is_counted_not_scolded():
-    said = "\n".join(agent.describe_recent_wakeups(_wakeups(True, False, True, False)))
-    assert "2 of the last 4" in said
-    assert "All " not in said
-
-
-def test_a_productive_run_gets_no_advice():
-    said = "\n".join(agent.describe_recent_wakeups(_wakeups(True, True, True)))
-    assert "did nothing" not in said
-
-
-def test_the_feedback_reaches_the_prompt():
-    prompt = agent.build_prompt(_book(), [], {}, wakeups=_wakeups(False, False, False))
-    assert "Your recent wakeups" in prompt
-    assert "All 3 did nothing" in prompt
-
-
 # --- the clock and the cash in the prompt --------------------------------------
 
 
@@ -275,34 +239,3 @@ def test_a_first_ever_run_is_scheduled_for_the_next_open(monkeypatch):
     monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit, **_: [])
 
     assert agent.wakeup_due(at(15, 0)) is not None
-
-
-# --- what counts as having acted -----------------------------------------------
-
-
-def test_a_pass_that_only_researched_counts_as_acting(monkeypatch):
-    """Choosing what to study is the only way anything new enters the account,
-    so a research-only pass reading as idle would be exactly backwards."""
-    monkeypatch.setattr(
-        agent.db, "get_agent_runs",
-        lambda limit, **_: [_Run(orders=json.dumps([{"side": "research", "ticker": "INTC"}]))],
-    )
-
-    assert agent._recent_wakeups()[0]["acted"] is True
-
-
-def test_a_pass_that_only_left_a_note_is_still_idle(monkeypatch):
-    """A note is the agent talking, not the agent trading. Counting it would
-    tell the agent its cadence is earning more than it is."""
-    monkeypatch.setattr(
-        agent.db, "get_agent_runs",
-        lambda limit, **_: [_Run(orders=json.dumps([{"side": "note", "reason": "I need X"}]))],
-    )
-
-    assert agent._recent_wakeups()[0]["acted"] is False
-
-
-def test_unreadable_orders_do_not_crash_the_history(monkeypatch):
-    monkeypatch.setattr(agent.db, "get_agent_runs", lambda limit, **_: [_Run(orders="not json")])
-
-    assert agent._recent_wakeups()[0]["acted"] is False

@@ -345,8 +345,8 @@ class AgentReflection(SQLModel, table=True):
     notes, for itself. It cannot trade, research or move its alarm here.
 
     Its own table, not a row in ``agentrun``: a review is not a pass. The
-    passes table feeds "your recent wakeups" and the idle-pass count, and a
-    review must count in neither.
+    passes table feeds the next wakeup and the last note, and a review must
+    count in neither.
     """
 
     id: int | None = Field(default=None, primary_key=True)

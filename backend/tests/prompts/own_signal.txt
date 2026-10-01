@@ -106,16 +106,6 @@ Being analysed right now: ORCL (7 min so far).
 
 ---
 
-## Your recent wakeups
-
-Your recent wakeups, and whether each one led to an action:
-- 21 Sep 9:30 AM: acted
-- 21 Sep 10:15 AM: did nothing
-- 21 Sep 11:00 AM: did nothing
-2 of the last 3 did nothing. Pick the next time for when you expect something to have changed, not out of habit.
-
----
-
 # Now
 
 ## The time

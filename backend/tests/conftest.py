@@ -139,8 +139,8 @@ def isolated_research_charges(monkeypatch):
 def isolated_agent_runs(monkeypatch):
     """Keep the agent's pass records in memory for every test.
 
-    **The prompt reads earlier passes**: the last note, the recent wakeups
-    and the broker failures of the last three passes. So a test of the
+    **The prompt reads earlier passes**: the last note and the broker
+    failures of the last three passes. So a test of the
     prompt read the developer's `data/trading.db`. On 2026-09-24 that copy
     had no `agentrun.looked_at` column yet, and 22 tests failed on a
     migration that had nothing to do with them. On a copy of the live book

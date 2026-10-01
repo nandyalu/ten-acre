@@ -47,15 +47,14 @@ The table is the order. The numbered notes under it are keyed to sections, not t
 | 9 | `## Your track record` | 8 |
 | 10 | `## Orders the broker would not take` | "What Python enforces" below |
 | 11 | `## How long an analysis takes` | 9 |
-| 12 | `## Your recent wakeups` | 10 |
-| 13 | `## The time` | 1 |
-| 14 | `## Why you are awake`, or `## Why this pass started` on a later turn | 1b |
-| 15 | `## Your persistent memory notes across passes` | 3b |
-| 16 | `## Paying for research` | 7 |
-| 17 | `## Candidates you could research` | 7 |
-| 18 | `## Rules` | 14 |
-| 19 | `## Your next wakeup` | 1b |
-| 20 | `## Answer in this shape`, or `## How to answer` on the tool channel | 14 |
+| 12 | `## The time` | 1 |
+| 13 | `## Why you are awake`, or `## Why this pass started` on a later turn | 1b |
+| 14 | `## Your persistent memory notes across passes` | 3b |
+| 15 | `## Paying for research` | 7 |
+| 16 | `## Candidates you could research` | 7 |
+| 17 | `## Rules` | 14 |
+| 18 | `## Your next wakeup` | 1b |
+| 19 | `## Answer in this shape`, or `## How to answer` on the tool channel | 14 |
 
 **A heading is load-bearing where a wake reason points at it, and so is the direction word beside it.** `describe_wakeup` names "What was noticed since your last pass", and `_asked_again` names "What your last answer did". Rename either and the pointer points at nothing, which is the exact failure the "no wake reason may promise a section" rule was written for. **Both pointers say "above" since 2026-09-21**, because the "Now" group moved below "What is true now" and every section they name is now higher up the prompt; a pointer with the right heading and the wrong direction fails the same way. **It named four headings earlier the same day**, one per section; those four are one section now and the pointer is one sentence.
 
@@ -99,7 +98,7 @@ The notes:
 9. **How long an analysis takes**, from its own recent runs, and what is being analysed right now with how long it has been running. It cannot plan a wakeup around research it ordered without both.
 
    **Bounded to the last seven days as well as the last twenty runs (2026-09-21).** `analysis.recent_durations` had a row count and no date bound, so it reached back to the first analysis this database ever held and averaged `qwen-3.8-27b` at 2.3 to 4.4 minutes together with the current model at 3.2 to 9.1. The line said "about 4 minutes — recently between 2 and 9" when the last five runs had taken 4.5 to 9.1. **Erring low is the expensive direction**: the agent plans a wakeup around this figure. After a quiet week `describe_analysis_timing` says nothing about duration rather than quoting a model no longer in use, and the section carries only what is running now. `_DURATION_DAYS` is 7.
-10. **Its recent wakeups**, and whether each led to an action. Feedback rather than a limit: waking costs nothing, so pricing it would be an invented cost, and whether the agent learns to space them is a result worth having. On the tool channel (since 2026-09-17) the six timestamps are one count line, `describe_recent_wakeups(brief=True)`, and the advice under it is the same.
+10. ~~**Its recent wakeups**~~ **Removed 2026-09-30.** The section counted how many of the last six passes led to an action, and when most did nothing it said to "ask for a later time". It was feedback against waking at the minimum interval. On the Gemini deployments the agent read it as advice to wait, and on most days it asked for the next morning. A probe sample quoted it back: "frequent checks without action are unproductive. The prompt recommends scheduling a later check." See the 2026-09-30 JOURNEY.md entry. The note number stays so that references to it still resolve.
 11. **What it asked to read**, when the previous turn asked for an analysis, under the heading `## What you asked to read` (a bold line until 2026-09-21), its own section since 2026-09-16 — before that it ran on directly from "recent wakeups" with no divider between them. **Since 2026-09-15, also what was not carried out because it rode along beside a read in the same answer** — a buy, a sell, an adjust, an untrack, a note. A read changes the pass's control flow rather than the book, so only the read runs from an answer that asks for one; anything bundled beside it used to vanish with no trace. Caught live: the agent asked to read INTC and, in the same answer, to buy 50 shares and move its exits — the buy and the adjust were simply gone. The next prompt now names exactly what was dropped and says to resend it.
 12. **What the rules noticed since the last pass** — the watchdog's own alerts, bounded by the previous pass rather than by a count, and which tracked tickers report earnings soon. Facts, with nothing done about them. **Its lead reads "Nothing was done about any of these, and nothing was analysed" since 2026-09-21**; it opened "These happened while you were away", which the heading already says and which the event-driven wake reason repeats word for word.
 13. **What its own orders did, earlier in this same pass** — the fill and what is resting under it, the analysis it commissioned and what that analysis concluded, the untrack, the refusal. Same placement and the same reason. **Since 2026-09-20, moving a stop or a target names the level it replaced** — "moved stop from $330.00 to $334.16", not only the level it moved to — so this line can tell a stop being raised from one being loosened. See the 2026-09-20 JOURNEY.md entry.
@@ -121,7 +120,7 @@ The system message opens:
 
 The second paragraph and every rule are the same text on both channels; `agent._system_prompt` builds both from one list, and a test pins the two identity paragraphs.
 
-Then the thirteen fixed rules. The list below is all of them plus the dynamic ones, in the order the model reads them; a rule marked **(pass)** is the kind that carries a figure and therefore sits in the user message.
+Then the fixed rules. The list below is all of them plus the dynamic ones, in the order the model reads them; a rule marked **(pass)** is the kind that carries a figure and therefore sits in the user message.
 
 The opener above it, from `build_prompt`:
 
@@ -159,7 +158,6 @@ The rules block:
 - You cannot untrack something you hold. Sell it first [...]
 - If something is stopping you deciding well — a number you cannot see, a tool you do not have, a rule that contradicts another — say so with side `note`. It reaches the people who maintain you. Nothing acts on it automatically, so it is a message and not a request. **Moved into `SYSTEM_PROMPT` on 2026-09-16**, same reason as the signal-quality rule above.
 - A note is never a substitute for a decision. [...] The rule ends `Reply with JSON only, in the shape specified below:` on the JSON channel and `Answer by calling decide, with every order inside its orders list.` on the tool channel; that tail is the only rule text that differs between the two.
-- Doing nothing is a valid answer, and often the right one.
 - You decide when you are next asked, and nothing else does. `next_wakeup` takes an ISO datetime — `"2026-09-11T09:00"` is Eastern, a trailing Z or an offset is read as given. Minimum 5 minutes, maximum 4 days. **The other forms still parse** (minutes, `"2h"`, `"14:30"`, `"3:58 PM ET"`) and are kept as a fallback: dropping a usable answer costs a whole pass. One instructed format is what stopped the agent converting 9 AM into "1021 minutes" by hand. Any hour is allowed, including before the open, after the close and at the weekend — research works then, orders do not.
 - Write a note to your future self with `next_wakeup_note`. [...] See 1b above for what it is for and why: the agent has no memory between passes, and this is the one thing besides the wake reason that carries forward. **Since 2026-09-24 the rule ends:** "After the close you review your day, and that review may rewrite this note before the next pass; the next prompt says so when it does." A pass that found its note changed with nothing saying who changed it would have to guess.
 - The note is for what the next prompt cannot tell you [...] — not your cash, positions or prices, which are already shown, but what you worked out and could not recover: what you are waiting to see, what you ruled out and why, what would change your mind. **The rule carries two worked examples of a good note, and they must stay** — see 1b above.
