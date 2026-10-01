@@ -1140,6 +1140,12 @@ def describe_signals(
     sections are already adjacent, so the distance was never the problem — the
     row did not say the position existed. `You hold` sits beside `You could
     buy`, the other column about the agent rather than about the stock.
+
+    **The levels are a reference, not a limit (2026-09-30).** The agent waited
+    three days in cash for INTC to come back to its Entry while the price ran
+    10% past it. The legend says so because a legend right above a table is
+    read. A market buy rests the table's levels, since the buy order carries
+    none, so the legend points at `adjust` for the agent's own.
     """
     if not signals:
         return ["No new signals today."]
@@ -1150,7 +1156,11 @@ def describe_signals(
         "**At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** "
         "are computed by the app from the verified close and ATR, so the Stop clears "
         "one day's normal range; they are not orders that exist, and a price inside "
-        "an analyst's text is the analyst's own. **You hold** is the position you "
+        "an analyst's text is the analyst's own. They are reference points, not "
+        "limits: a price past the Entry does not rule a trade out. Read the analysis "
+        "and judge the entry, stop and target yourself. A market buy rests this Stop "
+        "and Target; to use your own, move them with adjust on the next turn, after "
+        "the buy has filled. **You hold** is the position you "
         "already have in that ticker, so a row is about adding to, trimming or "
         "leaving alone something you own rather than about opening it. Rows are newest "
         "first, and **Analysed** carries the time because a ticker can be analysed "
