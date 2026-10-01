@@ -649,6 +649,15 @@ def test_the_tool_prompt_keeps_the_track_record_totals_and_the_hold_pattern():
     assert "Of the 2 you bought on a Hold signal, 0 made money." in by_json
 
 
+def test_a_buy_may_name_its_own_exits_and_need_not():
+    from backend.services import decision_schema
+    buy = decision_schema.SIDES["buy"]
+
+    assert {"stop", "target"} <= set(buy["properties"])
+    assert not {"stop", "target"} & set(buy["required"])
+    assert "stop" not in decision_schema.SIDES["sell"]["properties"]
+
+
 def test_the_two_system_messages_share_every_rule_that_is_not_about_reading():
     assert "JSON only" in agent.SYSTEM_PROMPT
     assert "JSON only" not in agent.SYSTEM_PROMPT_TOOL

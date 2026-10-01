@@ -323,6 +323,32 @@ def validate(order: dict, book: Book, price: float | None) -> Rejection | None:
     if time_in_force not in ("day", "gtc"):
         return no(f"time_in_force must be day or gtc, got {time_in_force!r}")
 
+    if side == "buy":
+        # **A buy's own exits (2026-10-01).** Refused, never moved: a stop at or
+        # above the price triggers at once, and a target at or below it fills
+        # at once. A limit buy has nothing to rest them under until it fills.
+        levels = {}
+        for kind in ("stop", "target"):
+            if order.get(kind) is None:
+                continue
+            try:
+                levels[kind] = float(order[kind])
+            except (TypeError, ValueError):
+                return no(f"{kind} must be a price, got {order[kind]!r}")
+            if levels[kind] <= 0:
+                return no(f"{kind} must be a positive price, got {levels[kind]:g}")
+        if levels and order_type == "limit":
+            return no(
+                "a limit buy cannot carry a stop or target: nothing rests under it until "
+                "it fills. You are woken when it fills; set them then with adjust"
+            )
+        if price is not None and levels.get("stop", 0) >= price:
+            return no(f"a stop at ${levels['stop']:,.2f} is not below the price "
+                      f"${price:,.2f}, so it would trigger at once")
+        if price is not None and "target" in levels and levels["target"] <= price:
+            return no(f"a target at ${levels['target']:,.2f} is not above the price "
+                      f"${price:,.2f}, so it would fill at once")
+
     if side == "sell":
         held = next((h.quantity for h in book.holdings if h.ticker == ticker), 0.0)
         # Shares already promised to a pending limit sell aren't free to sell

@@ -1151,8 +1151,8 @@ def describe_signals(
     **The levels are a reference, not a limit (2026-09-30).** The agent waited
     three days in cash for INTC to come back to its Entry while the price ran
     10% past it. The legend says so because a legend right above a table is
-    read. A market buy rests the table's levels, since the buy order carries
-    none, so the legend points at `adjust` for the agent's own.
+    read. A market buy rests the table's levels unless the buy names its own
+    (2026-10-01).
     """
     if not signals:
         return ["No new signals today."]
@@ -1166,8 +1166,7 @@ def describe_signals(
         "an analyst's text is the analyst's own. They are reference points, not "
         "limits: a price past the Entry does not rule a trade out. Read the analysis "
         "and judge the entry, stop and target yourself. A market buy rests this Stop "
-        "and Target; to use your own, move them with adjust on the next turn, after "
-        "the buy has filled. **You hold** is the position you "
+        "and Target unless you give the buy your own. **You hold** is the position you "
         "already have in that ticker, so a row is about adding to, trimming or "
         "leaving alone something you own rather than about opening it. Rows are newest "
         "first, and **Analysed** carries the time because a ticker can be analysed "
@@ -2524,6 +2523,9 @@ _FIXED_RULES = [
     "that price or better, a sell at that price or better. Add "
     "\"time_in_force\": \"gtc\" to let it wait past today; leave it out, or "
     "use \"day\", and it is gone at the close if it never filled.",
+    "- A market buy rests a stop and a target under itself. Give it your own "
+    "with \"stop\" and \"target\"; a level you leave out is the signal's Stop "
+    "or Target, or a volatility stop when the signal has none.",
     "- **A limit buy does NOT get a stop or target placed under it, even when "
     "the signal has one.** It is not filled yet, and may not fill this pass "
     "at all, so there is nothing to rest an exit on. The instant it fills you "
@@ -4161,7 +4163,15 @@ def _place(
             str(order.get("time_in_force") or "day").upper(),
         )
 
-    stop, target = usable_levels(ticker, stops.get(ticker), targets.get(ticker), price)
+    # The agent's own level wins, per field (2026-10-01); `validate` has
+    # already refused one that would execute at once.
+    own_stop, own_target = order.get("stop"), order.get("target")
+    stop, target = usable_levels(
+        ticker,
+        float(own_stop) if own_stop is not None else stops.get(ticker),
+        float(own_target) if own_target is not None else targets.get(ticker),
+        price,
+    )
     if stop is None and price:
         stop = atr_stop(ticker, price)
     refused_because = None

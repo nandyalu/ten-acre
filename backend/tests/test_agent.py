@@ -1448,6 +1448,21 @@ def test_a_buy_with_levels_goes_out_as_one_bracket(monkeypatch):
     assert calls == [("ZBH", 3, 98.41, 95.30, 101.50)]
 
 
+def test_a_buy_brackets_its_own_levels_over_the_signals(monkeypatch):
+    """2026-10-01: the agent's level wins, per field. A level it leaves out is
+    still the signal's."""
+    calls = []
+    monkeypatch.setattr(
+        agent.broker, "place_bracket_order",
+        lambda *a: calls.append(a) or {"client_order_id": "x", "exits": []},
+    )
+
+    agent._place(_order() | {"stop": 93.0}, 98.41, {"ZBH": 95.30}, {"ZBH": 101.50})
+    agent._place(_order() | {"stop": 93.0, "target": 110.0}, 98.41, {"ZBH": 95.30}, {"ZBH": 101.50})
+
+    assert calls == [("ZBH", 3, 98.41, 93.0, 101.50), ("ZBH", 3, 98.41, 93.0, 110.0)]
+
+
 def test_a_refused_bracket_still_buys(monkeypatch):
     """A combo is refused outright while the cash is unsettled, and selling to
     fund a buy in the same pass is something the agent is told it can do — so

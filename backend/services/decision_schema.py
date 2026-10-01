@@ -85,12 +85,37 @@ def _trade(name: str, description: str) -> dict:
     )
 
 
-SIDES: dict[str, dict] = {
-    "buy": _trade(
+def _buy() -> dict:
+    """A trade, plus the exits a market buy may rest under itself
+    (2026-10-01). Neither is required: a level left out is the signal's."""
+    shape = _trade(
         "buy",
         "Buy shares. Every buy in the list must fit, added up, inside the cash "
         "stated in the message.",
-    ),
+    )
+    shape["properties"] = {
+        **shape["properties"],
+        "stop": {
+            "type": "number",
+            "description": (
+                "Your own stop for a market buy, below the price. Leave it out to "
+                "rest the signal's Stop, or a volatility stop when there is none. "
+                "Not allowed on a limit buy."
+            ),
+        },
+        "target": {
+            "type": "number",
+            "description": (
+                "Your own take-profit for a market buy, above the price. Leave it "
+                "out to rest the signal's Target. Not allowed on a limit buy."
+            ),
+        },
+    }
+    return shape
+
+
+SIDES: dict[str, dict] = {
+    "buy": _buy(),
     "sell": _trade("sell", "Sell shares you hold. Listed before a buy, its cash funds that buy."),
     "adjust": _side(
         "adjust",

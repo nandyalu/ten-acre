@@ -182,6 +182,35 @@ def test_a_buy_within_cash_is_allowed(book_of):
     assert agent_book.validate(_order(quantity=4), book, price=200.0) is None
 
 
+# --- a buy's own exits (2026-10-01) --------------------------------------------
+
+
+def test_a_market_buy_may_carry_its_own_exits(book_of):
+    order = _order(quantity=4) | {"stop": 190.0, "target": 230.0}
+    assert agent_book.validate(order, book_of([]), price=200.0) is None
+
+
+@pytest.mark.parametrize("levels, says", [
+    ({"stop": 200.0}, "would trigger at once"),
+    ({"target": 199.0}, "would fill at once"),
+    ({"stop": "low"}, "must be a price"),
+])
+def test_a_buy_exit_that_would_execute_at_once_is_refused_not_moved(book_of, levels, says):
+    rejection = agent_book.validate(_order(quantity=4) | levels, book_of([]), price=200.0)
+
+    assert rejection is not None and says in rejection.why
+
+
+def test_a_limit_buy_cannot_carry_exits(book_of):
+    """Nothing rests under a limit buy until it fills; the fill wakes the
+    agent, which sets them then with adjust."""
+    order = _order(quantity=4) | {"order_type": "limit", "limit_price": 195.0, "stop": 185.0}
+
+    rejection = agent_book.validate(order, book_of([]), price=200.0)
+
+    assert rejection is not None and "limit buy cannot carry" in rejection.why
+
+
 def test_a_buy_that_clears_the_entry_limit_but_not_the_buying_power_cushion_is_refused(book_of):
     """A pattern seen live on 2026-09-17: an order passed this check — it
     covered the 0.5% slippage buffer — and was still refused at the broker
