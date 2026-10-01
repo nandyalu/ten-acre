@@ -472,3 +472,13 @@ No run reasoned toward "my next look is tomorrow's open" without first passing t
 **At 2.7% past its Entry, a fresh Overweight was bought by 7 of 7 samples, sized from the stop** (8 to 10 NVDA, about 1.5% of the book at risk). The "entry is a limit" habit seen live on 9/16 did not appear at either distance; it predates the STALE marker of 2026-09-22.
 
 **The 21-sample arms add 14 samples to each side of the first and last rows, run on a second free key the same day.** The first 7-sample look at the stop-fill change overstated it: the extra "before" samples researched 11 of 14, against 4 of 7 in the first run, which is the noise floor `SKILL.md` describes.
+
+## The research price on the candidate list, and a buy's own exits (2026-10-01)
+
+**Same setup as the 2026-09-30 section**, on a second free key for the candidate header.
+
+| Change | Scenario | Result | Verdict |
+|---|---|---|---|
+| Research price in the `candidates` header | the book as it is, `turn1`, 21 samples | research 16 of 21, against 12 of 21 after the 9/30 rewording and 7 of 21 before it | The two research changes together raised research (7 → 16 of 21, Fisher p = 0.01). The header's own share is unresolved (p = 0.33), and no sample quoted it. 19 of 21 called `candidates`. |
+| A market buy may carry `stop` and `target` | NVDA Overweight 2.7% past its Entry, 7 samples | 7 of 7 bought and filled in both fields, every one with the table's $209.45 and $247.90 | The tool works and nothing was refused. No sample chose its own levels on this scenario. |
+
