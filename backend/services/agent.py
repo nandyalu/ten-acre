@@ -476,19 +476,26 @@ def describe_history_brief(closed: list) -> list[str]:
 # unusually" tells it the analyst was reacting to something already priced in.
 
 
-def describe_menu(menu: list) -> list[str]:
+def describe_menu(menu: list, price: float) -> list[str]:
     """The screened candidates, one line each, under a header that says what
     they are not: a recommendation. [] when the screen returned nothing.
 
     Shared by the prompt on the JSON channel and by the ``candidates`` fetch
     on the tool channel, so the two cannot drift.
+
+    **The header carries the research price since 2026-10-01**, because this
+    is what the agent reads when it chooses what to study. The same price in
+    "Paying for research", below the tables, was never quoted in 42 probe
+    samples.
     """
     if not menu:
         return []
     lines = [
         "Nothing has been analysed on these yet — they are screened for being liquid and "
-        "actively traded, not for being good. Researching one buys an analyst's opinion, "
-        "not a position today:",
+        f"actively traded, not for being good. A research order on one costs ${price:,.2f} "
+        "and runs inside this pass, so you see the analyst's opinion before you finish; "
+        f"a thousand cost ${price * 1000:,.0f}. Research is how a name on this list "
+        "becomes a trade:",
     ]
     for candidate in menu:
         move = f", {candidate.change_pct:+.1f}% today" if candidate.change_pct is not None else ""
@@ -1657,7 +1664,7 @@ def build_prompt(
             "them, and nothing on them has been analysed.",
         ]
     else:
-        candidates = describe_menu(menu) if menu else []
+        candidates = describe_menu(menu, price) if menu else []
 
     # The research price is explained only where there is something to spend it
     # on, which is the same condition the watchlist and the menu are shown
@@ -2969,7 +2976,7 @@ class ToolContext:
     def _candidates(self, args: dict) -> str:
         if self.budget.get("menu") is None:
             self.budget["menu"] = _candidate_menu() if research.is_charging() else []
-        lines = describe_menu(self.budget["menu"])
+        lines = describe_menu(self.budget["menu"], research.get_price())
         if not lines:
             return (
                 "No candidate passed the screen right now. Research a ticker you "

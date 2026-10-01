@@ -173,7 +173,7 @@ Research is your main tool for deciding well. It is how you find a new trade and
 
 ## Candidates you could research
 
-Nothing has been analysed on these yet — they are screened for being liquid and actively traded, not for being good. Researching one buys an analyst's opinion, not a position today:
+Nothing has been analysed on these yet — they are screened for being liquid and actively traded, not for being good. A research order on one costs $0.05 and runs inside this pass, so you see the analyst's opinion before you finish; a thousand cost $50. Research is how a name on this list becomes a trade:
 - SOFI: SoFi Technologies Inc at $27.35, +1.8% today, 42.6M shares traded, via most active
 - PLTR: Palantir Technologies Inc at $174.90, -2.1% today, 61.3M shares traded, via most active
 
