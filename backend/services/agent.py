@@ -3781,6 +3781,16 @@ def _order_detail(order: dict) -> dict:
     return detail
 
 
+def system_prompt_for(channel: str) -> str:
+    """The system message a turn on ``channel`` is sent. The text fallback
+    sends the JSON one, see ``_invoke_by_tool``."""
+    return SYSTEM_PROMPT_TOOL if channel == "tool" else SYSTEM_PROMPT
+
+
+def system_sha(system: str) -> str:
+    return hashlib.sha256(system.encode("utf-8")).hexdigest()[:16]
+
+
 def _turn(prompt: str, answer) -> dict:
     """One turn of a pass, for the record.
 
@@ -3800,8 +3810,15 @@ def _turn(prompt: str, answer) -> dict:
     honestly as a read, even though it never reaches `screen`.
     """
     reasoning, orders = parse_decision(answer)
+    channel = getattr(answer, "channel", None) or "json"
+    system = system_prompt_for(channel)
     return {
         "prompt": str(prompt or ""),
+        # The system message this turn was sent with, and its hash
+        # (2026-10-02). A replay sends it again; the hash says at a glance
+        # which turns saw the same fixed rules. Absent before that date.
+        "system": system,
+        "system_sha": system_sha(system),
         "response": str(answer or ""),
         "thinking": getattr(answer, "thinking", None),
         # The fetches this turn made on the tool channel, in order, with what
@@ -3811,7 +3828,7 @@ def _turn(prompt: str, answer) -> dict:
         # Which channel answered this turn — see _Answer. "json" for a fake
         # that is a bare string, which is what every turn before 2026-09-17
         # was in fact.
-        "channel": getattr(answer, "channel", None) or "json",
+        "channel": channel,
         # Absent on every turn before 2026-09-23, and on a test fake.
         "model": getattr(answer, "model", None),
         "cached_tokens": getattr(answer, "cached_tokens", 0) or 0,

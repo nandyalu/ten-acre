@@ -8,6 +8,8 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-10-02
 
+- **Broker** — A third broker, `BROKER=sim`, runs inside the process. It has no host, no SDK and no credential, so no setting can point it at real money. It fills market orders at the price the agent was shown plus `SIM_SLIPPAGE_BPS` (default 5), and fills limits, stops and targets from the 1-minute bars after the order. Its orders are in the new `simorder` table. `webull` stays the default, and nothing changes for a deployment that does not set it. The setup page shows "Simulated trading" as ready for it. This is the first step of experiment 2 in [the plan](https://github.com/nandyalu/ten-acre/blob/main/PLAN.md); no deployment uses it yet.
+- **Scripts** — `backend/scripts/replay.py` and `backend/services/replay.py` send a recorded turn to the model again. They are not wired into the app.
 - **Dependencies** — The TradingAgents pin moves four commits. `propagate()` takes an `on_chunk` callback to follow a run and to cancel it, and passes the graph callbacks to the stream. The Gemini client now takes `client_args`, so a caller can count each HTTP request, SDK retries included. This app does not use either yet. The analyst change in the same move is in [the journey](journey.md).
 - **Docs** — The last two sections of `docs/dashboard.md` named pages that were merged on 2026-09-02 and now only redirect: Tickers, Signals, Alerts, Events, Journey, Digest and Regime. They now describe the current pages, with the four stock cells on the research page's candidate table.
 
