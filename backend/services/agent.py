@@ -2608,7 +2608,7 @@ _FIXED_RULES = [
         "though: a pass that only read is an idle pass, and the budget runs out.",
         True:
         "- Fetch what you need before deciding — read, ask_analyst, candidates, "
-        "fundamentals, watchlist and track_record — several in one round when you know what you "
+        "fundamentals, bars, news, watchlist and track_record — several in one round when you know what you "
         f"want. The ceiling is {_MAX_FETCHES_PER_PASS} fetches across "
         f"{_MAX_FETCH_ROUNDS} rounds, more than a pass needs; it exists to stop a "
         "loop, not to be saved, and you are told when a round is your last. This "
@@ -2957,6 +2957,60 @@ def _fresh_budget() -> dict:
     }
 
 
+_BARS_DEFAULT, _BARS_MAX = 60, 250
+_NEWS_DEFAULT_DAYS, _NEWS_MAX_DAYS = 7, 30
+
+
+def _bounded(value, default: int, ceiling: int) -> int:
+    try:
+        return max(1, min(int(value), ceiling))
+    except (TypeError, ValueError):
+        return default
+
+
+def describe_bars(ticker: str, sessions: int) -> str:
+    """A ticker's last ``sessions`` completed daily sessions, oldest first.
+
+    Completed sessions only, through ``bars.get_bars``: the session in progress
+    is still moving, the same rule the bar cache and the stock cells follow.
+    """
+    if not ticker:
+        return "bars needs a ticker."
+    # Calendar days to cover the sessions, with room for weekends and holidays.
+    start = market_clock.now_et().date() - datetime.timedelta(days=int(sessions * 1.5) + 10)
+    rows = bars.get_bars(ticker, start)[-sessions:]
+    if not rows:
+        return f"No daily history for {ticker}."
+    lines = [
+        f"{ticker}, the last {len(rows)} completed daily sessions, oldest first. "
+        "Raw prices: a split shows as a jump.",
+        "",
+        "| Date | Open | High | Low | Close | Volume |",
+        "|---|---|---|---|---|---|",
+    ]
+    lines += [
+        f"| {b.date} | {b.open:,.2f} | {b.high:,.2f} | {b.low:,.2f} | {b.close:,.2f} | {b.volume:,.0f} |"
+        for b in rows
+    ]
+    return "\n".join(lines)
+
+
+def describe_news(ticker: str, days: int) -> str:
+    """The news items the analysis's news analyst reads, for the last ``days``.
+
+    The same tool the news analyst calls, so the agent and the analyst read one
+    set of sources: Yahoo, Google News, Finnhub when a key is set, and the
+    company's SEC 8-K filings.
+    """
+    if not ticker:
+        return "news needs a ticker."
+    from tradingagents.agents.utils.news_data_tools import get_news
+
+    today = market_clock.now_et().date()
+    start = today - datetime.timedelta(days=days)
+    return get_news.func(ticker, start.isoformat(), today.isoformat())
+
+
 class ToolContext:
     """What the fetch functions can reach on one turn, and the pass's allowance.
 
@@ -2990,6 +3044,8 @@ class ToolContext:
             "ask_analyst": self._ask_analyst,
             "candidates": self._candidates,
             "fundamentals": self._fundamentals,
+            "bars": self._bars,
+            "news": self._news,
             "watchlist": self._watchlist,
             "track_record": self._track_record,
         }
@@ -3034,6 +3090,22 @@ class ToolContext:
         if ticker not in cache:
             cache[ticker] = fundamentals.describe(ticker)
         return cache[ticker]
+
+    def _bars(self, args: dict) -> str:
+        ticker = str(args.get("ticker") or "").upper().strip()
+        sessions = _bounded(args.get("sessions"), _BARS_DEFAULT, _BARS_MAX)
+        cache = self.budget.setdefault("bars", {})
+        if (ticker, sessions) not in cache:
+            cache[(ticker, sessions)] = describe_bars(ticker, sessions)
+        return cache[(ticker, sessions)]
+
+    def _news(self, args: dict) -> str:
+        ticker = str(args.get("ticker") or "").upper().strip()
+        days = _bounded(args.get("days"), _NEWS_DEFAULT_DAYS, _NEWS_MAX_DAYS)
+        cache = self.budget.setdefault("news", {})
+        if (ticker, days) not in cache:
+            cache[(ticker, days)] = describe_news(ticker, days)
+        return cache[(ticker, days)]
 
     def _watchlist(self, args: dict) -> str:
         if not self.watchlist:
