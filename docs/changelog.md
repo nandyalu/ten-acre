@@ -8,6 +8,7 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-10-02
 
+- **Dependencies** — The TradingAgents pin moves four commits. `propagate()` takes an `on_chunk` callback to follow a run and to cancel it, and passes the graph callbacks to the stream. The Gemini client now takes `client_args`, so a caller can count each HTTP request, SDK retries included. This app does not use either yet. The analyst change in the same move is in [the journey](journey.md).
 - **Docs** — The last two sections of `docs/dashboard.md` named pages that were merged on 2026-09-02 and now only redirect: Tickers, Signals, Alerts, Events, Journey, Digest and Regime. They now describe the current pages, with the four stock cells on the research page's candidate table.
 
 ## 2026-10-01

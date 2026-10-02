@@ -55,6 +55,9 @@ Commit `4c6c356` repairs how those picks fit together. #1189 (an unparseable rat
 - `7e6ec65`: `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING_MODEL` lets the news analyst run on a different Google model than `quick_think_llm`/`deep_think_llm` when grounding is on — e.g. keep `gemini-3.1-flash-lite` for everything else and set this to `gemma-4-31b-it`, so grounding works on a Free-tier key without touching the main model. `TradingAgentsGraph.news_analyst_llm` resolves this and is what `GraphSetup` hands to `create_news_analyst`; every other analyst still gets `quick_thinking_llm`.
 - `7da490a`: `dataflows/laya.py`, a client for a laya sidecar at `LAYA_URL`. Returns None when unset or failing, so nothing depends on it.
 - `e11772b`: `get_news` adds Google News, Finnhub and SEC 8-K after Yahoo, and `news_sources.annotate` puts a laya grade on each news item, StockTwits post and Reddit post. See `news_sources.py` for why the grade measures a mention.
+- `f826962`: `propagate()` takes `on_chunk`, which gets each state while the run goes. An exception from `on_chunk` stops the run. trading-helper does not use it yet.
+- `2d978fc`: `GoogleClient` gives `client_args` to `ChatGoogleGenerativeAI`. trading-helper does not use it yet.
+- `f4d67ab`: the market and fundamentals analysts get their data before the model call and make one model call, with no tools bound. A fetch that fails becomes an `<unavailable: ...>` block. The `tools_market` and `tools_fundamentals` nodes stay in the graph but nothing calls them. The indicator set for each horizon is `INDICATORS` and `WINDOWS` in `market_analyst.py`.
 
 ## Editing the fork: the venv does not follow the source
 
