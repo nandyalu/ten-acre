@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-10-02
+
+- **Docs** — The last two sections of `docs/dashboard.md` named pages that were merged on 2026-09-02 and now only redirect: Tickers, Signals, Alerts, Events, Journey, Digest and Regime. They now describe the current pages, with the four stock cells on the research page's candidate table.
+
 ## 2026-10-01
 
 - **The site** — The research page's candidate table shows the four stock cells the agent reads beside each name: Trend, 1m / 3m, Volume vs normal and Range/day. `GET /api/watchlist/candidates` carries them as the rendered strings the prompt shows, so the page and the prompt cannot say different things, and the static site's snapshot carries them too. The four terms are in the glossary.

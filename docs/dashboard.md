@@ -149,20 +149,17 @@ There is no button to run an analysis, add the ticker, drop it, or record a trad
 
 The one button is **Place the exits now**, described above. It decides nothing.
 
-## Alerts
-
-Every watchdog alert, filterable by type. **No exit resting** is the one that is not about price at all: the auto trader holds a position and nothing is at the broker to close it. The two stop alerts read differently on purpose — "Thesis broken" means price reached the level the analysis named, "Below your cost" means price fell a set percentage under what you paid. Either can happen without the other.
-
 ## The rest
 
-| Page | What it is for |
+The table at the top says which question each page answers. This one says what each page holds.
+
+| Page | What it holds |
 |---|---|
-| Tickers | What the agent watches, and the candidate menu it may commission from. Read-only |
-| Signals | Every signal, filterable by pending or resolved |
-| Auto trader | The simulated account: budget, cash, its equity curve, exits it has moved, holdings with the stop and target actually resting at the broker, every position taken with its entry, exit and profit, and every order with the reason it gave |
-| Events | **Every decision pass, with the prompt the agent saw and the answer it gave, word for word.** Behaviour here is mostly prompt, so this is the page that makes a month of runs readable afterwards |
-| Journey | The last ten days of the generated journal — what it bought, what that cost, what got graded |
-| Scorecard | Win rates overall, by decision, by model, and by ticker, plus whether the model's stated confidence matches how often it is right |
-| Digest | The weekly wrap-up |
-| Regime | VIX, SPY against its 200-day average, and the yield curve |
-| Settings | Trade horizon, analysis model, alert thresholds, and the agent with its budget and conviction floor |
+| The book (`/book`) | The simulated account: budget, cash, its equity curve, exits it has moved, holdings with the stop and target actually resting at the broker, every position taken with its entry, exit and profit, every order with the reason it gave, and every watchdog alert, filterable by type. **No exit resting** is the alert that is not about price at all: the agent holds a position and nothing is at the broker to close it. The two stop alerts read differently on purpose. "Thesis broken" means price reached the level the analysis named, and "Below your cost" means price fell a set percentage under what was paid. Either can happen without the other |
+| Decisions (`/decisions`) | **Every decision pass, with the prompt the agent saw and the answer it gave, word for word.** Behaviour here is mostly prompt, so this is the page that makes a month of runs readable afterwards. The notes it has left for its maintainers are under `/decisions/notes` |
+| Research (`/research`) | What the agent watches, the candidate menu it may commission from with the four stock cells the agent reads beside each name, and every analysis, filterable by pending or resolved. Read-only |
+| Scorecard (`/scorecard`) | Win rates overall, by decision, by model, and by ticker, plus whether the model's stated confidence matches how often it is right |
+| Journal (`/journal`) | The generated journal, a month to a page: what it bought, what that cost, what got graded, and the changes we made to the agent |
+| Settings (`/settings`) | Trade horizon, analysis model, alert thresholds, and the agent with its budget and conviction floor. An operator page, absent from the published build |
+
+The market regime, VIX, SPY against its 200-day average and the yield curve, sits on the experiment page (`/`). The old Tickers, Signals, Alerts, Events, Journey, Digest and Regime pages are gone, and their paths redirect to the pages above.
