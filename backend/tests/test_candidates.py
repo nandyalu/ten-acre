@@ -345,3 +345,24 @@ def test_the_symbol_directory_marks_etfs_and_names(monkeypatch):
         "GLD": ("SPDR Gold Shares", True),
     }
 
+
+def test_a_text_source_value_that_is_not_a_symbol_is_never_sent_to_the_vendor(screened, monkeypatch):
+    """QuiverQuant's table carries foreign listings, indexes, crypto and the odd
+    fund name beside real tickers. Each costs a refused request, and a name
+    with a comma in it sank every batch of 100 on 2026-10-01. Only what looks
+    like a US symbol is priced; a class letter such as BRK.B is kept."""
+    screened()  # the fixture's patches stay in place for the rest of the test
+    sent = []
+    monkeypatch.setattr(
+        candidates, "_congress_tickers",
+        lambda: {"NEW1", "GLAS FUNDS, LP", "0700.HK", "^HSI", "BTC-USD", "BRK.B", "TOOLONG"},
+    )
+    monkeypatch.setattr(
+        candidates.quotes, "get_snapshots",
+        lambda tickers, **kw: sent.extend(tickers) or [_row("NEW1", price=20.0, volume=5_000_000)],
+    )
+
+    found = candidates.fetch_candidates()
+
+    assert sorted(sent) == ["BRK.B", "NEW1"]
+    assert [c.ticker for c in found] == ["NEW1"]

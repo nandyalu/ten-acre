@@ -350,6 +350,16 @@ def _rejected_symbols(exc: Exception) -> set[str]:
     return {s.strip() for s in match.group(1).split(",") if s.strip()}
 
 
+# A value that cannot travel in the request. The symbols go to Webull as one
+# comma-separated string, so a "ticker" with a comma in it reads as two at
+# the other end, and a batch of 100 reads as 101: "symbols size must be
+# between 1 and 100", an ILLEGAL_PARAMETER rather than an INVALID_SYMBOL,
+# so the retry in get_snapshots never sees it and the whole batch is lost.
+# QuiverQuant handed over "GLAS FUNDS, LP" as a ticker on 2026-10-01, and
+# every probe build that night lost its congress and trending names to it.
+_UNSENDABLE = re.compile(r"[,\s]")
+
+
 def get_snapshots(tickers: list[str], category: str = "US_STOCK") -> list[dict]:
     """Batched snapshot for a list of tickers, one vendor request for up to
     100 symbols. Returns rows shaped like the screener's — same
@@ -375,7 +385,15 @@ def get_snapshots(tickers: list[str], category: str = "US_STOCK") -> list[dict]:
     if market_data is None or not tickers:
         return []
     known_bad = _not_in_category.setdefault(category, set())
-    remaining = [t for t in dict.fromkeys(tickers) if t not in known_bad]
+    unsendable = sorted({t for t in tickers if not t or _UNSENDABLE.search(t)})
+    if unsendable:
+        log.info(
+            "Leaving %d value(s) out of the batch snapshot: a comma or a space cannot travel "
+            "in a comma-separated list of symbols: %s", len(unsendable), unsendable,
+        )
+    remaining = [
+        t for t in dict.fromkeys(tickers) if t not in known_bad and t not in unsendable
+    ]
     for _ in range(2):
         if not remaining:
             return []

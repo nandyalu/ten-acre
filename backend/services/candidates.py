@@ -118,6 +118,19 @@ def _to_candidate(row: dict, source: str) -> Candidate | None:
     )
 
 
+# What a US listing's symbol looks like: one to five capital letters or digits,
+# with an optional class letter such as BRK.B. QuiverQuant's table also carries
+# foreign listings (0700.HK), indexes (^HSI), crypto (BTC-USD) and the odd
+# fund name ("GLAS FUNDS, LP"). Each of those costs a refused request before
+# Webull names it as invalid, and the fund name, with its comma, sinks a
+# whole batch outright; see quotes.get_snapshots. Seen 2026-10-01.
+_SYMBOL_RE = re.compile(r"[A-Z0-9]{1,5}(\.[A-Z])?")
+
+
+def _looks_like_a_symbol(ticker: str) -> bool:
+    return bool(_SYMBOL_RE.fullmatch(ticker))
+
+
 _CONGRESS_URL = "https://www.quiverquant.com/congresstrading/"
 # The page's "Recent Trades" table looks JS-rendered (the shipped HTML has an
 # empty <tbody>) but the row data is not behind an API call at all — it is
@@ -322,7 +335,7 @@ def fetch_candidates() -> list[Candidate]:
             log.exception("Candidate text source failed for %s", source)
             continue
         for ticker in tickers:
-            if ticker not in found and ticker not in wanted:
+            if ticker not in found and ticker not in wanted and _looks_like_a_symbol(ticker):
                 wanted[ticker] = source
     if wanted:
         for row in snapshots(list(wanted)[:100]):

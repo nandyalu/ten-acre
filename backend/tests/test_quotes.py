@@ -121,3 +121,24 @@ def test_get_snapshots_gives_up_on_an_unrelated_failure(monkeypatch):
 def test_get_snapshots_returns_empty_with_no_client_configured(monkeypatch):
     monkeypatch.setattr(quotes, "_get_market_data", lambda: None)
     assert quotes.get_snapshots(["AAPL"]) == []
+
+
+def test_get_snapshots_leaves_out_a_value_that_cannot_travel_in_the_list(monkeypatch):
+    """QuiverQuant handed over "GLAS FUNDS, LP" as a ticker on 2026-10-01. In a
+    comma-separated list of 100 it read as the 101st symbol, Webull answered
+    ILLEGAL_PARAMETER rather than INVALID_SYMBOL, and the retry that strips
+    bad names never ran, so the whole batch was lost."""
+    sent = []
+
+    class FakeMarketData:
+        def get_snapshot(self, symbols, category):
+            sent.append(symbols)
+            return _FakeResponse([{"symbol": s, "price": 1.0} for s in symbols.split(",")])
+
+    monkeypatch.setattr(quotes, "_get_market_data", lambda: FakeMarketData())
+    monkeypatch.setattr(quotes, "market_data_request", lambda call, what: call())
+
+    rows = quotes.get_snapshots(["AAPL", "GLAS FUNDS, LP", "", "MSFT", "BRK.B"])
+
+    assert sent == ["AAPL,MSFT,BRK.B"]
+    assert [r["symbol"] for r in rows] == ["AAPL", "MSFT", "BRK.B"]
