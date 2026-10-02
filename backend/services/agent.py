@@ -5982,7 +5982,7 @@ def adjust_exits(
             except Exception as exc:
                 log.exception("Couldn't move the %s on %s", kind, ticker)
                 failed.append(
-                    f"{kind} on {existing.quantity:g} shares "
+                    f"move {kind} on {existing.quantity:g} shares "
                     f"({_why_replace_failed(existing, exc)})"
                 )
                 continue
@@ -6001,10 +6001,41 @@ def adjust_exits(
     # still goes out as a pair.
     if armed:
         levels = dict(armed)
+        # **The side already resting goes out again in the same pair
+        # (2026-10-01).** _arm_exits cancels every resting exit first, and
+        # neither broker rests two separate sells against the same shares. So
+        # adding a target cancelled the stop, and adding the stop back
+        # cancelled the target: XOM swapped them six times in one pass.
+        for kind, legs in resting.items():
+            if kind in levels:
+                continue
+            stated = stop if kind == "stop" else target
+            prices = {t.limit_price for t in legs}
+            if stated is not None:
+                levels[kind] = stated
+            elif len(prices) == 1 and None not in prices:
+                levels[kind] = prices.pop()
+            else:
+                # Lots at different levels become one pair; picking one level
+                # would move the others without being asked.
+                failed.append(
+                    f"place {', '.join(k for k, _ in armed)}: the resting {kind}s are at "
+                    f"different levels, so state the {kind} too"
+                )
+                armed = []
+                break
         position = next(
             (h for h in agent_book.build_book().holdings if h.ticker == ticker), None
         )
-        if position is not None:
+        if armed and position is None:
+            # An entry that has not filled yet can carry a resting stop, which
+            # is why this got past screen(). Until 2026-10-01 the missing side
+            # was reported "placed" here without an order.
+            failed.append(
+                f"place {', '.join(k for k, _ in armed)}: {ticker} has no filled shares yet"
+            )
+            armed = []
+        if armed:
             # _arm_exits clears whatever is already resting before placing
             # the new pair (see _clear_before_arming) — needed here too: the
             # local ledger showing nothing resting is not proof the broker
@@ -6019,13 +6050,13 @@ def adjust_exits(
             if unguarded:
                 # Until 2026-09-16 this call's result was never checked, so a
                 # broker refusal here still reported "placed" below.
-                armed = [(k, v) for k, v in armed if k not in levels]
-                failed.append(unguarded)
+                armed = []
+                failed.append(f"place exits ({unguarded})")
 
     parts = [_moved_text(k, v, olds, shares) for k, v, olds, shares in moved]
     parts += [f"placed {k} at ${v:,.2f}" for k, v in armed]
     if failed:
-        parts += [f"could not move {f}" for f in failed]
+        parts += [f"could not {f}" for f in failed]
     parts += [f"refused {r}" for r in refused.values()]
     if not parts:
         return {"ok": True, "message": f"{ticker} exits already at those levels."}

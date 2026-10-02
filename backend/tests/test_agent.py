@@ -2490,6 +2490,65 @@ def test_adjusting_a_holding_with_nothing_resting_places_the_exits(monkeypatch):
     assert "placed" in result["message"]
 
 
+def _one_side_resting(monkeypatch, rows, holdings):
+    armed = []
+    monkeypatch.setattr(agent.quotes, "is_sandbox", lambda: True)
+    monkeypatch.setattr(agent, "get_current_price", lambda t: 161.40)
+    monkeypatch.setattr(agent.db, "get_resting_exits", lambda t: rows)
+    monkeypatch.setattr(agent.agent_book, "build_book", lambda **k: _book(holdings=holdings))
+    monkeypatch.setattr(
+        agent, "_arm_exits",
+        lambda order, s, t, run=None: armed.append((order["ticker"], s, t)),
+    )
+    return armed
+
+
+def test_adding_a_target_keeps_the_resting_stop(monkeypatch):
+    """XOM, 2026-10-01. Arming cancels every resting exit first, so adding the
+    target alone cancelled the stop, and adding the stop back cancelled the
+    target, six times in one pass."""
+    class Stop:
+        id, client_order_id, exit_kind, limit_price, quantity = 1, "abc", "stop", 157.37, 30.0
+
+    armed = _one_side_resting(monkeypatch, [Stop()], [("XOM", 30, 161.40)])
+
+    result = agent.adjust_exits("XOM", None, 169.74)
+
+    assert armed == [("XOM", 157.37, 169.74)]
+    assert result["ok"]
+
+
+def test_adding_a_target_refuses_to_merge_stops_at_different_levels(monkeypatch):
+    class Stop:
+        client_order_id, exit_kind, quantity = "abc", "stop", 15.0
+
+        def __init__(self, i, price):
+            self.id, self.limit_price = i, price
+
+    armed = _one_side_resting(
+        monkeypatch, [Stop(1, 150.0), Stop(2, 155.0)], [("XOM", 30, 161.40)]
+    )
+
+    result = agent.adjust_exits("XOM", None, 169.74)
+
+    assert armed == []
+    assert not result["ok"] and "state the stop too" in result["message"]
+
+
+def test_a_target_on_an_unfilled_entry_is_not_reported_placed(monkeypatch):
+    """An entry that has not filled carries a resting stop, so the adjust gets
+    past screen(), but there are no shares to rest a target on yet."""
+    class Stop:
+        id, client_order_id, exit_kind, limit_price, quantity = 1, "abc", "stop", 157.37, 30.0
+
+    armed = _one_side_resting(monkeypatch, [Stop()], [])
+
+    result = agent.adjust_exits("XOM", None, 169.74)
+
+    assert armed == []
+    assert not result["ok"] and "no filled shares yet" in result["message"]
+
+
 # --- an experiment must not reach the live book --------------------------------
 
 
