@@ -498,7 +498,7 @@ def test_candidates_are_screened_once_per_pass_and_define_the_universe(monkeypat
     first = context.fetch("candidates", {})
     second = context.fetch("candidates", {})
 
-    assert "CRWV: CoreWeave at $95.00, +1.5% today, 12.0M shares traded, via most active" in first
+    assert "| CRWV | CoreWeave | $95.00 | +1.5% | 12.0M | most active |" in first
     assert first == second
     assert calls == [1], "the vendor screen ran once for the pass"
     assert {c.ticker for c in context.budget["menu"]} == {"CRWV"}
@@ -573,9 +573,9 @@ def test_the_tool_prompt_offers_the_candidates_fetch_instead_of_the_menu():
     by_json = agent.build_prompt(_t._book(), [], {}, menu=menu, answer_by_tool=False)
 
     assert "call candidates to see them" in by_tool
-    assert "CRWV: CoreWeave" not in by_tool
+    assert "| CRWV | CoreWeave" not in by_tool
     assert "A new ticker must come from the list that candidates returns" in by_tool
-    assert "CRWV: CoreWeave at $95.00, 12.0M shares traded, via most active" in by_json
+    assert "| CRWV | CoreWeave | $95.00 | — | 12.0M | most active |" in by_json
     assert "A new ticker must come from the candidate list above" in by_json
 
 
@@ -716,7 +716,7 @@ def test_a_research_of_a_fetched_candidate_is_accepted(monkeypatch):
     assert screens == [1], "the vendor screen ran once, when the model asked"
     # The screen reached the model as a function result, not as prompt text.
     _, contents, _ = generate.calls[1]
-    assert "CRWV: CRWV Inc at $50.00" in contents[2].parts[0].function_response.response["result"]
+    assert "| CRWV | CRWV Inc | $50.00 |" in contents[2].parts[0].function_response.response["result"]
     assert "CRWV Inc" not in generate.calls[0][1][0].parts[0].text
 
 

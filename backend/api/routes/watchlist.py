@@ -14,7 +14,7 @@ from fastapi import APIRouter
 
 from backend.database import db
 from backend.api.schemas import CandidateOut
-from backend.services import candidates
+from backend.services import candidates, trend
 
 router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
@@ -27,5 +27,18 @@ def list_watchlist():
 @router.get("/candidates", response_model=list[CandidateOut])
 def get_candidates():
     """The screened names the agent may commission, minus the ones it already
-    tracks. The same list ``agent.build_prompt`` puts in front of the model."""
-    return [CandidateOut.model_validate(c) for c in candidates.fetch_candidates()]
+    tracks. The same list ``agent.build_prompt`` puts in front of the model,
+    with the same four stock cells (2026-10-01), rendered the way the prompt
+    renders them, so the page and the prompt cannot say different things."""
+    found = candidates.fetch_candidates()
+    trends = trend.describe_many(c.ticker for c in found)
+    rows = []
+    for c in found:
+        cells = trend.cells(trends.get(c.ticker))
+        rows.append(CandidateOut(
+            ticker=c.ticker, name=c.name, price=c.price, volume=c.volume,
+            change_pct=c.change_pct, source=c.source,
+            trend=cells[0], month_quarter=cells[1], volume_vs_normal=cells[2],
+            range_per_day=cells[3],
+        ))
+    return rows

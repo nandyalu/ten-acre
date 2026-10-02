@@ -162,6 +162,36 @@ export const TERMS: Term[] = [
       'Once a trading day, after the close, the agent reads every decision pass since its last review and writes two things: notes to whoever maintains it, and a revision of its own memory. It cannot trade, research or move its alarm from here.',
     long: 'Most days it reports nothing, and that is the expected answer. A note names the pass where the gap was felt: a tool it lacked, information it could not see, a rule that contradicted another. It may also replace the note its last pass left for the next one. Nothing acts on a note automatically, and the review is shown inside the day it ran on, above that day’s passes.',
   },
+  // The four stock cells the agent reads beside every signal, watchlist and
+  // candidate row since 2026-10-01. The windows here (50 and 200 days, 21 and
+  // 63 sessions, 5 and 60 sessions, 14 sessions) are the constants in
+  // backend/services/trend.py, and its legend() says the same in the prompt.
+  // Change them together.
+  {
+    id: 'trend',
+    label: 'Trend',
+    short:
+      'The last close against the stock’s 50-day and 200-day averages. UP is above both, DOWN is below both, MIXED is between them.',
+    long: 'Computed by the app from completed sessions in its own bar cache, never by a model, and shown to the agent as a fact beside every signal, watchlist and candidate row. Nothing in Python decides from it: a Buy in a DOWN trend is the agent’s call. A row whose price history breaks in one session, a split or a data error, reads “withheld” instead of figures.',
+  },
+  {
+    id: 'month-quarter',
+    label: '1m / 3m',
+    short:
+      'The price change over the last 21 and 63 trading sessions, about a month and a quarter.',
+  },
+  {
+    id: 'volume-vs-normal',
+    label: 'Volume vs normal',
+    short:
+      'The average volume of the last five sessions against the average of the last sixty. 2× normal means twice the usual trading.',
+  },
+  {
+    id: 'range-per-day',
+    label: 'Range/day',
+    short:
+      'How far the stock moves on an ordinary day: its average true range over 14 sessions as a share of its price.',
+  },
 ];
 
 export const TERMS_BY_ID = new Map(TERMS.map((t) => [t.id, t]));

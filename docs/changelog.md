@@ -8,6 +8,8 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-10-01
 
+- **The site** — The research page's candidate table shows the four stock cells the agent reads beside each name: Trend, 1m / 3m, Volume vs normal and Range/day. `GET /api/watchlist/candidates` carries them as the rendered strings the prompt shows, so the page and the prompt cannot say different things, and the static site's snapshot carries them too. The four terms are in the glossary.
+- **Tooling** — `probe_prompt.py` keeps the finished samples when one request fails. A failed sample is written as a row with its error. Before, one `503` ended the run and lost every finished sample, four of nine on 2026-10-01.
 - **The site** — The Decisions page on the live dashboard shows a card while a decision pass runs: when it started, what the agent was told on waking, the turn, what the pass is doing now (asking the model, carrying out orders, or waiting for research), and each analysis it waits on. It asks `GET /api/agent/pass` every 15 seconds, and when the pass ends it fetches the newest month again so the pass appears. The public site never asks, and the snapshot exporter writes no file for it, because it describes the current second.
 
 ## 2026-09-30

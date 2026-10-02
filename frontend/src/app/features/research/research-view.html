@@ -199,9 +199,11 @@
     }
   </section>
 
-  <!-- The candidate menu, exactly as the agent is given it. Since 2026-09-17
-       a Gemini deployment shows it to the agent only when the agent asks
-       (the `candidates` fetch), so "sees in its prompt" would be wrong there. -->
+  <!-- The candidate menu, exactly as the agent is given it: the same rows and,
+       since 2026-10-01, the same four stock cells, rendered by the API the way
+       the prompt renders them. Since 2026-09-17 a Gemini deployment shows it to
+       the agent only when the agent asks (the `candidates` fetch), so "sees in
+       its prompt" would be wrong there. -->
   @if (candidates().length) {
     <section class="card">
       <div class="card-head">
@@ -209,8 +211,9 @@
         <p class="hint">
           The same menu the agent is given to choose from: liquid names from the screener it does
           not already track — over $5, over 1M shares traded, and not up or down more than 30%
-          today, which keeps the day's pumps out. It pays for every one it picks, and picking is its
-          decision alone.
+          today, which keeps the day's pumps out. The four columns on the right are the same facts
+          about each stock the agent reads beside the name. It pays for every one it picks, and
+          picking is its decision alone.
         </p>
       </div>
       <div class="table-wrap">
@@ -222,6 +225,10 @@
               <th class="num">Volume</th>
               <th class="num">Today</th>
               <th>Why it showed up</th>
+              <th><app-term key="trend" /></th>
+              <th class="num"><app-term key="month-quarter" /></th>
+              <th class="num"><app-term key="volume-vs-normal" /></th>
+              <th class="num"><app-term key="range-per-day" /></th>
             </tr>
           </thead>
           <tbody>
@@ -248,6 +255,10 @@
                   }
                 </td>
                 <td data-label="Why it showed up">{{ c.source }}</td>
+                <td data-label="Trend">{{ c.trend }}</td>
+                <td class="num" data-label="1m / 3m">{{ c.month_quarter }}</td>
+                <td class="num" data-label="Volume vs normal">{{ c.volume_vs_normal }}</td>
+                <td class="num" data-label="Range/day">{{ c.range_per_day }}</td>
               </tr>
             }
           </tbody>

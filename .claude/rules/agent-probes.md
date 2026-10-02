@@ -54,6 +54,9 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 | The fetch allowance, reworded 2026-09-19 | 0 of 4 mentioned a limit | **Fixed the rationing** |
 | `ONE_ROUND_LEFT` / `NO_ROUNDS_LEFT` | 2 of 4 | **Read** |
 | The `fundamentals` fetch | 1 of 4 called it, 0 of 4 quoted it | **Unconfirmed.** Kept |
+| The four stock cells on the candidate table | The shuffle test: a row's picks went 0 of 7 to 5 of 7 when its cells were flipped from DOWN to UP, same row, same name (Fisher p = 0.02) | **Read, and acted on.** The cells steer which candidate is researched; see the shuffle section below |
+| The four stock cells on the held name's row | A figure only a cell holds, quoted: 1 of 13, then 3 of 14, then 1 of 13 (one more counting "the trend is down", a word with no figure); no sell, trim or refusal to add in 54 samples on a DOWN holding | **Reachable, not reliable.** Kept; see the 2026-10-01 sections below |
+| A TREND marker in a cell the model already reads, beside the columns | trend noticed on first read 5 of 14 against 1 of 14 (p = 0.16); no action changed | **Unconfirmed.** Not built; probe only |
 | The closed-market rule and its `adjust` exemption | 6 of 7 restate it | **Read.** The behavioural claim is unproven |
 | Alerts and "what you just did", above the tables | 4 of 4 after the move | **Read**, and the placement is why |
 | The tool channel, end to end | 4 of 4 | **Works** |
@@ -482,3 +485,104 @@ No run reasoned toward "my next look is tomorrow's open" without first passing t
 | Research price in the `candidates` header | the book as it is, `turn1`, 21 samples | research 16 of 21, against 12 of 21 after the 9/30 rewording and 7 of 21 before it | The two research changes together raised research (7 → 16 of 21, Fisher p = 0.01). The header's own share is unresolved (p = 0.33), and no sample quoted it. 19 of 21 called `candidates`. |
 | A market buy may carry `stop` and `target` | NVDA Overweight 2.7% past its Entry, 7 samples | 7 of 7 bought and filled in both fields, every one with the table's $209.45 and $247.90 | The tool works and nothing was refused. No sample chose its own levels on this scenario. |
 
+## The four stock cells, 0 of 13 for Trend, 1m / 3m and volume; 1 of 13 for Range/day (2026-10-01)
+
+**What was probed:** `turn1` on `gemini-3.5-flash-lite` through the forced `decide` call with fetches, on a `sqlite3 .backup` copy of this machine's book (NU held, $7,236.83 cash, an NU Overweight and a COIN Underweight in the table), with the working tree's `backend/` mounted over the image. Two arms: seven samples on the real state (Thursday 8:10 PM ET, market closed) and nine with the clock pinned to Friday 2 October 10:15 AM ET, of which six completed and three failed on a `503` on their first request. The pinned arm is an artifact in two ways: `Price now` is the last close, and Day High and Day Low are dashes. The cells themselves were real in both arms, warmed before the pin.
+
+| Question | Result | Verdict |
+|---|---|---|
+| A cell quoted in the reasoning | 1 of 13: "The daily range is 3.8%", NU's Range/day, which also sits in the `watchlist` result | **Unconfirmed.** Twelve figures from the NU and COIN rows appear nowhere else in the prompt, and 0 of 13 quoted one. Three other matches were the STALE "moved since" figures |
+| The Trend word, 1m / 3m or Volume vs normal used | 0 of 13 | **Unconfirmed.** NU is DOWN and -8.1% over a month, held, and reasoned about at length in every sample, mostly about its stop. No sample mentioned its trend |
+| `watchlist` and `candidates` fetched | 13 of 13 and 11 of 13 | The cells reached the model and were not used |
+| Research on a candidate | 5 of 13: AMZN three times (MIXED), SPCX (no 200-day yet), NOK (UP) | None went to a DOWN row, though most rows were DOWN, and in the pinned arm the two samples that researched skipped the two DOWN rows at the top for rows 3 and 4. **A lead, not evidence**: in the closed arm AMZN was the first row, and no sample gave a reason |
+| A cell misread as a price or a level, or the Trend word read as a rule | 0 of 13 | Nothing broke |
+| The CTVA row, `DOWN: 50d -84.3%` across a one-session break | 0 of 11 remarked on it; 2 listed the ticker in a plain enumeration | `trend._break` now withholds such a row and says why |
+
+**What this matches.** The holdings price-range column and the four analyst-report tables: correct, rendered, cheap, and not read. The skill's own warning applies in full: a crowded row has blind spots, and the model reports a fixed habitual set of facts about a holding and does not expand that set because a column was added. The one trade, pinned-arm sample 8 buying 10 INTC at market, took its levels from INTC's analysis and cited that analysis, not a cell.
+
+**Kept, as unconfirmed.** The next probe, not run in this look and run later the same night as the third and fourth looks below: two arms of seven, the cells as they are against the Trend word moved onto a cell the model already reads (the ticker, `NU — DOWN`, or the `It said` cell beside STALE), and a shuffle of the cells across candidate rows to tell whether a pick follows the cells or the row order. The quotation that would settle it: a `× normal` ratio or a `200d` percentage in the reasoning.
+
+**Found along the way.**
+
+- **The bar cache is not split-adjusted.** CTVA read $77.65 on 2026-09-30 and $12.57 on 2026-10-01 in the raw bars, with 88M shares against 4M. Every reader of the cache sees a corporate action as a move: the ATR stop, the range since purchase, the grading. The cells now withhold across a break; the other readers do not know about it yet.
+- **The Range/day legend overclaimed.** It said "the same measure the Stop is set from". The signal's Stop comes from the trader's own ATR multiple in the submodule, NU's cell was an ATR of $0.504 against a stop distance of $0.555, and sample 6 read the two as one figure. Reworded the same evening.
+- **`probe_prompt.py` lost four finished samples to one `503`**, because `pool.map` re-raised and the file was written at the end. A failed sample is a row now.
+- **Both prompt builds logged `Webull batch snapshot failed for 100 ticker(s): symbols size must be between 1 and 100`**, and the `candidates` fetch still returned ten rows, all `via most active`. Found the next day: QuiverQuant listed `GLAS FUNDS, LP` as a ticker, the comma made a batch of 100 read as 101 at the vendor, and the whole batch was refused, so no probe tonight had a congress or trending name on its menu. Fixed in `quotes.get_snapshots` and `candidates.fetch_candidates`; see the JOURNEY.md incident entry.
+- **The DB copy's daily request count went from 69 to 139 while the live count stayed at 69**, so after a probe Google's real total for the key is higher than the app's own count by the probe's requests.
+
+## The four stock cells, second look: 3 of 14 quoted a figure, 4 of 14 counting a bare word (2026-10-01, later the same evening)
+
+**What was probed:** the same code and the same setup as the first look, two arms of seven on a fresh copy of the same book. Arm A on the real clock, Thursday 10:40 PM ET, market closed, so the only action open was `adjust`. Arm B pinned to Friday 2 October 10:15 AM ET, where `Price now` is the last close and the day's range is dashes. All 14 completed, 3 to 5 fetches each, no text fallback. 51 requests. **The arm asked for, a marker variant, was not run**; that probe follows in the next section.
+
+| Question | Arm A, closed | Arm B, pinned open | Against the first look |
+|---|---|---|---|
+| A cell quoted in the reasoning | 1 of 7 | 3 of 7 | 4 of 14 against 1 of 13: inside the noise floor. **Reachable, not reliable** |
+| From the candidate table, as the reason to research | A7: "NOK in the candidates list, which has an upward trend (50d +3.2%, 200d +4.4%). I'll commission research on NOK." | B2: "NOK (Nokia, UP trend, volume 0.7x, range/day 4.9%) and SPCX (… 50d +7.2%, volume 0.8x, range/day 3.9%). I'll submit a research order for both." | The two readings that matter for the candidate table. Both figures unique to the Trend cell in A7; all four cells in B2 |
+| From the held name's row | none | B3: "The ATR for NU is $0.56, translating to a daily range of 3.8%" (3.8% is the cell; $0.56 / $13.29 is 4.2%, so the model read the two ATRs as one figure again). B5: "The trend is down", before any fetch | NU's cells (`DOWN: 50d -6.9%, 200d -9.7%`, `-8.1% / -2.4%`, `1.2× normal`) changed no action in 14 of 14 |
+| Research on a candidate | NOK twice, SPCX once | NOK once, SPCX once | 5 of 14, none to a DOWN row with 7 of 10 rows DOWN, and the same rows 3 and 4 as the first look. Not separable from row order or name familiarity: every sample saw the same list |
+| Nothing broke | 7 of 7 | 7 of 7 | The withheld CTVA row went unremarked by all 12 that fetched `candidates`, and nothing misread it |
+
+**What the samples did.** 11 of 14 raised NU's stop to between $12.84 and $13.00, cost plus 0 to 16 cents, with 7 of 14 quoting the fixed rule about protecting gains verbatim. Those stops sit $0.29 to $0.44 under a $13.29 price, inside one normal day's range of about $0.50, and the Range/day cell that says so changed nothing. A6 compared its stop to the analyst's ATR and held; A7 and B3 made the same comparison and raised the stop anyway. B4 bought 135 more NU at market with the signal's own stop and target, sized from the stop as the prompt says. B7 quoted the regime line; no arm A sample did. B6 flagged "a discrepancy in the COIN target price": on an Underweight row the Stop sits above the Entry and the Target below, and the legend does not say so. 1 of 14, no action changed.
+
+**Verdict.** The cells are read sometimes, and when they are read it is the candidate table that gets read, as the reason to research a name. That is the use they were built for. The held name's trend is not read. Whether a marker in a cell the model already reads changes either is the next section.
+
+## A TREND marker beside the columns, probe only (2026-10-01, the third look)
+
+**What was probed:** whether placement is why the cells go unread. The marker variant appends ` — **TREND DOWN, -8.1% this month**` to the Decision cell (signals), the `It said` cell (watchlist) and the Company cell (candidates), on top of the four columns, by post-processing in the probe wrapper, the way the STALE marker was probed before it was built. Two arms of seven, one on the closed-market clock and one pinned to Friday 2 October 10:15 AM ET, against the second look's two arms as controls (a fresh build of the tree is byte-identical to both stored control prompts). 28 samples in all, none failed. 50 requests for the marker arms.
+
+| Arm | Clock | A figure only a cell holds, quoted | The trend reached the first read of the signals table | A cell or the marker given as the reason for an order |
+|---|---|---|---|---|
+| Control | closed | 1 of 7 | 0 of 7 | 1 (research NOK) |
+| Control | pinned open | 2 of 7 | 1 of 7, "the trend is down", no figure | 1 (research NOK and SPCX) |
+| Marker | pinned open | 3 of 7 | 3 of 7 | 1 (bought 10 INTC: "the trend on INTC is strong (50d +19.4%, 200d +48.6%, 1m change +34.9%)") |
+| Marker | closed | 2 of 7 | 2 of 7 | 0 |
+
+**The marker gets the trend noticed and not acted on.** 5 of 14 marker samples against 1 of 14 controls read NU's trend on their first pass over the signals table: "an 'Overweight' on NU with a downward trend, which feels contradictory", "inconsistent ... a red flag", "the monthly trend is down merits more careful examination". All five then raised NU's stop and held, and none returned to the contradiction. Fisher p = 0.16, which is inside the noise floor. Nobody in 28 samples sold or trimmed NU, which is DOWN and -8.1% over a month, and one control sample bought 135 more without a word about its trend.
+
+**What else the 28 showed.**
+
+- **Range/day placed one stop.** Closed marker 6: "the ATR is about 3.8% or about $0.51 ... leaves sufficient room to breathe". Two others said "around $0.50", which fits the cell and the analyst's $0.56 ATR both.
+- **The cells were mistaken for an analysis once.** Pinned control 2 wrote "I've got the research already done on NOK" after reading NOK's candidate row, although the header says nothing on the list has been analysed. It ordered the research anyway. 1 of 28.
+- **The row-order lead stands.** 13 research orders across the 28: NVDA 4, NOK 3, SPCX 3, INTC 2, CRWV 1. None went to a DOWN row with 12 of 21 rows DOWN, and only 3 of 13 carried a cell as the stated reason; the rest cited the STALE flag, INTC's move, or nothing. SMR is DOWN and STALE and was never ordered. The shuffle of cells across rows, the one test that separates "follows the cells" from "follows the row order", was not run.
+- **Repeat runs swing by 3 of 7 on their own.** INTC attention went 5 of 7 against 2 of 7 on the pinned clock and 0 of 7 against 2 of 7 on the closed one, same code.
+- **Most marker quotations are ambiguous**, because the marker repeats the 1m cell's figure. "This month" is the marker's wording and appears in five samples.
+
+**Verdict.** Unconfirmed, both ways: the marker is not shown to help, and the columns are not shown to be the problem. Not built. The columns stay as they are, recorded as reachable and not reliable. What would settle the candidate question is the shuffle test and the fetch audit on live passes; what would settle the holding question is a scenario where the trend and the analyst disagree and the trade is open.
+
+**Cost.** About 245 of the day's 500 requests across the three looks, by estimate. The app's own counter stayed at 69 throughout, because every probe ran on a copy of the database.
+
+## The shuffle test: candidate picks follow the cells, 0 of 7 to 5 of 7 (2026-10-01, the fourth look)
+
+**The question.** Every pick on the candidate table tonight had gone to a row whose cells did not read DOWN, and every sample had seen the same list in the same order, so nothing could say whether a pick followed the cells or the row and the name. **The test** reverses the four cells across the candidate rows and changes nothing else: row i shows row n-1-i's cells, while the tickers, companies, prices, day moves, volumes, sources and row order stay. If the picks stay on the same rows, they follow the row or the name. If they move to the rows that now read UP, they follow the cells.
+
+**Setup.** Two arms of seven, run one after the other on one copy of this machine's book, the clock pinned to Friday 2 October 10:15 AM ET, the same screened menu for both arms (written to a file by the first build and read back by every later run), `gemini-3.5-flash-lite` through the forced `decide` call with fetches, post-processing of `describe_menu` in the probe wrapper only. All 14 completed, 7 of 7 fetched `candidates` in each arm. 51 requests. The menu and the mapping, row by row, Trend word shown in the control and in the shuffled arm:
+
+| Row | Ticker | Control shows | Shuffled shows |
+|---|---|---|---|
+| 1 | NKE | DOWN | UP |
+| 2 | CTVA | withheld | DOWN |
+| 3 | SPCX | no 200-day yet | DOWN |
+| 4 | NOK | UP | DOWN |
+| 5 | BAC | DOWN | DOWN |
+| 6 | RIG | DOWN | DOWN |
+| 7 | AAL | DOWN | UP |
+| 8 | RKT | DOWN | no 200-day yet |
+| 9 | AGNC | DOWN | withheld |
+| 10 | SNAP | UP | DOWN |
+
+| | Control | Shuffled |
+|---|---|---|
+| Research on a candidate | 3 of 7: SPCX twice (row 3), RKT once (row 8, DOWN, +4.0% on the day) | 5 of 7: NKE every time (row 1, shown UP, really DOWN) |
+| Research on NKE, row 1 | 0 of 7 | 5 of 7. Fisher p = 0.021 |
+| Research on SPCX or NOK, rows 3 and 4 | 2 of 7 | 0 of 7, both now shown DOWN |
+| Research on a watchlist name instead | 2 of 7 (COIN, INTC) | 1 of 7 (CRWV and NVDA, on their STALE moves) |
+| The reason given | Names that "catch my eye": "a new candidate like NOK, RKT, or SPCX". No cell | "I'll check NKE, which shows an upward trend at $35.15"; "NKE caught my eye, and it is a good momentum long"; "Evaluate Nike for potential momentum long" |
+| NU's stop raised to cost plus a few cents | 4 of 7 | 6 of 7 |
+
+**The picks moved with the cells.** The same ticker on the same row went from no pick in seven to a pick in five of seven when its cells said UP instead of DOWN, and the two rows every earlier pick had gone to got nothing once they said DOWN. One sample named the cell as its reason, two more used the word "momentum" that nothing but the cell supports, and the rest gave none. The model also followed a false label: NKE really is DOWN, and five samples paid to research it on the strength of an UP that the shuffle had put there. That is the cells steering, and it is also the cells being trusted.
+
+**What it does not show.** AAL, row 7, also read UP in the shuffled arm and got no pick, so the row still matters: the first row that reads UP is the one taken. RKT drew one control pick as a DOWN row on the day's largest move, so the day's move matters too. Nothing here says whether a research that follows an UP cell turns into a better trade; that is the question for the graded record after twenty trades, split by the Trend word on the row at the time of the buy. **The held name's trend is a different story**: across 54 samples tonight NU read DOWN and -8.1% over a month, and no sample sold, trimmed or declined to add; one sample read the watchlist's Trend cells aloud ("NVDA is up, CRWV is mixed, and SMR is down", and MIXED is a word only the cell uses) and did nothing with them.
+
+**Two more control arms were run by mistake earlier the same night**, 13 samples on the current code, closed and pinned, by a probe that did not apply its variant. They add to the controls: a figure only a cell holds was quoted in 1 of 13, "the 50 and 200 day trends are negative" in one more, and one sample researched TSLA at row 1 of that run's list with no cell cited. Their files are `turn1-20261002T032946.json` and `turn1-20261002T033121.json`.
+
+**Cost.** About 415 of the day's 500 requests across the four looks, by estimate; the app's own counter stayed at 69 throughout. The shuffle files are `turn1-20261002T033842.json` (control) and `turn1-20261002T034047.json` (shuffled).

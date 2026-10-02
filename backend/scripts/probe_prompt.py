@@ -38,7 +38,7 @@ from backend import paths
 from backend.database import db
 from backend.services import (
     agent, agent_book, analysis, analysis_reader, decision_schema, llm_gemini, positions,
-    reflection, research,
+    reflection, research, trend,
 )
 
 _OUT = paths.data_dir() / "probe"
@@ -109,6 +109,11 @@ def build_prompts() -> dict:
         h.ticker: r for h in book.holdings
         if (r := agent.price_range_since_purchase(h.ticker, h.opened, h.price)) is not None
     }
+    menu = agent._candidate_menu() if research.is_charging() else None
+    # The stock cells, read the way _decide reads them: once, for every
+    # ticker a prompt can show. A pinned clock must be set after this, the
+    # same as for the screen above: a cold candidate is one signed request.
+    trends = trend.describe_many(tickers | {c.ticker for c in (menu or [])})
     common = dict(
         # The channel the app would really answer on, so a Gemini probe sees
         # the one-line "call decide" ending and an Ollama probe the JSON shape.
@@ -117,7 +122,8 @@ def build_prompts() -> dict:
         closed=agent_book.closed_trades(decisions=decisions),
         regime_line=agent.current_regime_line(),
         horizon_days=agent._horizon_days(),
-        menu=agent._candidate_menu() if research.is_charging() else None,
+        menu=menu,
+        trends=trends,
         price=research.get_price(),
         watchlist=sorted(db.get_watchlist()),
         max_watchlist=agent._max_watchlist(),
@@ -142,6 +148,7 @@ def build_prompts() -> dict:
         "tools_kwargs": dict(
             book=book, prices=prices, watchlist=common["watchlist"],
             max_watchlist=common["max_watchlist"], closed=common["closed"], day_ranges={},
+            trends=trends,
         ),
         "system": agent.SYSTEM_PROMPT_TOOL if agent.answers_by_tool() else agent.SYSTEM_PROMPT,
         "turn1": agent.build_prompt(book, signals, prices, **common),
@@ -535,9 +542,17 @@ def main() -> int:
         def one(item):
             card, ip = item
             url = f"http://{ip}:11434/v1" if ip else args.base_url
-            row = ask(url, system, user, None if prose else _tools(prompts), prose) | {
-                "card": card, "turn": args.turn,
-            }
+            try:
+                row = ask(url, system, user, None if prose else _tools(prompts), prose) | {
+                    "card": card, "turn": args.turn,
+                }
+            except Exception as exc:
+                # One failed request used to end the run and lose every finished
+                # sample with it: pool.map re-raises, and the file is written at
+                # the end. On 2026-10-01 one 503 cost four of nine samples. The
+                # failure is a row now, and the rest are kept.
+                print(f"  card {card}: failed: {exc!r}", flush=True)
+                return {"card": card, "turn": args.turn, "error": repr(exc)}
             print(f"  card {card}: {row['seconds']:>5}s  completion {row['completion_tokens']:>5}"
                   f"  thinking {len(row['thinking']):>5}  fetched {len(row.get('exchanges', []))}",
                   flush=True)
@@ -550,9 +565,15 @@ def main() -> int:
     else:
         results = []
         for sample in range(1, args.samples + 1):
-            row = ask(args.base_url, system, user, None if prose else _tools(prompts), prose) | {
-                "card": "-", "turn": args.turn, "sample": sample,
-            }
+            try:
+                row = ask(args.base_url, system, user, None if prose else _tools(prompts), prose) | {
+                    "card": "-", "turn": args.turn, "sample": sample,
+                }
+            except Exception as exc:
+                # Same as the parallel branch: a failed sample is a row.
+                print(f"  #{sample}: failed: {exc!r}", flush=True)
+                results.append({"card": "-", "turn": args.turn, "sample": sample, "error": repr(exc)})
+                continue
             print(f"  #{sample}: {row['seconds']}s  completion {row['completion_tokens']}"
                   f"  thinking {len(row['thinking'])}  fetched {len(row.get('exchanges', []))}",
                   flush=True)

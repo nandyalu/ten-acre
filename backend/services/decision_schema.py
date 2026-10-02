@@ -315,8 +315,10 @@ FETCHES: list[dict] = [
         "name": "candidates",
         "description": (
             "Screened names you may research that you do not track yet: liquid, "
-            "actively traded, not a pump. A research of a new ticker must name one "
-            "of these. Nothing on them has been analysed."
+            "actively traded, not a pump. Each comes with its trend against its "
+            "50-day and 200-day averages, its one- and three-month change, its "
+            "volume against normal and its daily range. A research of a new ticker "
+            "must name one of these. Nothing on them has been analysed."
         ),
     },
     {
@@ -332,9 +334,10 @@ FETCHES: list[dict] = [
     {
         "name": "watchlist",
         "description": (
-            "Every ticker you track, with its price now, when it was last analysed "
-            "and at what price, how far it has moved since, and what that analysis "
-            "said."
+            "Every ticker you track, with its price now, its trend against its 50-day "
+            "and 200-day averages, its one- and three-month change, its volume "
+            "against normal and its daily range, then when it was last analysed and "
+            "at what price, how far it has moved since, and what that analysis said."
         ),
     },
     {

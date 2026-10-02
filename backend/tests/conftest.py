@@ -310,3 +310,23 @@ def main_loop_work_runs_inline(monkeypatch):
         return asyncio.run(result) if inspect.isawaitable(result) else result
 
     monkeypatch.setattr(scheduler, "call_on_main", inline)
+
+
+@pytest.fixture(autouse=True)
+def isolated_trend_cells(monkeypatch):
+    """No test reads the bar cache for the four stock cells unless it asks to.
+
+    ``agent._decide`` and the ``candidates`` fetch read a trend for every
+    ticker a prompt can show (2026-10-01). A test's made-up ticker is not in
+    the cache, so the read went to the vendor: the first run of the suite
+    fetched 248 real CRWV bars through yfinance and wrote them into the
+    developer's ``data/trading.db``. A test with a real ticker would instead
+    have rendered whatever that database held, and failed on another machine.
+
+    A test that wants cells passes ``trends=`` to ``build_prompt`` itself, or
+    calls ``trend.compute`` on bars it built. ``test_trend.py`` restores the
+    real ``describe_many`` to test it.
+    """
+    from backend.services import trend
+
+    monkeypatch.setattr(trend, "describe_many", lambda tickers, today=None: {})

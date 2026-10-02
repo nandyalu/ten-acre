@@ -39,7 +39,7 @@ from backend.services import (
     llm_throttle,
     llm_usage,
     market_clock,
-    broker, quotes, research, watchdog,
+    broker, quotes, research, trend, watchdog,
 )
 from backend.services import decision_schema, fundamentals, llm_gemini
 from backend.services.positions import get_current_price
@@ -476,9 +476,9 @@ def describe_history_brief(closed: list) -> list[str]:
 # unusually" tells it the analyst was reacting to something already priced in.
 
 
-def describe_menu(menu: list, price: float) -> list[str]:
-    """The screened candidates, one line each, under a header that says what
-    they are not: a recommendation. [] when the screen returned nothing.
+def describe_menu(menu: list, price: float, trends: dict | None = None) -> list[str]:
+    """The screened candidates as a table, under a header that says what they
+    are not: a recommendation. [] when the screen returned nothing.
 
     Shared by the prompt on the JSON channel and by the ``candidates`` fetch
     on the tool channel, so the two cannot drift.
@@ -487,21 +487,35 @@ def describe_menu(menu: list, price: float) -> list[str]:
     is what the agent reads when it chooses what to study. The same price in
     "Paying for research", below the tables, was never quoted in 42 probe
     samples.
+
+    **A table with the four stock cells since 2026-10-01, in place of one line
+    per name.** A line said a name was liquid and busy, and nothing else, so the
+    agent had no way to tell one candidate from another before it paid, and it
+    kept researching the names it already knew. The cells say what the stock
+    has been doing; see ``trend.legend``. Tables get read, and the same cells
+    sit in the signals and watchlist tables, so a candidate reads the same way
+    as a name already on the book.
     """
     if not menu:
         return []
+    trends = trends or {}
     lines = [
         "Nothing has been analysed on these yet — they are screened for being liquid and "
         f"actively traded, not for being good. A research order on one costs ${price:,.2f} "
         "and runs inside this pass, so you see the analyst's opinion before you finish; "
         f"a thousand cost ${price * 1000:,.0f}. Research is how a name on this list "
-        "becomes a trade:",
+        "becomes a trade. " + trend.legend(),
+        "",
+        "| Ticker | Company | Price | Today | Shares traded | Via | "
+        + " | ".join(trend.COLUMNS) + " |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for candidate in menu:
-        move = f", {candidate.change_pct:+.1f}% today" if candidate.change_pct is not None else ""
+        move = f"{candidate.change_pct:+.1f}%" if candidate.change_pct is not None else "—"
+        cells = trend.cells(trends.get(candidate.ticker))
         lines.append(
-            f"- {candidate.ticker}: {candidate.name[:40]} at ${candidate.price:,.2f}"
-            f"{move}, {candidate.volume_m:,.1f}M shares traded, via {candidate.source}"
+            f"| {candidate.ticker} | {candidate.name[:40]} | ${candidate.price:,.2f} | {move} | "
+            f"{candidate.volume_m:,.1f}M | {candidate.source} | " + " | ".join(cells) + " |"
         )
     return lines
 
@@ -589,6 +603,7 @@ def describe_watchlist(
     prices: dict[str, float | None],
     day_ranges: dict[str, tuple[float, float]] | None,
     as_of: str,
+    trends: dict | None = None,
 ) -> list[str]:
     """Every tracked ticker, priced and dated, so staleness is something the
     agent can see rather than something it has to remember.
@@ -618,6 +633,7 @@ def describe_watchlist(
     breath. That is a habit, not a gap in what the agent knows.
     """
     held_tickers = {h.ticker for h in book.holdings}
+    trends = trends or {}
     lines = [
         f"You track {len(watchlist)} of at most {max_watchlist} tickers. **Moved since** "
         f"is the price as of {as_of} against the price at the most recent analysis of that "
@@ -625,10 +641,11 @@ def describe_watchlist(
         "is marked **STALE**: the decision on it was made about a different price, and "
         "nothing re-checks it but you. Tickers left watched with stale or 'never' analysed "
         "status consume watchlist slots; untrack watched tickers you no longer plan to trade "
-        "to keep slots available.",
+        "to keep slots available. " + trend.legend(),
         "",
-        "| Ticker | Held? | Price now | Day High | Day Low | Last analysed (ET) | Price then | Moved since | It said |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Ticker | Held? | Price now | Day High | Day Low | " + " | ".join(trend.COLUMNS)
+        + " | Last analysed (ET) | Price then | Moved since | It said |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for ticker in sorted(watchlist):
         live = prices.get(ticker)
@@ -667,8 +684,12 @@ def describe_watchlist(
                         "made about a different price. Pay for a fresh look before you "
                         "act on it.**"
                     )
+        # The stock cells sit with the price cells, before the analysis
+        # cells: they describe the stock as it is, and the three after them
+        # describe what somebody once said about it.
+        stock = " | ".join(trend.cells(trends.get(ticker)))
         lines.append(
-            f"| {ticker} | {status} | {price_text} | {day_high} | {day_low} | "
+            f"| {ticker} | {status} | {price_text} | {day_high} | {day_low} | {stock} | "
             f"{when} | {then} | {move} | {said} |"
         )
     if len(watchlist) >= max_watchlist:
@@ -1131,6 +1152,7 @@ def describe_signals(
     as_of: str,
     day_ranges: dict[str, tuple[float, float]] | None = None,
     researched_now: set | None = None,
+    trends: dict | None = None,
 ) -> list[str]:
     """The analyst signals, newest first.
 
@@ -1157,6 +1179,7 @@ def describe_signals(
     if not signals:
         return ["No new signals today."]
     held = {h.ticker: h for h in book.holdings}
+    trends = trends or {}
     lines = [
         f"**Price now** is the price as of {as_of}; "
         "**Day High** and **Day Low** are today's session range so far; "
@@ -1170,11 +1193,11 @@ def describe_signals(
         "already have in that ticker, so a row is about adding to, trimming or "
         "leaving alone something you own rather than about opening it. Rows are newest "
         "first, and **Analysed** carries the time because a ticker can be analysed "
-        "more than once in a day.",
+        "more than once in a day. " + trend.legend(),
         "",
         "| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target |"
-        " Chance | R:R | You hold | You could buy |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        " Chance | R:R | " + " | ".join(trend.COLUMNS) + " | You hold | You could buy |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     # Newest first, and sorted here rather than relied upon: the query orders
     # by `signal_date`, a calendar date, so two analyses of one ticker on one
@@ -1249,11 +1272,15 @@ def describe_signals(
         day_range = (day_ranges or {}).get(s.ticker)
         day_high = f"${day_range[1]:,.2f}" if day_range else "—"
         day_low = f"${day_range[0]:,.2f}" if day_range else "—"
+        # The four stock cells (2026-10-01) sit after the analyst's figures
+        # and before the two columns about the agent, so the row reads: what
+        # the analyst said, what the stock is doing, what you have in it.
+        stock = " | ".join(trend.cells(trends.get(s.ticker)))
         lines.append(
             f"| {s.ticker} | {when} | {s.decision} | {price_text} | "
             f"{day_high} | {day_low} | {_money(getattr(s, 'price_at_signal', None))} | "
             f"{_money(s.entry_price)} | {_money(s.stop_loss)} | {_money(s.price_target)} | "
-            f"{chance} | {rr} | {hold_text} | {afford_text} |"
+            f"{chance} | {rr} | {stock} | {hold_text} | {afford_text} |"
         )
     # Expected value is the analyst's own derivation from the levels above, so
     # it sits under the table rather than adding a column that is empty for
@@ -1603,6 +1630,7 @@ def build_prompt(
     day_ranges: dict[str, tuple[float, float]] | None = None,
     answer_by_tool: bool = False,
     notes_revised: bool = False,
+    trends: dict | None = None,
 ) -> str:
     """Everything the model gets, assembled from sections in a declared order.
 
@@ -1646,7 +1674,9 @@ def build_prompt(
         # The table itself lives in describe_watchlist since 2026-09-17,
         # because the `watchlist` fetch returns the same table on demand and
         # two copies of one table drift.
-        tracked = describe_watchlist(watchlist, max_watchlist, book, prices, day_ranges, as_of)
+        tracked = describe_watchlist(
+            watchlist, max_watchlist, book, prices, day_ranges, as_of, trends
+        )
     else:
         tracked = []
 
@@ -1659,11 +1689,12 @@ def build_prompt(
         # nobody calls is a feature removed.
         candidates = [
             "Screened candidates you could research are available on request: call "
-            "candidates to see them. A research of a new ticker must name one of "
-            "them, and nothing on them has been analysed.",
+            "candidates to see them, each with its trend, its one- and three-month "
+            "change, its volume against normal and its daily range. A research of a "
+            "new ticker must name one of them, and nothing on them has been analysed.",
         ]
     else:
-        candidates = describe_menu(menu, price) if menu else []
+        candidates = describe_menu(menu, price, trends) if menu else []
 
     # The research price is explained only where there is something to spend it
     # on, which is the same condition the watchlist and the menu are shown
@@ -1732,7 +1763,7 @@ def build_prompt(
             ("What you hold", describe_holdings(book, price_ranges)),
             ("Orders you placed that have not filled yet", describe_pending_orders()),
             ("Recent analyst signals",
-             describe_signals(signals, book, prices, as_of, day_ranges, researched_now)),
+             describe_signals(signals, book, prices, as_of, day_ranges, researched_now, trends)),
             # **Directly under the signals since 2026-09-21, and it moved group
             # to get here.** It sat in "What you can do" beside the research
             # price and the candidate menu, six sections below the signals.
@@ -2941,9 +2972,13 @@ class ToolContext:
     """
 
     def __init__(
-        self, budget: dict, *, book, prices, watchlist, max_watchlist, closed, day_ranges
+        self, budget: dict, *, book, prices, watchlist, max_watchlist, closed, day_ranges,
+        trends=None,
     ):
         self.budget = budget
+        # The stock cells for the tickers the prompt was built from. The menu's
+        # own are read on the first `candidates` call, see _candidates.
+        self.trends = dict(trends or {})
         self.book = book
         self.prices = prices
         self.watchlist = list(watchlist)
@@ -2978,7 +3013,14 @@ class ToolContext:
     def _candidates(self, args: dict) -> str:
         if self.budget.get("menu") is None:
             self.budget["menu"] = _candidate_menu() if research.is_charging() else []
-        lines = describe_menu(self.budget["menu"], research.get_price())
+            # Read once per pass with the menu, and kept beside it in the
+            # allowance dict, so a second call on a later turn costs nothing.
+            self.budget["menu_trends"] = trend.describe_many(
+                c.ticker for c in self.budget["menu"]
+            )
+        lines = describe_menu(
+            self.budget["menu"], research.get_price(), self.budget.get("menu_trends")
+        )
         if not lines:
             return (
                 "No candidate passed the screen right now. Research a ticker you "
@@ -2998,7 +3040,8 @@ class ToolContext:
             return "You track nothing."
         as_of = market_clock.now_et().strftime("%Y-%m-%d %-I:%M %p ET")
         return "\n".join(describe_watchlist(
-            self.watchlist, self.max_watchlist, self.book, self.prices, self.day_ranges, as_of
+            self.watchlist, self.max_watchlist, self.book, self.prices, self.day_ranges, as_of,
+            self.trends,
         ))
 
     def _track_record(self, args: dict) -> str:
@@ -3509,6 +3552,12 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         ticker: r for ticker in all_tickers
         if (r := day_range_today(ticker, prices.get(ticker))) is not None
     }
+    # The four stock cells for every row this pass can show: the signals,
+    # the watchlist and, on the JSON channel, the menu (2026-10-01). One
+    # bar-cache read per ticker, shared by every turn, like the ranges
+    # above; a cold candidate costs one vendor request, once. Read here and
+    # not inside build_prompt, which is a formatter over what it is given.
+    trends = trend.describe_many(all_tickers | {c.ticker for c in (menu or [])})
     # The exact prompt, kept so the Events page can show what was asked. A
     # retry replaces it, because the retry is the prompt the accepted orders
     # were actually screened from.
@@ -3527,6 +3576,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
+                             trends=trends,
                              answer_by_tool=by_tool,
     )
     # **One allowance for the whole pass**, created here only when no caller
@@ -3538,6 +3588,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
         ToolContext(
             budget, book=book, prices=prices, watchlist=watchlist,
             max_watchlist=_max_watchlist(), closed=closed, day_ranges=day_ranges,
+            trends=trends,
         )
         if by_tool
         else None
@@ -3618,6 +3669,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
+                             trends=trends,
                              readings=readings,
                              dropped_with_read=dropped_with_read,
                              answer_by_tool=by_tool)
@@ -3657,6 +3709,7 @@ def _decide(book, signals, prices, closed=None, regime_line=None, horizon_days=N
                              planned_wakeup=planned_wakeup,
                              price_ranges=price_ranges,
                              day_ranges=day_ranges,
+                             trends=trends,
                              answer_by_tool=by_tool)
     retry_answer = _ask(shown, tools) if tools is not None else _ask(shown)
     spend = spend + _Spend.of(retry_answer)

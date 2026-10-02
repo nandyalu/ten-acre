@@ -28,7 +28,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from backend.services import agent, agent_book
+from backend.services import agent, agent_book, trend
 
 GOLDEN = Path(__file__).parent / "prompts"
 ET = ZoneInfo("America/New_York")
@@ -135,6 +135,25 @@ FAILURES = [
 ]
 MEMORY = ["Skip INTC — stopped out on it twice this month on the same breakout setup."]
 PENDING = [_pending("TSLA", "buy", 3, 402.50, "2026-09-19 15:41:00")]
+
+
+def _trend(vs_short, vs_long, month, quarter, volume, rng):
+    return trend.Trend(
+        as_of="2026-09-18", close=0.0, break_on=None, break_pct=None,
+        vs_short_pct=vs_short, vs_long_pct=vs_long,
+        month_pct=month, quarter_pct=quarter, volume_ratio=volume, range_pct=rng,
+    )
+
+
+# The four stock cells (2026-10-01). PLTR has none, so one menu row and
+# nothing else shows the dashes; ORCL is too young for a 200-day average.
+TRENDS = {
+    "AAPL": _trend(3.1, 12.4, 4.2, 15.0, 1.6, 2.3),
+    "NVDA": _trend(-1.8, 9.7, -6.1, 11.2, 2.4, 3.9),
+    "INTC": _trend(-4.5, -11.0, -8.3, -2.2, 0.7, 4.1),
+    "ORCL": _trend(6.2, None, 3.0, None, 1.1, 2.8),
+    "SOFI": _trend(2.0, 1.1, 0.5, 9.9, 0.9, 5.2),
+}
 RUNNING = {"ORCL": datetime.datetime(2026, 9, 21, 15, 12, tzinfo=datetime.timezone.utc)}
 
 FULL = dict(
@@ -156,6 +175,7 @@ FULL = dict(
     earnings=[("ORCL", "2026-09-24")],
     price_ranges=PRICE_RANGES,
     day_ranges=DAY_RANGES,
+    trends=TRENDS,
 )
 
 

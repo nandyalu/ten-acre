@@ -393,6 +393,12 @@ export interface Candidate {
   volume: number;
   change_pct: number | null;
   source: string;
+  /** The four stock cells as the agent reads them, rendered by the API the
+   * way the prompt renders them (2026-10-01). A dash is a missing figure. */
+  trend: string;
+  month_quarter: string;
+  volume_vs_normal: string;
+  range_per_day: string;
 }
 
 /** One lot's life: bought, and sold or still held. Exit and P/L stay null

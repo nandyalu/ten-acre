@@ -657,6 +657,14 @@ class CandidateOut(OrmModel):
     volume: float
     change_pct: float | None
     source: str
+    # The four stock cells as the agent reads them (2026-10-01): rendered
+    # strings, not numbers, so the page shows exactly what the prompt shows.
+    # A dash is a missing figure, the same as in the prompt. See
+    # backend/services/trend.py for what each one is.
+    trend: str = "—"
+    month_quarter: str = "—"
+    volume_vs_normal: str = "—"
+    range_per_day: str = "—"
 
 
 class AgentTradeRowOut(OrmModel):

@@ -58,12 +58,12 @@ Use side "cancel" with the ticker to withdraw one you no longer want.
 
 ## Recent analyst signals
 
-**Price now** is the price as of 2026-09-21 11:19 AM ET; **Day High** and **Day Low** are today's session range so far; **At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** are computed by the app from the verified close and ATR, so the Stop clears one day's normal range; they are not orders that exist, and a price inside an analyst's text is the analyst's own. They are reference points, not limits: a price past the Entry does not rule a trade out. Read the analysis and judge the entry, stop and target yourself. A market buy rests this Stop and Target unless you give the buy your own. **You hold** is the position you already have in that ticker, so a row is about adding to, trimming or leaving alone something you own rather than about opening it. Rows are newest first, and **Analysed** carries the time because a ticker can be analysed more than once in a day.
+**Price now** is the price as of 2026-09-21 11:19 AM ET; **Day High** and **Day Low** are today's session range so far; **At analysis** is what it cost when the analyst looked. **Entry/Stop/Target** are computed by the app from the verified close and ATR, so the Stop clears one day's normal range; they are not orders that exist, and a price inside an analyst's text is the analyst's own. They are reference points, not limits: a price past the Entry does not rule a trade out. Read the analysis and judge the entry, stop and target yourself. A market buy rests this Stop and Target unless you give the buy your own. **You hold** is the position you already have in that ticker, so a row is about adding to, trimming or leaving alone something you own rather than about opening it. Rows are newest first, and **Analysed** carries the time because a ticker can be analysed more than once in a day. **Trend**, **1m / 3m**, **Volume vs normal** and **Range/day** are computed by the app from completed sessions, as of the last close, and describe the stock rather than any trade. **Trend** is the close against its 50-day and 200-day averages: UP is above both, DOWN is below both, MIXED is between them. **1m / 3m** is the price change over the last 21 and 63 sessions. **Volume vs normal** is the average volume of the last 5 sessions against the average of the last 60. **Range/day** is the average true range over 14 sessions as a share of the price: how far the stock moves on an ordinary day. A row whose price history breaks in one session, a split or a data error, says so and shows no figures.
 
-| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target | Chance | R:R | You hold | You could buy |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| INTC | 2026-09-21 09:05 | Buy | $24.80 | $25.60 | $24.10 | $24.10 | $24.35 | $22.90 | $28.60 | 62% | 2.9:1 | — | 47 share(s) |
-| ORCL | 2026-09-18 13:40 | Hold | $291.40 | $294.75 | $288.00 | $286.20 | $289.00 | $274.50 | $318.00 | 51% | 2.0:1 | — | 4 share(s) |
+| Ticker | Analysed (ET) | Decision | Price now | Day High | Day Low | At analysis | Entry | Stop | Target | Chance | R:R | Trend | 1m / 3m | Volume vs normal | Range/day | You hold | You could buy |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| INTC | 2026-09-21 09:05 | Buy | $24.80 | $25.60 | $24.10 | $24.10 | $24.35 | $22.90 | $28.60 | 62% | 2.9:1 | DOWN: 50d -4.5%, 200d -11.0% | -8.3% / -2.2% | 0.7× normal | 4.1% | — | 47 share(s) |
+| ORCL | 2026-09-18 13:40 | Hold | $291.40 | $294.75 | $288.00 | $286.20 | $289.00 | $274.50 | $318.00 | 51% | 2.0:1 | 50d +6.2%, no 200-day yet | +3.0% / — | 1.1× normal | 2.8% | — | 4 share(s) |
 
 Expected value, where the analyst gave one: INTC +0.84R.
 
@@ -121,7 +121,7 @@ Research is your main tool for deciding well. It is how you find a new trade and
 
 ## Candidates you could research
 
-Screened candidates you could research are available on request: call candidates to see them. A research of a new ticker must name one of them, and nothing on them has been analysed.
+Screened candidates you could research are available on request: call candidates to see them, each with its trend, its one- and three-month change, its volume against normal and its daily range. A research of a new ticker must name one of them, and nothing on them has been analysed.
 
 ---
 

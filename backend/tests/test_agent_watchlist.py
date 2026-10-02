@@ -451,7 +451,8 @@ def test_a_never_analysed_ticker_says_so(watching):
         _book(), [], {"AAA": 50.0}, watchlist=["AAA"], max_watchlist=4,
     )
 
-    assert "| AAA | watched | $50.00 | — | — | never | never | never | never |" in prompt
+    # Four dashes for the stock cells: nothing has read AAA's history here.
+    assert "| AAA | watched | $50.00 | — | — | — | — | — | — | never | never | never | never |" in prompt
 
 
 def test_a_previously_analysed_ticker_shows_its_staleness(watching, monkeypatch):
