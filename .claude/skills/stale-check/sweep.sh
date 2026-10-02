@@ -56,7 +56,9 @@ echo
 echo; echo "### 7. CROSS-REFERENCES AND DEAD LINKS"
 python3 - <<'PY'
 import re, subprocess, os, glob
-j = open("JOURNEY.md").read(); c = open("docs/changelog.md").read()
+# Entries from before experiment 2 live in the experiment-1 archive pages; a cite resolves in either.
+j = open("JOURNEY.md").read() + open("docs/experiment-1-journey.md").read()
+c = open("docs/changelog.md").read() + open("docs/experiment-1-changelog.md").read()
 dates = {"JOURNEY.md": set(re.findall(r'^\*\*(2026-\d\d-\d\d)', j, re.M)),
          "changelog.md": set(re.findall(r'^## (2026-\d\d-\d\d)', c, re.M))}
 files = subprocess.run(["grep", "-rl", "--include=*.py", "--include=*.ts", "--include=*.md",
