@@ -571,3 +571,20 @@ class SimOrder(SQLModel, table=True):
     filled_at: datetime.datetime | None = None
     filled_price: float | None = None
     filled_quantity: float | None = None
+
+
+class CandidateScreen(SQLModel, table=True):
+    """One name a candidate screen returned, and when.
+
+    Experiment 2 builds random control books from these rows: a random trade
+    picks its ticker from what the screens offered that day (PLAN.md). The
+    rows are what the market screens returned, before the agent's own
+    watchlist was taken out, so every book of one day draws from one list.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    screened_at: datetime.datetime = Field(index=True)
+    ticker: str = Field(index=True)
+    source: str
+    price: float
+    volume: float

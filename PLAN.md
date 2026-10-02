@@ -22,32 +22,27 @@ Written 2026-10-02. Agreed with the maintainer. Not started.
 
 Each step can merge while the live book runs.
 
-1. **A simulated broker, behind `BROKER=sim`.** It is a third module beside the Webull and Alpaca modules, and it supplies the same functions that `broker.py` exposes.
+1. **A simulated broker, behind `BROKER=sim`. Built 2026-10-02**, and checked against real Alpaca minute bars the same day. It is a third module beside the Webull and Alpaca modules, and it supplies the same functions that `broker.py` exposes.
    - **Why.** Many JOURNEY.md entries are broker defects, not agent behaviour: a sell that looked like a reversal (2026-09-05), a cancel that was accepted but not yet done (2026-09-08), combo orders, the holiday clock. A paper broker does not give real fills either. A simulator is also the base for steps 3 and 4.
    - **Fills.** A market order fills at the live quote from `quotes.py`, plus a fixed slippage in basis points that is a setting. A limit order, a resting stop and a resting target fill when a later price crosses them. A stop fills at the worse of its own price and the price that crossed it, so a gap down costs what it costs on a real exchange.
    - **Rules.** Long only, whole shares, no more cash than the book holds. A closed market refuses a buy or a sell and accepts an `adjust`, as now. Python refuses and never resizes, as now.
    - **Splits.** Do item 9 under "Later" first. A simulator that reads raw bars reads a split as a loss.
    - **A fifth guard.** The sim module imports no broker SDK and opens no network connection. A test checks both. Add the guard to `CLAUDE.md` beside the four.
    - **Done when** a test drives a bracket buy, an `adjust`, a stop hit, a target hit and a sell through `BROKER=sim`.
-2. **Replay.** This is item 1 under "Later", moved here.
+2. **Replay. Built 2026-10-02** (`backend/scripts/replay.py`). This is item 1 under "Later", moved here.
    - Store every input of each pass: the prompt, every fetch result, every quote it read.
    - Stamp each pass with a hash of its system prompt and with the exact model ID.
    - A replay runs a stored pass again with a different prompt or a different model, and serves each fetch from the store. A fetch that the store does not hold returns "not available in replay", and the replay records the call.
    - Replay only dates after the knowledge cutoff of the model under test. Before that date, the model can know the outcome.
    - **Done when** it answers the first question that waits for it: does the 2026-09-19 prompt buy INTC on 2026-09-14 at $100?
-3. **A `book_id` on every table.** No table has one now. This is the largest step, and the one step that migrates the live database.
-   - The migration gives the new column a default of 1, so every existing row stays in book 1.
-   - Each book has its own cash, positions, wakeups, memory notes, research charges and reflection.
-   - The books do not see each other. No book reads another book's passes, notes or positions.
-   - The throttle counts requests across all books, because the books share one API key.
-   - The dashboard and the site show each book and the mean of all books.
-4. **Random control books.** No LLM. They cost nothing to run.
+3. **One container per book. Built 2026-10-02, in place of a `book_id` on every table.** `compose.experiment2.example.yaml` runs four containers from one image, each with its own data volume. Each book therefore has its own database, cash, positions, wakeups, memory notes, research charges and evening review, and no book can read another, by construction. No table changes and the live database is not migrated. The books share one API key, and each throttle counts only its own book's requests, so the per-day brake is per book. Each container has its own dashboard; `backend/scripts/experiment2_report.py` reads all of them for the result.
+4. **Random control books. Built 2026-10-02** (`backend/scripts/experiment2_report.py`, which also applies the success test). No LLM. They cost nothing to run.
    - Build them after the fact, from the bar cache, for the same dates as the agent books. They live through the same market, so market luck cancels out of the comparison, and what remains is selection.
    - Each random book makes the same number of trades as the mean agent book. It takes its tickers from the candidate list of that day, and its holding periods from the distribution of the agent books. It holds no more cash than an agent book.
-   - Store the candidate list of each day if it is not stored yet. A random book needs it.
+   - Every screen is stored in `candidatescreen` since 2026-10-02, before the watchlist is taken out, so every book of one day draws from one list.
    - A random trade enters and exits at the daily close. The agent trades at intraday quotes. Report this difference beside the result. Do not correct for it.
    - Build at least 500.
-5. **Fetches for raw data.** The agent has `read`, `candidates`, `fundamentals`, `watchlist`, `track_record` and `ask_analyst`. Each of these gives it what someone else concluded, or a list. Add:
+5. **Fetches for raw data. Built 2026-10-02.** The agent has `read`, `candidates`, `fundamentals`, `watchlist`, `track_record` and `ask_analyst`. Each of these gives it what someone else concluded, or a list. Add:
    - `bars`: the daily history of a ticker, through `bars.get_bars()`.
    - `news`: the items from Google News, Finnhub and SEC 8-K that `news_sources.py` already fetches for the analysis.
    - The TradingAgents analysis stays as research the agent may buy. It is no longer the only way to look at a stock.

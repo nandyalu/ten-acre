@@ -366,3 +366,12 @@ def test_a_text_source_value_that_is_not_a_symbol_is_never_sent_to_the_vendor(sc
 
     assert sorted(sent) == ["BRK.B", "NEW1"]
     assert [c.ticker for c in found] == ["NEW1"]
+
+
+def test_the_screen_is_recorded_before_the_watchlist_is_taken_out(screened, monkeypatch):
+    """Experiment 2's random books draw from what the screens offered, and two
+    books with different watchlists must draw from one list."""
+    recorded = []
+    monkeypatch.setattr(candidates.db, "record_candidate_screen", recorded.extend)
+    assert screened(active=[_row("ZBH", price=97.0), _row("AAA")], tracked=["ZBH"])
+    assert {row["ticker"] for row in recorded} == {"ZBH", "AAA"}

@@ -257,6 +257,18 @@ def _listed() -> dict[str, tuple[str, bool]]:
     return listed
 
 
+def _record_screen(screened: list[Candidate]) -> None:
+    """Keep what the screens offered, before the watchlist is taken out, for
+    Experiment 2's random control books. A failure here never costs the menu."""
+    try:
+        db.record_candidate_screen([
+            {"ticker": c.ticker, "source": c.source, "price": c.price, "volume": c.volume}
+            for c in screened
+        ])
+    except Exception:
+        log.warning("Could not record the candidate screen", exc_info=True)
+
+
 def fetch_candidates() -> list[Candidate]:
     """Screened names not already tracked.
 
@@ -353,6 +365,10 @@ def fetch_candidates() -> list[Candidate]:
     # An ETF has no earnings or filings for the analysts to read, and a
     # leveraged one decays over a one-to-two-week hold.
     listed = _listed()
+    _record_screen([
+        c for c in found.values()
+        if c.ticker not in inactive and not listed.get(c.ticker, ("", False))[1]
+    ])
     fresh = [
         c for c in found.values()
         if c.ticker not in tracked and c.ticker not in inactive

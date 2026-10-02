@@ -9,6 +9,7 @@ from backend.database.engine import read_session, write_session
 from backend.database.models import (
     AgentTrade,
     Alert,
+    CandidateScreen,
     BotSetting,
     DailyBar,
     IntradayBar,
@@ -984,3 +985,26 @@ def get_reflections(limit: int | None = None, *, _session: Session = None) -> li
 def get_latest_reflection() -> AgentReflection | None:
     rows = get_reflections(limit=1)
     return rows[0] if rows else None
+
+
+# --- Candidate screens ----------------------------------------------------------
+
+
+@write_session
+def record_candidate_screen(rows: list[dict], *, _session: Session = None) -> None:
+    """One row per name a screen returned: ticker, source, price, volume."""
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    for row in rows:
+        _session.add(CandidateScreen(screened_at=now, **row))
+    _session.commit()
+
+
+@read_session
+def get_candidate_screens(
+    start: datetime.datetime, end: datetime.datetime, *, _session: Session = None
+) -> list[CandidateScreen]:
+    return list(_session.exec(
+        select(CandidateScreen)
+        .where(CandidateScreen.screened_at >= start, CandidateScreen.screened_at < end)
+        .order_by(CandidateScreen.screened_at)
+    ).all())

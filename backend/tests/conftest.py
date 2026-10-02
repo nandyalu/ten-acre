@@ -330,3 +330,13 @@ def isolated_trend_cells(monkeypatch):
     from backend.services import trend
 
     monkeypatch.setattr(trend, "describe_many", lambda tickers, today=None: {})
+
+
+@pytest.fixture(autouse=True)
+def no_candidate_screen_record(monkeypatch):
+    """The candidate screen writes what it found to the database. Off in every
+    test, for the reason isolated_ticker_status gives: a test must not reach
+    the developer's real database. A test that wants the rows patches it back."""
+    from backend.database import db
+
+    monkeypatch.setattr(db, "record_candidate_screen", lambda rows: None)
