@@ -111,9 +111,19 @@ def _from_yfinance(tickers, start) -> list[CorporateAction]:
 def fetch(tickers, start: datetime.date, end: datetime.date) -> list[CorporateAction]:
     from backend.services import alpaca_broker
 
+    from backend.services import market_feed
+
     tickers = sorted({t.upper() for t in tickers if t})
     if not tickers:
         return []
+    answer = market_feed.ask(
+        "corporate_actions", tickers=",".join(tickers), start=start.isoformat(), end=end.isoformat()
+    )
+    if answer is not market_feed.MISSING:
+        return [
+            CorporateAction(**{**row, "ex_date": datetime.date.fromisoformat(row["ex_date"])})
+            for row in answer or []
+        ]
     if alpaca_broker.is_paper():
         return _from_alpaca(alpaca_broker.corporate_actions(tickers, start, end))
     return _from_yfinance(tickers, start)

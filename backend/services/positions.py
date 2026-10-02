@@ -103,7 +103,7 @@ def get_current_price(ticker: str) -> float | None:
     falls back to yfinance's delayed close. Every successful fetch writes through
     to the ticker price cache (backend/database/db.py's TickerPrice table), which
     is what the dashboard's list/detail routes read from instead of fetching live."""
-    from backend.services import listings, publish  # lazy: keeps positions import-light
+    from backend.services import listings, market_feed, publish  # lazy: keeps positions import-light
     from backend.services.quotes import get_realtime_price
 
     # A ticker that stopped trading has no current price to fetch. Asking
@@ -122,6 +122,14 @@ def get_current_price(ticker: str) -> float | None:
     if publish.is_public():
         cached = db.get_cached_price(ticker)
         return cached.price if cached is not None else None
+
+    # Experiment 2: every book takes the market container's quote, so all of
+    # them see one price at one moment. See market_feed.
+    answer = market_feed.ask("quote", ticker=ticker)
+    if answer is not market_feed.MISSING:
+        if answer is not None:
+            db.set_cached_price(ticker, answer, source="market")
+        return answer
 
     price = get_realtime_price(ticker)
     if price is not None:

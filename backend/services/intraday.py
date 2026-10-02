@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 from backend.database import db
 from backend.database.models import IntradayBar
-from backend.services import alpaca_broker, quotes
+from backend.services import alpaca_broker, market_feed, quotes
 
 log = logging.getLogger("ten-acre.intraday")
 
@@ -114,6 +114,15 @@ def fetch_bars(
     with no real ceiling either — a plain count=1200 request already reached
     2001 without any sign of a floor.
     """
+    if timespan is None:
+        params = {"ticker": ticker, "count": count}
+        if end_time is not None:
+            params["end_time"] = _as_utc(end_time).isoformat()
+        answer = market_feed.ask("minutes", **params)
+        if answer is not market_feed.MISSING:
+            return None if answer is None else [
+                {**bar, "timestamp": datetime.datetime.fromisoformat(bar["timestamp"])} for bar in answer
+            ]
     market_data = quotes._get_market_data()
     if market_data is None:
         if timespan is None and alpaca_broker.is_paper():

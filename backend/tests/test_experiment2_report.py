@@ -69,3 +69,21 @@ def test_a_random_book_draws_from_the_screens_and_never_spends_more_than_it_has(
     # Every buy is AAA at 10 or 11 and the price ends at 12, so the book
     # cannot lose, and cash limits it to the budget.
     assert 0 <= ret <= 0.2
+
+
+def test_the_days_a_book_fetched_its_own_data_are_reported(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "book.db"
+    con = sqlite3.connect(path)
+    con.execute("create table marketfetch (day date, kind text, source text, count int)")
+    con.executemany("insert into marketfetch values (?, ?, ?, ?)", [
+        ("2026-10-12", "quote", "market", 40),
+        ("2026-10-12", "quote", "own", 2),
+        ("2026-10-12", "daily", "own", 1),
+        ("2026-10-09", "quote", "own", 5),  # before the start
+    ])
+    con.commit()
+    assert r.read_own_fetches(str(path), datetime.date(2026, 10, 12)) == {"2026-10-12": 3}
+    sqlite3.connect(tmp_path / "old.db").execute("create table other (x int)")
+    assert r.read_own_fetches(str(tmp_path / "old.db"), datetime.date(2026, 10, 12)) == {}

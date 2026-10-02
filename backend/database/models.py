@@ -625,3 +625,19 @@ class CorporateAction(SQLModel, table=True):
     price_factor: float | None = None
     applied_at: datetime.datetime | None = None
     note: str | None = None
+
+
+class MarketFetch(SQLModel, table=True):
+    """How many fetches of one kind each source answered on one day.
+
+    Experiment 2 gives every book its market data from one market container,
+    so that all books see the same prices and the same screens. A book that
+    cannot reach it fetches its own data, and its inputs can then differ from
+    the inputs of the other books. ``source`` is "market" or "own". The report
+    reads these rows to show where that happened.
+    """
+
+    day: datetime.date = Field(primary_key=True)
+    kind: str = Field(primary_key=True)  # "quote" | "daily" | "minutes" | "screen" | "corporate_actions"
+    source: str = Field(primary_key=True)
+    count: int = 0

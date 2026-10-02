@@ -92,6 +92,21 @@ def read_screens(paths: list[str]) -> dict[datetime.date, set[str]]:
     return dict(universe)
 
 
+def read_own_fetches(path: str, start: datetime.date) -> dict[str, int]:
+    """For each day from ``start``, how many fetches the book made itself
+    because the market container did not answer. On those days its inputs can
+    differ from the other books' inputs. Empty is the expected answer."""
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        rows = con.execute(
+            "select day, sum(count) from marketfetch where source = 'own' and day >= ? group by day",
+            (start.isoformat(),),
+        ).fetchall()
+    except sqlite3.OperationalError:  # a database from before the table
+        return {}
+    return {str(day): n for day, n in rows}
+
+
 def _day(value) -> datetime.date:
     return datetime.date.fromisoformat(str(value)[:10])
 
@@ -320,6 +335,7 @@ def main() -> int:
                 "return": ret,
                 "exposure_matched_spy": exposure_matched_spy(run, spy),
                 "max_drawdown": max_drawdown(run.equity),
+                "own_fetches_by_day": read_own_fetches(path, args.start),
             }
             for path, ret, run in zip(args.books, agent_returns, runs)
         ],

@@ -47,8 +47,13 @@ Each step can merge while the live book runs.
    - `news`: the items from Google News, Finnhub and SEC 8-K that `news_sources.py` already fetches for the analysis.
    - The TradingAgents analysis stays as research the agent may buy. It is no longer the only way to look at a stock.
    - A fetch is a prompt change. Write the JOURNEY.md entry, update `.claude/rules/agent.md`, and run `probe-the-prompt`, as `CLAUDE.md` says.
-6. **Choose the model.** See "The model" below.
-7. **Write the test, freeze, start.** Copy "The success test" below into a JOURNEY.md entry, word for word. Set a new `EXPERIMENT_START_DATE`. From that date to the measurement date, the prompt and the model do not change. A defect fix that does not change what the agent sees is permitted, with a JOURNEY.md entry.
+6. **One source of market data. Built 2026-10-02** (`backend/services/market_feed.py`). The same image runs as a market container with `MARKET_MODE=1`. It holds the Webull keys and runs no agent. Each book sets `MARKET_DATA_URL` and takes its quotes, daily and minute bars, candidate screens and corporate actions from it.
+   - **Why.** The same input for every book. Without it, two books can see two prices for one ticker at one moment, and the books without Webull keys fall back to Yahoo's delayed close. Fewer vendor calls are a side effect, not the reason.
+   - The market container keeps each answer for a short time (30 seconds for a quote, 5 minutes for a screen), so books that ask at nearly the same moment get the same answer.
+   - A book that cannot reach it fetches its own data, and counts the fetch in `marketfetch`. The report lists those days for each book.
+   - Not routed through it: `news`, `fundamentals` and the regime figures. Real-time alerts wait for evidence that the 15-minute poll costs something.
+7. **Choose the model.** See "The model" below.
+8. **Write the test, freeze, start.** Copy "The success test" below into a JOURNEY.md entry, word for word. Set a new `EXPERIMENT_START_DATE`. From that date to the measurement date, the prompt and the model do not change. A defect fix that does not change what the agent sees is permitted, with a JOURNEY.md entry.
 
 ### The success test, written before the start
 

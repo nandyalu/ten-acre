@@ -14,19 +14,27 @@
 #
 # Every book reads the same .env. Do not give one book a value the others do
 # not have: a difference between books is a difference in the experiment.
+#
+# The market container is the same image with MARKET_MODE=1. It holds the
+# Webull keys and gives every book the same quotes, daily and minute bars,
+# candidate screens and corporate actions (backend/services/market_feed.py).
+# It runs no agent. A book that cannot reach it fetches its own data, and
+# counts each such fetch in its `marketfetch` table; the report shows them.
 
 x-book: &book
   image: ten-acre:exp2
   restart: unless-stopped
   stop_grace_period: 20s
+  depends_on: [ten-acre-market]
   environment:
+    # --- market data: one source for every book -------------------------------
+    - MARKET_DATA_URL=http://ten-acre-market:8080
     # --- the broker -----------------------------------------------------------
     - BROKER=sim
     # Fill slippage in basis points, on a market order and on a stop.
     - SIM_SLIPPAGE_BPS=${SIM_SLIPPAGE_BPS:-5}
-    # Market data only: the candidate screens and the 1-minute bars that fill
-    # a resting stop or target. No ALPACA_ACCOUNT_NUMBER, so no Alpaca order
-    # can be placed even by mistake.
+    # Market data only, used when the market container does not answer. No
+    # ALPACA_ACCOUNT_NUMBER, so no Alpaca order can be placed even by mistake.
     - ALPACA_API_KEY=${ALPACA_API_KEY:-}
     - ALPACA_API_SECRET=${ALPACA_API_SECRET:-}
 
@@ -61,6 +69,28 @@ x-book: &book
     # No DISCORD_WEBHOOK_URL: four books in one channel cannot be told apart.
 
 services:
+  ten-acre-market:
+    image: ten-acre:exp2
+    container_name: ten-acre-market
+    restart: unless-stopped
+    stop_grace_period: 20s
+    ports: ["8130:8080"]
+    volumes: ["market_data:/app/data"]
+    environment:
+      - MARKET_MODE=1
+      # No order flow runs here, and BROKER=sim makes sure of it.
+      - BROKER=sim
+      # Quotes, bars and screens. No WEBULL_ACCOUNT_ID: this container places
+      # no order. The pace in quotes.py counts only this container's
+      # requests, not those of another deployment on the same key.
+      - WEBULL_SANDBOX=1
+      - WEBULL_APP_KEY=${WEBULL_APP_KEY:-}
+      - WEBULL_APP_SECRET=${WEBULL_APP_SECRET:-}
+      - WEBULL_OPENAPI_TOKEN_DIR=/app/data/webull
+      # Corporate actions, and the minute bars and screens when Webull fails.
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - ALPACA_API_SECRET=${ALPACA_API_SECRET:-}
+
   ten-acre-b1:
     <<: *book
     container_name: ten-acre-b1
@@ -83,6 +113,7 @@ services:
     volumes: ["book4_data:/app/data"]
 
 volumes:
+  market_data:
   book1_data:
   book2_data:
   book3_data:

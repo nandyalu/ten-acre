@@ -10,6 +10,7 @@ from backend.database.models import (
     AgentTrade,
     Alert,
     CandidateScreen,
+    MarketFetch,
     SystemPrompt,
     BotSetting,
     DailyBar,
@@ -997,6 +998,22 @@ def record_candidate_screen(rows: list[dict], *, _session: Session = None) -> No
     now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     for row in rows:
         _session.add(CandidateScreen(screened_at=now, **row))
+    _session.commit()
+
+
+@write_session
+def count_market_fetch(kind: str, source: str, *, _session: Session = None) -> None:
+    """Add one to today's count of ``kind`` fetches that ``source`` answered."""
+    from sqlalchemy.dialects.sqlite import insert
+
+    # One statement, so two threads that count at once cannot both insert.
+    _session.execute(
+        insert(MarketFetch)
+        .values(day=datetime.date.today(), kind=kind, source=source, count=1)
+        .on_conflict_do_update(
+            index_elements=["day", "kind", "source"], set_={"count": MarketFetch.count + 1}
+        )
+    )
     _session.commit()
 
 
