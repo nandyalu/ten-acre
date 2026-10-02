@@ -103,8 +103,30 @@ def _alpaca() -> Requirement:
     )
 
 
+def _sim() -> Requirement:
+    """The simulator needs no broker key. It needs minute bars to fill a
+    resting order well, and those come from either market-data key."""
+    bars = _configured("ALPACA_API_KEY", "ALPACA_API_SECRET") or _configured(
+        "WEBULL_APP_KEY", "WEBULL_APP_SECRET"
+    )
+    return Requirement(
+        key="sim_market_data",
+        label="Minute bars for the simulated broker",
+        ready=bars,
+        blocking=False,
+        detail=(
+            "Orders stay inside this app. Resting stops and targets fill from 1-minute bars."
+            if bars else
+            "Orders stay inside this app, but no market-data key is set, so a resting stop "
+            "or target is checked against the quote at each settle and not against every "
+            "minute between. Alpaca paper keys are enough, and they need no account number."
+        ),
+        fix="" if bars else "ALPACA_API_KEY=your-paper-key\nALPACA_API_SECRET=your-paper-secret",
+    )
+
+
 def _broker_credentials() -> Requirement:
-    return _alpaca() if broker.name() == "alpaca" else _webull()
+    return {"alpaca": _alpaca, "sim": _sim}.get(broker.name(), _webull)()
 
 
 def _webull() -> Requirement:
@@ -126,6 +148,15 @@ def _webull() -> Requirement:
 def _sandbox() -> Requirement:
     ready = broker.is_paper()
     alpaca = broker.name() == "alpaca"
+    if broker.name() == "sim":
+        return Requirement(
+            key="sandbox",
+            label="Simulated trading",
+            ready=True,
+            blocking=True,
+            detail="Every order stays inside this app. The simulated broker has no host to reach.",
+            fix="",
+        )
     return Requirement(
         key="sandbox",
         label="Simulated trading",

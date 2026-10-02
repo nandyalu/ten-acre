@@ -533,3 +533,41 @@ class TickerPrice(SQLModel, table=True):
     source: str | None = None  # "webull" | "yfinance", for debugging
 
 
+
+
+class SimOrder(SQLModel, table=True):
+    """One order at the in-process simulated broker, ``BROKER=sim``.
+
+    This table is the simulated broker's own state: what rests, what filled,
+    and at what price. It is not the agent's ledger. ``AgentTrade`` stays the
+    book of record, and it learns of a fill the same way it does from Webull or
+    Alpaca, by asking ``get_order_detail``.
+
+    ``status`` uses the words the callers test for: ``HELD`` for an exit leg
+    whose entry has not filled, ``SUBMITTED`` for an order that is working,
+    then ``FILLED``, ``CANCELLED``, ``EXPIRED`` or ``REJECTED``.
+
+    ``checked_through`` is the time up to which the price path has been read
+    for this order. A fill is decided from the bars after it and never from a
+    bar before the order existed.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    client_order_id: str = Field(unique=True, index=True)
+    ticker: str = Field(index=True)
+    side: str  # "BUY" | "SELL"
+    order_type: str  # "market" | "limit" | "stop"
+    quantity: float
+    limit_price: float | None = None
+    stop_price: float | None = None
+    time_in_force: str = "DAY"  # "DAY" | "GTC"
+    status: str = Field(default="SUBMITTED", index=True)
+    # The entry a bracket leg waits on, and the group whose other legs one
+    # fill cancels (one-cancels-other).
+    parent_id: str | None = Field(default=None, index=True)
+    group_id: str | None = Field(default=None, index=True)
+    placed_at: datetime.datetime
+    checked_through: datetime.datetime
+    filled_at: datetime.datetime | None = None
+    filled_price: float | None = None
+    filled_quantity: float | None = None
