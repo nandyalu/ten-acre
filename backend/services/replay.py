@@ -22,6 +22,7 @@ test.** Before it, the model may know what the price did next.
 """
 import json
 
+from backend.database import db
 from backend.services import agent, analysis, decision_schema, llm_gemini
 
 # The text the app returns when a fetch fails (ToolContext.fetch). The model
@@ -74,11 +75,13 @@ def turns_of(run) -> list[dict]:
 
 def replay_turn(turn: dict, *, model: str | None = None, system: str | None = None, generate=None) -> dict:
     """Ask ``turn`` again. ``system`` defaults to the one the turn was sent,
-    and to today's fixed rules for a turn recorded before 2026-10-02, which
-    stored none. ``model`` defaults to the deployment's decision model."""
+    looked up by its hash, and to today's fixed rules for a turn recorded
+    before 2026-10-02, which has no hash. ``model`` defaults to the
+    deployment's decision model."""
     if turn.get("channel") != "tool":
         raise ValueError("only a tool-channel turn can be replayed; the JSON channel has no fetches to serve")
-    system = system or turn.get("system") or agent.SYSTEM_PROMPT_TOOL
+    recorded = db.get_system_prompt(turn["system_sha"]) if turn.get("system_sha") else None
+    system = system or recorded or agent.SYSTEM_PROMPT_TOOL
     model = model or analysis.decision_model()
     fetches = RecordedFetches(turn.get("exchanges") or [])
     budget = agent._fresh_budget()
@@ -90,7 +93,7 @@ def replay_turn(turn: dict, *, model: str | None = None, system: str | None = No
     return {
         "model": model,
         "system_sha": agent.system_sha(system),
-        "system_was_recorded": bool(turn.get("system")),
+        "system_was_recorded": recorded is not None,
         "reasoning": reasoning,
         "orders": orders,
         "response": reply.content,

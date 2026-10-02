@@ -282,19 +282,26 @@ def main() -> int:
             }
         return cache[ticker]
 
+    # The books' own ledgers are already in post-split units. The bars cached
+    # here must be too, before any is read.
+    from backend.services import corporate_actions
+
+    books = [read_book(p) for p in args.books]
+    universe = read_screens(args.books)
+    traded = {t.ticker for trades, _ in books for t in trades}
+    corporate_actions.check(traded.union(*universe.values()) | {"SPY"})
+
     days = sorted(d for d in closes("SPY") if args.start <= d <= args.end)
     if len(days) < 2:
         print("Fewer than two sessions in the window.")
         return 1
 
-    books = [read_book(p) for p in args.books]
     runs = [series(t, c, closes, days, args.budget) for t, c in books]
     agent_returns = [r.equity[-1] / args.budget - 1 for r in runs]
     trips = [trip for t, _ in books for trip in round_trips(t, days)]
     holds = [h for h, _ in trips] or [5]
     fractions = [cost / args.budget for _, cost in trips] or [0.2]
     n_buys = round(statistics.fmean(sum(1 for t in tr if t.side == "buy") for tr, _ in books))
-    universe = read_screens(args.books)
     random_returns = [
         random_book(rng, universe, days, closes, n_buys, holds, fractions, args.budget)
         for _ in range(args.random)

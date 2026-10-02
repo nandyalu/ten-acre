@@ -588,3 +588,40 @@ class CandidateScreen(SQLModel, table=True):
     source: str
     price: float
     volume: float
+
+
+class SystemPrompt(SQLModel, table=True):
+    """Each distinct system message a decision turn was sent, once.
+
+    A turn records only ``system_sha``. The text changes when the fixed rules
+    change, which is rare, so storing it on every turn would repeat 9,000
+    characters a turn for nothing. A replay looks the text up here.
+    """
+
+    sha: str = Field(primary_key=True)
+    text: str
+    first_seen: datetime.datetime
+
+
+class CorporateAction(SQLModel, table=True):
+    """A split or a spin-off, and whether this deployment has applied it.
+
+    Applied once, the way a broker applies one: every price, share count and
+    resting order of the ticker from before ``ex_date`` moves to the new
+    units. ``corporate_actions.apply`` does it, and ``applied_at`` keeps it
+    from happening twice.
+    """
+
+    id: str = Field(primary_key=True)  # the vendor's id for the action
+    ticker: str = Field(index=True)
+    kind: str  # "split" | "spin_off"
+    ex_date: datetime.date = Field(index=True)
+    # A split: new shares per old share (10 for NVDA's 10-for-1, 0.1 for a
+    # 1-for-10 reverse split). A spin-off: child shares per parent share.
+    ratio: float
+    child: str | None = None  # the spun-off ticker
+    # What a price from before ex_date is multiplied by: 1/ratio for a split,
+    # the parent's share of the combined value for a spin-off. Set on apply.
+    price_factor: float | None = None
+    applied_at: datetime.datetime | None = None
+    note: str | None = None

@@ -3863,6 +3863,22 @@ def system_sha(system: str) -> str:
     return hashlib.sha256(system.encode("utf-8")).hexdigest()[:16]
 
 
+_remembered_systems: set[str] = set()
+
+
+def _remember_system(system: str) -> str:
+    """The hash of ``system``, after storing its text once. A failure to store
+    never costs the turn: the turn is the record, the text is for replay."""
+    sha = system_sha(system)
+    if sha not in _remembered_systems:
+        try:
+            db.remember_system_prompt(sha, system)
+            _remembered_systems.add(sha)
+        except Exception:
+            log.warning("Could not store the system prompt %s", sha, exc_info=True)
+    return sha
+
+
 def _turn(prompt: str, answer) -> dict:
     """One turn of a pass, for the record.
 
@@ -3883,14 +3899,13 @@ def _turn(prompt: str, answer) -> dict:
     """
     reasoning, orders = parse_decision(answer)
     channel = getattr(answer, "channel", None) or "json"
-    system = system_prompt_for(channel)
+    sha = _remember_system(system_prompt_for(channel))
     return {
         "prompt": str(prompt or ""),
-        # The system message this turn was sent with, and its hash
-        # (2026-10-02). A replay sends it again; the hash says at a glance
-        # which turns saw the same fixed rules. Absent before that date.
-        "system": system,
-        "system_sha": system_sha(system),
+        # The hash of the system message this turn was sent (2026-10-02). The
+        # text is stored once per hash, in `systemprompt`, and a replay reads
+        # it from there. Absent before that date.
+        "system_sha": sha,
         "response": str(answer or ""),
         "thinking": getattr(answer, "thinking", None),
         # The fetches this turn made on the tool channel, in order, with what

@@ -10,6 +10,7 @@ from backend.database.models import (
     AgentTrade,
     Alert,
     CandidateScreen,
+    SystemPrompt,
     BotSetting,
     DailyBar,
     IntradayBar,
@@ -1008,3 +1009,23 @@ def get_candidate_screens(
         .where(CandidateScreen.screened_at >= start, CandidateScreen.screened_at < end)
         .order_by(CandidateScreen.screened_at)
     ).all())
+
+
+# --- System prompts ------------------------------------------------------------
+
+
+@write_session
+def remember_system_prompt(sha: str, text: str, *, _session: Session = None) -> None:
+    """Store a system message once, by its hash. A second call does nothing."""
+    if _session.get(SystemPrompt, sha) is None:
+        _session.add(SystemPrompt(
+            sha=sha, text=text,
+            first_seen=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+        ))
+        _session.commit()
+
+
+@read_session
+def get_system_prompt(sha: str, *, _session: Session = None) -> str | None:
+    row = _session.get(SystemPrompt, sha)
+    return row.text if row else None

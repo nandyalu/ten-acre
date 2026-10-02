@@ -340,3 +340,27 @@ def no_candidate_screen_record(monkeypatch):
     from backend.database import db
 
     monkeypatch.setattr(db, "record_candidate_screen", lambda rows: None)
+
+
+@pytest.fixture(autouse=True)
+def no_system_prompt_record(monkeypatch):
+    """Every decision turn stores its system message once. Off in every test,
+    for the same reason as the screen record above."""
+    from backend.database import db
+
+    monkeypatch.setattr(db, "remember_system_prompt", lambda sha, text: None)
+
+
+@pytest.fixture(autouse=True)
+def corporate_actions_on_an_empty_database(monkeypatch):
+    """Every Webull bar fetch asks corporate_actions to adjust the rows, and
+    that reads a table. An empty in-memory database by default, so no test
+    reaches the real one; test_corporate_actions supplies its own."""
+    from sqlalchemy import StaticPool
+    from sqlmodel import SQLModel, create_engine
+
+    from backend.services import corporate_actions
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(corporate_actions, "_engine", lambda: engine)

@@ -148,7 +148,11 @@ def _fetch_history(
     today = today or datetime.date.today()
     bars = _fetch_from_webull(ticker, start, today)
     if bars is not None:
-        return bars
+        # Webull's history is raw: a split shows as a jump. Yahoo's arrives
+        # adjusted already. See corporate_actions.
+        from backend.services import corporate_actions
+
+        return corporate_actions.adjust_raw(ticker, bars)
     return _fetch_from_yfinance(ticker, start)
 
 

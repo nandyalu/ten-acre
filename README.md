@@ -45,6 +45,7 @@ When something needs correcting, the route is deliberate: write down what change
 | **whenever it asked** | **The agent sets every one of its own passes.** It names the next time, and that time becomes a real alarm. Minimum 5 minutes, maximum 4 days, any hour |
 | **15 min before the close** | A last pass before the close, if it has not just had one: 3:45 PM ET, or 12:45 PM on a half-day. Read off the Eastern close rather than the clock above, so it does not drift by an hour twice a year |
 | every 15 min | The watchdog: big moves, volume spikes, breached stops, reached targets |
+| every hour | Splits and spin-offs: one that falls due on a tracked or held stock is applied to its prices, the book and the resting orders, and the agent is told |
 | 21:30 | Grading, then the journal is rewritten |
 | Fri 23:00 | The weekly digest: the week's outcomes, the win-rate trend, and the book |
 
