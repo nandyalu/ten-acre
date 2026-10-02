@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import threading
+import threading
 import time
 
 log = logging.getLogger("ten-acre.quotes")
@@ -21,7 +22,14 @@ _SANDBOX_ENDPOINT = "api.sandbox.webull.com"
 _api_client = None
 _api_client_done = False
 _market_data = None
-_init_done = False
+# One lock for both lazy clients. Until 2026-10-02 `get_api_client` set its
+# done flag before it built the client, so a second thread arriving in that
+# window read None, and `_get_market_data` remembered that None for the life
+# of the process. The scheduler starts the watchdog and the snapshot export
+# in the same second at startup, so the live container lost every batch
+# snapshot, and every realtime quote with it, until its next restart. A
+# re-entrant lock, because `_get_market_data` calls `get_api_client` inside it.
+_client_lock = threading.RLock()
 # A process-local memo in front of TickerStatus.webull_category, so a warm
 # process costs no query per request and a cold one costs no extra vendor
 # request. Before 2026-09-09 this dict was the only copy, and every restart
@@ -191,9 +199,19 @@ def get_api_client():
     """Shared, token-initialized Webull ApiClient;
     None when keys aren't configured or initialization failed."""
     global _api_client, _api_client_done
-    if _api_client_done:
+    with _client_lock:
+        if _api_client_done:
+            return _api_client
+        _api_client = _build_api_client()
+        # Set after the attempt, never before it: a caller on another thread
+        # waits at the lock and reads the finished answer, not the gap.
+        _api_client_done = True
         return _api_client
-    _api_client_done = True
+
+
+def _build_api_client():
+    """One attempt at the token-initialized client; None when keys are not
+    configured or the initialization failed."""
     app_key = os.environ.get("WEBULL_APP_KEY")
     app_secret = os.environ.get("WEBULL_APP_SECRET")
     if not app_key or not app_secret:
@@ -218,25 +236,30 @@ def get_api_client():
         # The SDK's DataClient/TradeClient would do this too, but they also
         # force-install a log file in cwd, so initialize directly.
         ClientInitializer.initializer(api_client)
-        _api_client = api_client
+        return api_client
     except Exception:
         log.exception("Webull client init failed — falling back to yfinance")
-        _api_client = None
-    return _api_client
+        return None
 
 
 def _get_market_data():
-    global _market_data, _init_done
-    if _init_done:
-        return _market_data
-    _init_done = True
-    api_client = get_api_client()
-    if api_client is None:
-        return None
-    from webull.data.quotes.market_data import MarketData
+    """The shared MarketData client, built on first use; None without a client.
 
-    _market_data = MarketData(api_client)
-    return _market_data
+    A None answer is not remembered. `get_api_client` already remembers its
+    own, so asking again costs nothing, and a process that asked once before
+    the client existed is not left without market data for good.
+    """
+    global _market_data
+    with _client_lock:
+        if _market_data is not None:
+            return _market_data
+        api_client = get_api_client()
+        if api_client is None:
+            return None
+        from webull.data.quotes.market_data import MarketData
+
+        _market_data = MarketData(api_client)
+        return _market_data
 
 
 def payload_rows(payload) -> list[dict]:

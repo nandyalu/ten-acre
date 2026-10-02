@@ -7,6 +7,10 @@ removed on 2026-09-01, and it still told the reader to "run /analyze first".
 import pytest
 
 from backend.services import quotes
+
+# conftest replaces get_api_client for every test; the real one is kept here,
+# at import time, for the tests that are about it.
+_REAL_GET_API_CLIENT = quotes.get_api_client
 from backend.services.quotes import extract_price
 
 
@@ -142,3 +146,69 @@ def test_get_snapshots_leaves_out_a_value_that_cannot_travel_in_the_list(monkeyp
 
     assert sent == ["AAPL,MSFT,BRK.B"]
     assert [r["symbol"] for r in rows] == ["AAPL", "MSFT", "BRK.B"]
+
+
+def test_a_second_thread_arriving_during_client_init_waits_for_the_client(monkeypatch):
+    """Until 2026-10-02 the done flag was set before the client was built, so a
+    thread arriving in that window read None and `_get_market_data` kept that
+    None for the life of the process. The watchdog and the snapshot export
+    start in the same second, so the live container ran without a market-data
+    client, and without any batch snapshot, until its next restart."""
+    import sys
+    import threading
+    import time
+    import types
+
+    class FakeApiClient:
+        def __init__(self, key, secret, region):
+            pass
+
+        def add_endpoint(self, region, endpoint):
+            pass
+
+    class FakeInitializer:
+        @staticmethod
+        def initializer(client):
+            time.sleep(0.3)  # the window the second thread used to fall into
+
+    monkeypatch.setitem(sys.modules, "webull.core.client", types.SimpleNamespace(ApiClient=FakeApiClient))
+    monkeypatch.setitem(
+        sys.modules, "webull.core.http.initializer.client_initializer",
+        types.SimpleNamespace(ClientInitializer=FakeInitializer),
+    )
+    monkeypatch.setenv("WEBULL_APP_KEY", "k")
+    monkeypatch.setenv("WEBULL_APP_SECRET", "s")
+    monkeypatch.setattr(quotes, "_api_client", None)
+    monkeypatch.setattr(quotes, "_api_client_done", False)
+    monkeypatch.setattr(quotes, "get_api_client", _REAL_GET_API_CLIENT)
+
+    seen = {}
+    first = threading.Thread(target=lambda: seen.update(first=quotes.get_api_client()))
+    first.start()
+    time.sleep(0.05)
+    seen["second"] = quotes.get_api_client()
+    first.join()
+
+    assert isinstance(seen["first"], FakeApiClient)
+    assert seen["second"] is seen["first"], "the second caller must wait, not read the gap"
+
+
+def test_market_data_asked_for_before_the_client_exists_is_not_lost_for_good(monkeypatch):
+    import sys
+    import types
+
+    class FakeMarketData:
+        def __init__(self, client):
+            self.client = client
+
+    monkeypatch.setitem(
+        sys.modules, "webull.data.quotes.market_data", types.SimpleNamespace(MarketData=FakeMarketData)
+    )
+    monkeypatch.setattr(quotes, "_market_data", None)
+    answers = iter([None, "client"])
+    monkeypatch.setattr(quotes, "get_api_client", lambda: next(answers))
+
+    assert quotes._get_market_data() is None
+    later = quotes._get_market_data()
+    assert isinstance(later, FakeMarketData) and later.client == "client"
+    assert quotes._get_market_data() is later
