@@ -394,6 +394,10 @@ def _build_graph(
     config["deep_think_llm"] = config["quick_think_llm"] = model or get_model()
     if provider:
         config["llm_provider"] = provider
+    # TradingAgents v0.5.2 reads statements from SEC EDGAR first. Keep yfinance
+    # until that change gets its own JOURNEY.md entry, so the rebase onto v0.5.2
+    # does not also change what the fundamentals analyst reads.
+    config["data_vendors"] = {**config["data_vendors"], "fundamental_data": "yfinance"}
     # A Google request that never answers must fail, not wait forever. The
     # decision pass's text fallback uses this graph's client, so without this
     # a hung decide call could fall back into a second hang. Other providers

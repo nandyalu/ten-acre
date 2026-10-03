@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-10-03
+
+- **Dependencies** — The TradingAgents fork is rebased onto upstream v0.5.2, and the pin moves to `b795801`. `yf_retry` now lives in `tradingagents.dataflows.vendors.yahoo.common`, so `bars`, `fundamentals`, `positions`, `regime` and `watchdog` import it from there. v0.5.2 reads company statements from SEC EDGAR first, so `analysis._build_graph` sets `fundamental_data` back to `yfinance`. The fundamentals analyst reads the same source as before, and the SEC EDGAR switch needs its own journey entry when it is made. The lock moves many packages, and the fork needs Python 3.11 or later and pandas 3.
+
 ## 2026-10-02
 
 - **Dependencies** — The TradingAgents pin moves four commits. `propagate()` takes an `on_chunk` callback to follow a run and to cancel it, and passes the graph callbacks to the stream. The Gemini client now takes `client_args`, so a caller can count each HTTP request, SDK retries included. This app does not use either yet. The analyst change in the same move is in [the journey](journey.md).

@@ -18,46 +18,32 @@ paths:
 
 ## The branch
 
-**The checked-out branch is `trading-helper-custom`, based on upstream v0.4.1** (merge `9dee508`, 2026-09-01). `fork/main` is an ancestor and stays at v0.3.1 plus six commits, so compare against `origin/main`, not `fork/main`.
+**The checked-out branch is `trading-helper-custom`, rebased onto upstream tag `v0.5.2` on 2026-10-03.** `git log v0.5.2..trading-helper-custom` lists only our commits, and `git diff v0.5.2 trading-helper-custom` is our whole delta. `fork/main` is an old ancestor at v0.3.1, so compare against the upstream tag, not `fork/main`.
 
-On top of v0.4.1, the branch carries three groups of commits.
+**The branch before the rebase is kept.** The tag `pre-v052-rebase` (`f4d67ab`) and the fork branch `archive/pre-v052-2026-10` hold it. Parent-repo commits before 2026-10-03 point at SHAs on that history, so never delete either one.
 
-**Cherry-picks from upstream pull requests that were open when we took them:**
+The rebase put our changes on top as eight commits, grouped by area, then a comment fix and a README trim. The eight came from one merge, so only the last of them is known to pass the suite. The message of each commit names the old SHAs it ports.
 
-| PR | What it adds |
-|---|---|
-| #1071 | Simpler vendor routing, and a `CircuitBreaker` for vendor failures |
-| #1149 | A guide for custom Ollama Modelfiles (fast and accurate profiles) |
-| #1074 | A retry when a JSON response body does not decode |
-| #1082 | A probability and risk/reward review on every trader proposal |
-| #1134 | Reddit OAuth2, with the RSS feed as the fallback |
-| #1122 | A candidate screener script and trade-horizon-aware prompts |
-| #1324 | The FRED API key removed from HTTP error text (taken 2026-09-14 as `2a57bfa`, `ecfac18`) |
-| #1328 | A StockTwits read that stops at 5 MiB (taken 2026-09-14 as `8e550e1`) |
+| Commit | Area | What it carries |
+|---|---|---|
+| 1 | Router | A `CircuitBreaker` around each vendor call (upstream PR #1071), inside upstream's `route_to_vendor`. `BadVendorArgumentError` marks a wrong request to a healthy vendor: no breaker trip, no fall-through, and the valid values reach the model. `tests/conftest.py` resets the breaker around every test. |
+| 2 | LLM clients | `llm_timeout`, forwarded in `llm_clients/factory.py`. The retry of an undecodable JSON body (upstream PR #1074). `json_schema` structured output on a local OpenAI-compatible server, with no tool and no `tool_choice`. `client_args` for Gemini. The Ollama Modelfile guide (upstream PR #1149). |
+| 3 | Social and macro data | Reddit: OAuth (upstream PR #1134), trawl one subreddit at a time when `REDDIT_TRAWL_URL` is set, else one public feed. A web-search supplement when Reddit or StockTwits is unavailable. The StockTwits 5 MiB cap (upstream PR #1328). `fred.redact` for FRED's own 400 body. |
+| 4 | News | Global news takes one bucket per query in turn, so the first query cannot fill the limit alone. `get_news` adds Google News, Finnhub and SEC 8-K, with an optional laya grade (`LAYA_URL`). |
+| 5 | Analysts | The market and fundamentals analysts fetch their data first and declare `TOOLS = ()`, so v0.5.2 builds each as one model turn. The indicator set per horizon is `INDICATORS` and `WINDOWS` in `market_analyst.py`. The news analyst keeps upstream's prompt and wrap-up turn, and adds Gemini search grounding and the printed-tool-call recovery in `agents/tool_call_recovery.py`. The sentiment sources are fetched at the same time. |
+| 6 | Decision chain | `TraderProposal` has no price fields: the Trader states `stop_atr_multiple` and `target_r_multiple`, and `resolve_levels` computes the prices. See `analysis-output.md`. The probability and risk/reward review (upstream PR #1082). The horizon instruction in the research manager, trader and portfolio manager (upstream PR #1122). |
+| 7 | Graph | `propagate(horizon=..., on_chunk=...)`, with the horizon in the checkpoint signature. Each analyst's tool node returns a tool error to the model (`_return_error_to_the_model` in `graph/setup.py`, re-exported from `trading_graph`; `backend/tests/test_tool_errors_reach_the_model.py` guards it). The news analyst on a separate Google model when grounding is on (`TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING_MODEL`). |
+| 8 | Screener and docs | The candidate screener scripts (upstream PR #1122) and the fork section of the README. |
 
-Commit `4c6c356` repairs how those picks fit together. #1189 (an unparseable rating becomes REVIEW) now arrives from upstream as `43fc275`. #1200 is no longer a separate commit on the branch.
+**Gemini grounding needs `tool_config.include_server_side_tool_invocations`.** Gemini rejects `google_search` mixed with the analyst's own tools without it, confirmed against the live API on 2026-09-17. Gemini 3 models get no grounding quota on a Free-tier key; Gemma models (for example `gemma-4-31b-it`) do.
 
 **The #1134 OAuth path is dead for this project.** Reddit's Responsible Builder Policy ended self-serve API app creation, so nobody can get the credentials for a personal tool. The RSS feed is the supported path. See [docs/setup.md](../../docs/setup.md).
 
-**Our own commits.** These change how an analysis runs. Read the commit before you drop or reorder one in a rebase:
+**Upstream's parallel analysts replaced ours.** Upstream `9968bd8` runs each analyst in a graph of its own, the same design as our old `fc2b259`. One difference reaches the prompt: every analyst now opens with the ticker as its first message, where analysts two to four used to get a placeholder sentence.
 
-- `64dcfb1`, `afdb60a`, `b7d93b1`: the Trader states ATR multiples, and `resolve_levels` computes the prices. See `analysis-output.md`.
-- `bfac9bc`: every macro query is fetched, not only the first.
-- `8535395`, `d53fa23`, `4f6a694`: an analyst that answers without fetching data, and a tool call printed as text.
-- `941a5f4`: a sentiment score on the wrong scale is rescaled.
-- `e403ad7`: a tool error goes to the model. `backend/tests/test_tool_errors_reach_the_model.py` guards it.
-- `9d8f437`: repairs after the rebase onto v0.4.1.
-- `f195daa`: the four analysts of one analysis run at the same time.
-- `67fc9f5`: upstream `7cc478a` cherry-picked from v0.4.2, with the OAuth path kept.
-- `5260a28`: Reddit through a trawl browser when `REDDIT_TRAWL_URL` is set. See `market-data.md`.
-- `ce80173`: the FRED API key removed from connection errors and timeouts too. #1324 missed that path, and a `requests.ConnectionError` quotes the full URL with `api_key=`.
-- `7a6d4c2` (merge of fork PR #1) + `78dbb52`: the news analyst can attach Gemini's built-in search-grounding tool, behind `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING` (default off). The PR as submitted needed a fix: Gemini rejects `google_search` mixed with the analyst's custom tools unless `tool_config.include_server_side_tool_invocations` is set, confirmed against the live API. **Do not flip the default on** — the Free tier gives Gemini 3 zero grounding quota (`429 RESOURCE_EXHAUSTED` on every Gemini 3 model tested, including aliases like `gemini-flash-latest`), so turning it on unconditionally breaks the news analyst on any deployment without a Google Cloud billing account (Tier 1) linked. Gemma models (e.g. `gemma-4-31b-it`) had working grounding on the same Free-tier key — the block is Gemini-3-specific, not account-wide.
-- `7e6ec65`: `TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING_MODEL` lets the news analyst run on a different Google model than `quick_think_llm`/`deep_think_llm` when grounding is on — e.g. keep `gemini-3.1-flash-lite` for everything else and set this to `gemma-4-31b-it`, so grounding works on a Free-tier key without touching the main model. `TradingAgentsGraph.news_analyst_llm` resolves this and is what `GraphSetup` hands to `create_news_analyst`; every other analyst still gets `quick_thinking_llm`.
-- `7da490a`: `dataflows/laya.py`, a client for a laya sidecar at `LAYA_URL`. Returns None when unset or failing, so nothing depends on it.
-- `e11772b`: `get_news` adds Google News, Finnhub and SEC 8-K after Yahoo, and `news_sources.annotate` puts a laya grade on each news item, StockTwits post and Reddit post. See `news_sources.py` for why the grade measures a mention.
-- `f826962`: `propagate()` takes `on_chunk`, which gets each state while the run goes. An exception from `on_chunk` stops the run. trading-helper does not use it yet.
-- `2d978fc`: `GoogleClient` gives `client_args` to `ChatGoogleGenerativeAI`. trading-helper does not use it yet.
-- `f4d67ab`: the market and fundamentals analysts get their data before the model call and make one model call, with no tools bound. A fetch that fails becomes an `<unavailable: ...>` block. The `tools_market` and `tools_fundamentals` nodes stay in the graph but nothing calls them. The indicator set for each horizon is `INDICATORS` and `WINDOWS` in `market_analyst.py`.
+**Two upstream changes stay out.** `1c44dd1` asks the Trader for absolute entry and stop prices; this fork's schema has no field for one, because model-written prices were unreliable. `15b8276` gives the fundamentals analyst the insider transactions tool; our fundamentals analyst fetches four fixed blocks, and no analyst here fetches insider trades. That second one is a gap, not a decision: adding the block to `fetch_fundamentals_data` is a change to what the analyst reads and needs its own `JOURNEY.md` entry.
+
+**The backend keeps statements on yfinance.** v0.5.2 defaults `fundamental_data` to `"sec_edgar,yfinance"`. `backend/services/analysis.py` sets it back to `"yfinance"` for every analysis, so the rebase did not also change what the fundamentals analyst reads. Removing that line is a separate change with its own `JOURNEY.md` entry.
 
 ## Editing the fork: the venv does not follow the source
 
@@ -69,69 +55,36 @@ Commit `4c6c356` repairs how those picks fit together. #1189 (an unparseable rat
 
 ```
 uv sync --extra dev --reinstall-package tradingagents
-diff -q .venv/lib/python3.14/site-packages/tradingagents/dataflows/reddit.py TradingAgents/tradingagents/dataflows/reddit.py
+diff -q .venv/lib/python3.14/site-packages/tradingagents/dataflows/vendors/reddit.py TradingAgents/tradingagents/dataflows/vendors/reddit.py
 ```
 
 The second line is the check that matters: compare the file you edited. `--extra dev` is not optional — `uv sync` without it prunes pytest. The Docker image is never affected, because it copies the source tree and builds it.
 
-## Upstream releases after the base
+## Taking the next upstream release
 
-**Upstream tagged v0.4.0, then nothing until v0.5.0 on 2026-09-18.** v0.4.1 and v0.4.2 exist only as merged pull requests named after the version, so the GitHub Releases page and `git tag` do not show those two. To see what upstream has that we do not, run:
+**Rebase our commits onto the new tag.** Do not merge `origin/main`, and do not cherry-pick upstream commits one by one: that is how this branch drifted from upstream before 2026-10-03.
 
 ```
-cd TradingAgents && git fetch origin
-git log --oneline --merges HEAD..origin/main   # new versions
-git cherry -v HEAD origin/main                 # "+" = not on our branch
+cd TradingAgents && git fetch origin --tags
+git log --oneline v0.5.2..<new-tag> --no-merges     # what upstream added
+git tag pre-<new-tag>-rebase trading-helper-custom
+git rebase --onto <new-tag> v0.5.2 trading-helper-custom
 ```
 
-**v0.4.2** (PR #1310, merged 2026-09-07) holds 11 commits. Decisions so far:
+Read `git log --stat` for each upstream commit before you start. For each conflict, apply our intent to upstream's new code; do not restore our old code over theirs. After the rebase, check what reaches a live run: compare `DEFAULT_CONFIG` key by key, compare every agent prompt for one fixed state, and compare each tool's output for one ticker on the two versions. Then update this file, `JOURNEY.md` and `docs/changelog.md`.
 
-| Commit | Change | Decision |
-|---|---|---|
-| `7cc478a` | A failed Reddit fetch shows as unavailable, not as "no posts found". The back-off without a `Retry-After` header goes from 5 s to 60 s, once per run. | **Taken** 2026-09-13. The merge kept the OAuth path. |
-| `1c44dd1` | Tells the Trader to state entry and stop as absolute prices. | **Declined.** Our `TraderProposal` has no price fields. The model states distances, and Python computes the prices, because model-written prices were unreliable (see `analysis-output.md`). Never apply this commit. |
-| `ef383df` | A newest bar with no close no longer turns the whole price history into "no data". | **Taken** 2026-09-14 as `ca87aad`. Our analyses use today's date, so an unsettled bar can occur. No trace had the error text on 2026-09-14. |
-| `96111aa` | A run with a past `curr_date` no longer gets today's company profile. | **Take with the backtester.** Live runs are unchanged. |
-| `16f7fd6`, `ffd5d9a`, `d6ca23a`, `260c899`, `94113c8`, `d58b838`, `821848b` | Alpha Vantage date trim, logging cleanup, Kimi models, tests, comments. | **Take for an easier sync.** None of them changes a live run. We use yfinance, not Alpha Vantage. |
+**v0.5.1 and v0.5.2 changed these things in a live run, and the rebase kept them** (2026-10-03):
 
-Read `git log --stat` for each new commit before you take it. Do not merge `origin/main` as a whole: it would bring back `1c44dd1`.
+- A sentence "Portfolio context: not provided ..." in the Trader, Portfolio Manager and three risk-analyst prompts, because the backend passes no portfolio.
+- The rating is the Portfolio Manager's typed `rating` (`final_rating`). A free-text decision is read only from its `Rating:` label, and one without a label is `REVIEW`.
+- The news analyst's tools take the ticker from the run's state, and its prompt no longer asks for one. After `max_tool_rounds` (20) rounds it is told to write its report.
+- A sentence about Jev-screened blocks in the sentiment prompt. Jev itself runs only with `TYPESAFE_API_KEY`, which this app does not set.
+- Cache files are written through a temp file of their own, and the memory log takes a lock, because two analyses run at once here.
+- yfinance 1.7.0 and current LangChain and LangGraph releases.
 
-## v0.5.0
+Tool output on the live path was identical on both versions for NVDA on 2026-10-03, apart from float rounding in the indicators.
 
-**v0.5.0** (PR #1364, merged 2026-09-18, and the first tag since v0.4.0) holds 60 commits. **29 of them are on this branch**, cherry-picked on 2026-09-20 in upstream order. `git log --oneline pre-v050-sync..HEAD` lists them, and the tag `pre-v050-sync` marks the commit before the sync.
-
-Most of the picks needed no decision. These did:
-
-| What we took | Note |
-|---|---|
-| `62d3479` conflict alone is not a reason to Hold | A prompt change at four sites: both managers' prompts and both rating fields. See the 2026-09-20 entry in `JOURNEY.md`. |
-| `486dec1` the decision prompts state their output shape | Taken with the trader's section rewritten. Upstream asks the trader for **Entry Price** and **Stop Loss**; this fork asks for the ATR multiples, because Python computes every level. |
-| `241638d` one combined Reddit request | Reconciled with our trawl commit `5260a28`, and the first reconciliation was wrong: Reddit's HTML search page has no `r/a+b+c` form, so the trawl path returned zero posts and reported them as a real absence. The feed and the OAuth endpoint take the combined request; trawl asks for each subreddit on its own, at the same time, and a page it cannot read goes to the feed by itself. A trawl post gets its subreddit from its own permalink, since only the feed labels each entry. See `market-data.md`. |
-| `b20c8e6` vendor keys out of request errors | Upstream's shared `get_scrubbed` helper replaced our local `ce80173`. It detaches the response and the exception chain, because both hold the URL. `fred.redact` stays for FRED's own 400 body, which no request helper sees. |
-| `f8042ef` an unreadable price does not discard the decision | Only the coercion half. A range ("2-3") in an ATR multiple now nulls one field instead of failing the whole proposal. The renderer half names price fields this fork does not have. |
-| `d5ba41b` a vendor failure is reported as one | Merged into our circuit-breaker routing from #1071. A chain where every vendor is throttled now answers `DATA_UNAVAILABLE` instead of ending the run. |
-| `aef4af9` the next vendor serves what Alpha Vantage cannot | An unsupported indicator is a `NoMarketDataError`, not a `BadVendorArgumentError`, so the router falls through to yfinance. |
-| `f881c4a` US statements as filed, from SEC EDGAR | Opt in by naming `sec_edgar` in the `fundamental_data` chain. It feeds the fundamentals **analyst**, and is separate from `backend/services/fundamentals.py`, which the agent reads. |
-
-**`8ac4371` (Ollama takes the local-compatible client) arrived as a test only.** This fork already had the client fix, and that fork test now asserts our stronger contract: structured output on Ollama answers with `json_schema`, which constrains the server's sampler, so no tool and no `tool_choice` are sent.
-
-**`8d64416` was skipped.** Our `bfac9bc` already trims global news before the limit, with one bucket per macro query.
-
-### What v0.5.0 holds for the backtester and replay, and is not on this branch
-
-**Take this set together when the backtester or replay is built**, not before. Every commit here is about a run dated in the past, which no live run performs. Taking one on its own pulls in test files for the other two.
-
-| Commit | What it does |
-|---|---|
-| `8721b92`, `d8eceb6`, `2ca59cc`, `76a93d6` | `tradingagents/backtest.py`: run the graph over a grid of tickers and dates, and score each decision against the direction it claimed. Reads the decision log, not a portfolio; upstream states it must never grow an execution model. `iter_grid` stops the grid at today. |
-| `6436d1f` | `propagate(..., portfolio=...)` and `tradingagents/portfolio.py`: the caller's holdings and cash reach the trader and the portfolio manager. Three states stay distinct: a position, a flat book, and no context. Our `propagate` already carries `horizon`, so this is a merge point. |
-| `85d9137` | `holding_period_days` sets the window an outcome is measured over, and the reflection states the window it judges. |
-| `d04693a`, `fadc698`, `c3bb991`, `f0a1cf6`, `96111aa` (v0.4.2) | Tool dates bounded by the run's trade date; insider rows dated by the trade; prediction markets bounded; the company profile withheld when it has no historical vintage. `date_window.withhold_live_profile` belongs here. This is the precondition for an honest past-dated run. |
-| `375af05`, `9683194`, `6398951`, `4a9f196`, `34899bd`, `008ac65`, `2c1ba38` | The CLI's run surface, remembered selections, and the decision log on the CLI path. This app never runs the CLI. |
-
-**Two upstream tests were removed from the picks for the same reason**, with a comment at the end of `tests/test_rating_integrity.py`: one grades a backtest run, one drives the CLI.
-
-**`tests/test_structured_agents.py::TestSentimentAnalystAgent::test_structured_path_produces_rendered_markdown` hangs**, on this branch and on `pre-v050-sync` alike, so it is not from the sync. Run the suite with `-k "not SentimentAnalystAgent"` until someone fixes it.
+**The backtester and past-date code are in the base now** (`tradingagents/backtest.py`, `portfolio.py`, `memory/settlement.py`, the `date_window` withhold rules). No live run uses them, because every analysis here is dated today.
 
 ## Pull requests to watch
 

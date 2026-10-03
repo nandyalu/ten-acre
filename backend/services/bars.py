@@ -27,7 +27,7 @@ import datetime
 import logging
 
 import yfinance as yf
-from tradingagents.dataflows.stockstats_utils import yf_retry
+from tradingagents.dataflows.vendors.yahoo.common import yf_retry
 
 from backend.database import db
 from backend.services import intraday, listings
