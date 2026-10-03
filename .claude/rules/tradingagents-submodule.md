@@ -41,9 +41,11 @@ The rebase put our changes on top as eight commits, grouped by area, then a comm
 
 **Upstream's parallel analysts replaced ours.** Upstream `9968bd8` runs each analyst in a graph of its own, the same design as our old `fc2b259`. One difference reaches the prompt: every analyst now opens with the ticker as its first message, where analysts two to four used to get a placeholder sentence.
 
-**Two upstream changes stay out.** `1c44dd1` asks the Trader for absolute entry and stop prices; this fork's schema has no field for one, because model-written prices were unreliable. `15b8276` gives the fundamentals analyst the insider transactions tool; our fundamentals analyst fetches four fixed blocks, and no analyst here fetches insider trades. That second one is a gap, not a decision: adding the block to `fetch_fundamentals_data` is a change to what the analyst reads and needs its own `JOURNEY.md` entry.
+**One upstream change stays out.** `1c44dd1` asks the Trader for absolute entry and stop prices; this fork's schema has no field for one, because model-written prices were unreliable.
 
-**The backend keeps statements on yfinance.** v0.5.2 defaults `fundamental_data` to `"sec_edgar,yfinance"`. `backend/services/analysis.py` sets it back to `"yfinance"` for every analysis, so the rebase did not also change what the fundamentals analyst reads. Removing that line is a separate change with its own `JOURNEY.md` entry.
+**The fundamentals analyst fetches five blocks** (since 2026-10-03): the overview, the quarterly balance sheet, cash flow and income statement, and insider transactions. That is upstream `15b8276`'s insider tool, in this fork's fetch-first form. Statements follow v0.5.2's default chain, `"sec_edgar,yfinance"`, so a US filer's figures are SEC EDGAR's as filed by the analysis date; the overview and insider trades come from Yahoo, which SEC EDGAR does not serve.
+
+**Every analysis gets the agent's book** (since 2026-10-03). `analysis.portfolio_context()` builds a `PortfolioContext` from `agent_book.build_book()`: each holding's quantity and average cost, and the free cash, unpriced. `propagate(portfolio=...)` takes it, and the Trader, the Portfolio Manager and the three risk analysts read it. A changed book also changes the checkpoint signature.
 
 ## Editing the fork: the venv does not follow the source
 
@@ -75,7 +77,7 @@ Read `git log --stat` for each upstream commit before you start. For each confli
 
 **v0.5.1 and v0.5.2 changed these things in a live run, and the rebase kept them** (2026-10-03):
 
-- A sentence "Portfolio context: not provided ..." in the Trader, Portfolio Manager and three risk-analyst prompts, because the backend passes no portfolio.
+- A portfolio block in the Trader, Portfolio Manager and three risk-analyst prompts. The backend passes the agent's book; without one they would read "Portfolio context: not provided".
 - The rating is the Portfolio Manager's typed `rating` (`final_rating`). A free-text decision is read only from its `Rating:` label, and one without a label is `REVIEW`.
 - The news analyst's tools take the ticker from the run's state, and its prompt no longer asks for one. After `max_tool_rounds` (20) rounds it is told to write its report.
 - A sentence about Jev-screened blocks in the sentiment prompt. Jev itself runs only with `TYPESAFE_API_KEY`, which this app does not set.

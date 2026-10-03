@@ -8,7 +8,8 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 ## 2026-10-03
 
-- **Dependencies** — The TradingAgents fork is rebased onto upstream v0.5.2, and the pin moves to `b795801`. `yf_retry` now lives in `tradingagents.dataflows.vendors.yahoo.common`, so `bars`, `fundamentals`, `positions`, `regime` and `watchdog` import it from there. v0.5.2 reads company statements from SEC EDGAR first, so `analysis._build_graph` sets `fundamental_data` back to `yfinance`. The fundamentals analyst reads the same source as before, and the SEC EDGAR switch needs its own journey entry when it is made. The lock moves many packages, and the fork needs Python 3.11 or later and pandas 3.
+- **Analysis** — Each analysis gets the agent's book (`analysis.portfolio_context()`: holdings with quantity and average cost, and the free cash) through `propagate(portfolio=...)`. The yfinance override for statements is gone, so they come from SEC EDGAR as filed, and the fundamentals analyst also fetches insider transactions.
+- **Dependencies** — The TradingAgents fork is rebased onto upstream v0.5.2, and the pin moves to `d1f1f78`. `yf_retry` now lives in `tradingagents.dataflows.vendors.yahoo.common`, so `bars`, `fundamentals`, `positions`, `regime` and `watchdog` import it from there. The lock moves many packages, and the fork needs Python 3.11 or later and pandas 3.
 
 ## 2026-10-02
 
