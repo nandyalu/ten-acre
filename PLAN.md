@@ -4,6 +4,98 @@ Written 2026-09-19. Review on 2026-09-26, after a week of live passes under the 
 
 This file records the decisions made on 2026-09-19 and the order of the work that follows from them. The decisions are made. Do not reopen one without new evidence from the record. The reasoning that led to each one is in the "Rejected" section at the end, so a future session does not repeat the argument.
 
+## Experiment 2: many books, a simulated broker, and a test written first
+
+Written 2026-10-02. Agreed with the maintainer. Not started.
+
+**The question does not change.** Can an AI agent trade profitably when it has real tools? Experiment 1 cannot answer it. It has one book and about one trade a week. The same model gave Underweight and then Overweight on one ticker on one day. Thus the result of one book is one sample from a wide distribution, and years of it cannot separate skill from luck. Experiment 2 changes how we measure. It does not change what we ask.
+
+**It stays in this repo. There is no fork.** `backend/services/broker.py` already sends each call to the module that `BROKER` names, and Alpaca came in that way. Each step below goes in behind a setting, so the live book runs unchanged until experiment 1 ends. A git tag keeps the code of experiment 1.
+
+### Experiment 1 ends first
+
+1. Let experiment 1 run to the reflection measurement on 2026-10-09.
+2. Write a JOURNEY.md entry that closes it. Give the final record: equity, trades, analyses bought, notes.
+3. Tag a release with the `release` skill. The tag is the record of the code that produced experiment 1.
+
+### The order of work
+
+Each step can merge while the live book runs.
+
+1. **A simulated broker, behind `BROKER=sim`.** It is a third module beside the Webull and Alpaca modules, and it supplies the same functions that `broker.py` exposes.
+   - **Why.** Many JOURNEY.md entries are broker defects, not agent behaviour: a sell that looked like a reversal (2026-09-05), a cancel that was accepted but not yet done (2026-09-08), combo orders, the holiday clock. A paper broker does not give real fills either. A simulator is also the base for steps 3 and 4.
+   - **Fills.** A market order fills at the live quote from `quotes.py`, plus a fixed slippage in basis points that is a setting. A limit order, a resting stop and a resting target fill when a later price crosses them. A stop fills at the worse of its own price and the price that crossed it, so a gap down costs what it costs on a real exchange.
+   - **Rules.** Long only, whole shares, no more cash than the book holds. A closed market refuses a buy or a sell and accepts an `adjust`, as now. Python refuses and never resizes, as now.
+   - **Splits.** Do item 9 under "Later" first. A simulator that reads raw bars reads a split as a loss.
+   - **A fifth guard.** The sim module imports no broker SDK and opens no network connection. A test checks both. Add the guard to `CLAUDE.md` beside the four.
+   - **Done when** a test drives a bracket buy, an `adjust`, a stop hit, a target hit and a sell through `BROKER=sim`.
+2. **Replay.** This is item 1 under "Later", moved here.
+   - Store every input of each pass: the prompt, every fetch result, every quote it read.
+   - Stamp each pass with a hash of its system prompt and with the exact model ID.
+   - A replay runs a stored pass again with a different prompt or a different model, and serves each fetch from the store. A fetch that the store does not hold returns "not available in replay", and the replay records the call.
+   - Replay only dates after the knowledge cutoff of the model under test. Before that date, the model can know the outcome.
+   - **Done when** it answers the first question that waits for it: does the 2026-09-19 prompt buy INTC on 2026-09-14 at $100?
+3. **A `book_id` on every table.** No table has one now. This is the largest step, and the one step that migrates the live database.
+   - The migration gives the new column a default of 1, so every existing row stays in book 1.
+   - Each book has its own cash, positions, wakeups, memory notes, research charges and reflection.
+   - The books do not see each other. No book reads another book's passes, notes or positions.
+   - The throttle counts requests across all books, because the books share one API key.
+   - The dashboard and the site show each book and the mean of all books.
+4. **Random control books.** No LLM. They cost nothing to run.
+   - Build them after the fact, from the bar cache, for the same dates as the agent books. They live through the same market, so market luck cancels out of the comparison, and what remains is selection.
+   - Each random book makes the same number of trades as the mean agent book. It takes its tickers from the candidate list of that day, and its holding periods from the distribution of the agent books. It holds no more cash than an agent book.
+   - Store the candidate list of each day if it is not stored yet. A random book needs it.
+   - A random trade enters and exits at the daily close. The agent trades at intraday quotes. Report this difference beside the result. Do not correct for it.
+   - Build at least 500.
+5. **Fetches for raw data.** The agent has `read`, `candidates`, `fundamentals`, `watchlist`, `track_record` and `ask_analyst`. Each of these gives it what someone else concluded, or a list. Add:
+   - `bars`: the daily history of a ticker, through `bars.get_bars()`.
+   - `news`: the items from Google News, Finnhub and SEC 8-K that `news_sources.py` already fetches for the analysis.
+   - The TradingAgents analysis stays as research the agent may buy. It is no longer the only way to look at a stock.
+   - A fetch is a prompt change. Write the JOURNEY.md entry, update `.claude/rules/agent.md`, and run `probe-the-prompt`, as `CLAUDE.md` says.
+6. **Choose the model.** See "The model" below.
+7. **Write the test, freeze, start.** Copy "The success test" below into a JOURNEY.md entry, word for word. Set a new `EXPERIMENT_START_DATE`. From that date to the measurement date, the prompt and the model do not change. A defect fix that does not change what the agent sees is permitted, with a JOURNEY.md entry.
+
+### The success test, written before the start
+
+**When.** Six months after the start. Before that date, no result is a verdict. If the agent books close fewer than 100 trades in total, the result is "inconclusive" by this rule.
+
+**Primary.** Take the mean return of the agent books, from the start to the measurement date. Build the distribution of the mean return of N random books: draw 10,000 groups of N from the random pool, where N is the number of agent books. The agent passes if its mean is above the 95th percentile of that distribution.
+
+**Secondary.** Report each of these. None of them changes the primary verdict.
+
+- **Exposure-matched SPY.** A shadow book holds SPY each day at the fraction of equity that the agent book has invested that day. This separates stock selection from the choice to hold cash.
+- **Plain SPY, buy and hold.** This is the headline number for the site.
+- **Maximum drawdown** of each book.
+- **Calibration** of the win probability the analysis states, on the Scorecard page, with its existing threshold of 20 graded signals.
+- **Overlap.** The mean, over all days, of the share of tickers that two agent books both hold. If the books hold the same names, the real number of books is close to one. Report the overlap beside the primary result.
+
+**Three results are possible:** pass, fail and inconclusive. All three are valid. In six months, inconclusive is the likely one, and the site says so if it is.
+
+### The model
+
+- **All agent books run one model.** One book for each model gives one sample per model again, which is the problem this experiment removes.
+- **Pin the exact model ID.** Use no "latest" alias. A model that changes during the run changes what the experiment tests.
+- **Gemini first.** `gemini-3.8-flash` on `GOOGLE_API_KEY_PAID`. The decision pass already talks to Google's SDK in `backend/services/llm_gemini.py`. Opus 5.5 needs a new client beside it. Test it only if the Gemini result leaves a reason to.
+- **How to choose:**
+  1. Run each candidate through the `model-change` skill. A model that fails the tool-calling test is out.
+  2. Replay the recorded passes from September on each candidate (step 2). Those dates are after the knowledge cutoff, and the outcomes are known now. This is thin evidence. It is better than a guess.
+  3. Calculate the monthly cost: books × passes per day × prompt tokens per pass. For example, 10 × 6 × 15k–51k gives 1M to 3M input tokens a day, before prompt caching. The fixed system prompt caches. Use the current price list, not a remembered price.
+  4. Choose the strongest model whose monthly cost fits the budget.
+- **A model comparison comes later, as a second group.** It needs at least 8 books for each model. It never uses one book for each model.
+
+### What does not change
+
+- **No manual control, and no second decision-maker.** Each book has one author. The books do not talk to each other, so the "second agent" rejected on 2026-09-19 does not apply.
+- **Python refuses and never resizes.**
+- **No shorting.** The simulator refuses a sell that is larger than the position.
+- **No analysis the agent did not order.** The random books order none.
+- **The four guards stay** for Webull and Alpaca, with no change.
+
+### Open, for the maintainer
+
+- **Decided 2026-10-02: the budget is $50 a month.** At the estimate of 2026-10-02, $10.50 to $14 for each book each month on `gemini-3.8-flash` with 24% of input cached, that pays for 3 or 4 books. The live book runs on that model for the week of 2026-10-05 (JOURNEY.md), and the cost of that week sets the number of books. Four books make the primary test less sensitive than eight, but the test stays valid: the random groups are drawn at the same size.
+- Whether the site keeps a page for experiment 1 after experiment 2 starts.
+
 ## The record on 2026-09-19
 
 | | |
@@ -177,7 +269,7 @@ Use the paraphrase test from the `probe-the-prompt` skill for the third count. A
 
 ## Later, in this order
 
-1. **Replay.** Run a past pass again against a changed prompt. Prompt changes land daily and the market gives one trade a week, so this is the only way to learn faster than the market. The first question is waiting: would the 2026-09-19 prompt have bought INTC on 2026-09-14 at $100?
+1. **Replay. Moved to step 2 of Experiment 2 on 2026-10-02.** Run a past pass again against a changed prompt. Prompt changes land daily and the market gives one trade a week, so this is the only way to learn faster than the market. The first question is waiting: would the 2026-09-19 prompt have bought INTC on 2026-09-14 at $100?
 2. **Built 2026-09-26: Google News, Finnhub and SEC 8-K, with a laya grade on each item.** See `news_sources.py` and the JOURNEY.md entry. **The laya grade was shelved on 2026-09-27**: only a mention score separated on headlines, and no pair question could grade the fetch audit. `LAYA_URL` stays unset, and the sources run without it. **News and sentiment sources for the analysis**, in `TradingAgents/tradingagents/dataflows/`. The pipeline says Hold most of the time, and the agent can only act on what the analysts say. A person who picks trades reads news, MACD-style signals and sentiment; the sentiment analyst tries to give the model the same, but Reddit alone is thin and unreliable, so the analysis is poorer for it. Benzinga and MarketWatch's free feeds were tried for candidate *discovery* on 2026-09-15 and dropped there, because a headline names a company and not a ticker, and to guess one is to invent a fact. **That objection does not apply to a news source that feeds an analysis**: the ticker is known before the fetch, so to resolve it to a company name for the query is a one-time, free lookup — Webull and yfinance both return one from a profile call — and not a guess made after the fact. This is submodule work.
 3. **Measured 2026-09-26, nothing trimmed:** `python -m backend.scripts.prompt_cost` prints the tables to decide from. **The tool-channel prompt cost.** A tenfold rise per pass is free on the free tier and not free anywhere else. After the audit says which fetches matter, trim what each returns.
 4. **Half built 2026-09-26: a read now lists every other analysis of the ticker.** The probe samples are still owed. **The ambient signals table, and more probe samples for the analyst snapshot.** The table shows the last analysis for every tracked ticker with no way to reach the four analysts behind it. The snapshot added on 2026-09-15 fixed this only for a `read`, and 2 of 2 probe samples ignored it. The step 1 audit answers the first half of this; the second half needs more samples.
@@ -186,7 +278,7 @@ Use the paraphrase test from the `probe-the-prompt` skill for the third count. A
 7. **The watchlist ageing rule.** Nine names of thirty. Not pressing.
 8. **Built 2026-09-26: Alpaca paper, behind `BROKER=alpaca`.** Proved on paper with the market closed; fills and an OCO on a real position wait for `backend/scripts/alpaca_paper_check.py` during a session. See `.claude/rules/alpaca.md`. **A broker a self-hoster can sign up for.** Webull OpenAPI needs a funded brokerage account, a separate access application, and one of three regions. That is a real barrier for anyone who wants to run their own experiment, and the reason to move is portability, not risk. Alpaca paper keys need an email address and nothing else. The 12 functions in `backend/services/sandbox_broker.py` are already the interface, so a second module with the same names and an env selector is the whole change. Three things are not free: the four guards are Webull-specific and Alpaca needs its own written into CLAUDE.md, not a deletion; `place_bracket_order` and `place_exit_bracket` must be checked against Alpaca OTOCO on a paper cash account before this is committed to; and `compose.example.yaml`, the Webull block in `backend/services/setup_check.py`, and `docs/` move with it.
 
-9. **Split-adjusted bars, or a break guard in every reader of the bar cache.** The cache stores raw bars. CTVA read $77.65 on 2026-09-30 and $12.57 on 2026-10-01, and the four stock cells showed it as `DOWN: 50d -84.3%` until `trend._break` learned to withhold a row across a one-session break. The ATR stop, the range since purchase and the grading read the same bars and do not know. Found by the probe of 2026-10-01; see `.claude/rules/agent-probes.md`.
+9. **Split-adjusted bars, or a break guard in every reader of the bar cache.** **This blocks the simulated broker in Experiment 2.** The cache stores raw bars. CTVA read $77.65 on 2026-09-30 and $12.57 on 2026-10-01, and the four stock cells showed it as `DOWN: 50d -84.3%` until `trend._break` learned to withhold a row across a one-session break. The ATR stop, the range since purchase and the grading read the same bars and do not know. Found by the probe of 2026-10-01; see `.claude/rules/agent-probes.md`.
 
 ## Rejected on 2026-09-19. Do not reopen without new evidence.
 
