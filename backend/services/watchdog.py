@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
-from tradingagents.dataflows.stockstats_utils import yf_retry
+from tradingagents.dataflows.vendors.yahoo.common import yf_retry
 
 # Defined before the service imports below. bars imports these three from this
 # module, so a process that imports watchdog before bars would otherwise meet

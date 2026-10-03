@@ -8,6 +8,11 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 Everything before experiment 2 is on [the experiment 1 changelog](experiment-1-changelog.md).
 
+## 2026-10-03
+
+- **Analysis** — Each analysis gets the agent's book (`analysis.portfolio_context()`: holdings with quantity and average cost, and the free cash) through `propagate(portfolio=...)`. The yfinance override for statements is gone, so they come from SEC EDGAR as filed, and the fundamentals analyst also fetches insider transactions.
+- **Dependencies** — The TradingAgents fork is rebased onto upstream v0.5.2, and the pin moves to `d1f1f78`. `yf_retry` now lives in `tradingagents.dataflows.vendors.yahoo.common`, so `bars`, `fundamentals`, `positions`, `regime` and `watchdog` import it from there. The lock moves many packages, and the fork needs Python 3.11 or later and pandas 3.
+
 ## 2026-10-02
 
 - **Deployment** — A market container: the same image with `MARKET_MODE=1`. It holds the Webull keys, runs no agent and no scheduler, and answers `/api/market/*`. A book with `MARKET_DATA_URL` asks it first. `compose.experiment2.example.yaml` adds the service `ten-acre-market` (port 8130). A migration (`c4f2a8e9d613`) adds the table `marketfetch`. No existing row changes. See [the journal](journey.md) for the reason.

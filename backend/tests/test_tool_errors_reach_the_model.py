@@ -12,11 +12,11 @@ failed — including the correct ones.
 """
 import pytest
 
-from tradingagents.dataflows import interface
+from tradingagents.dataflows import router
 from tradingagents.dataflows.errors import (
     BadVendorArgumentError,
     VendorError,
-    VendorRateLimitError,
+    VendorUnavailableError,
 )
 from tradingagents.graph.trading_graph import _return_error_to_the_model
 
@@ -26,11 +26,9 @@ def clean_breaker():
     """Each test starts with every circuit closed — the breaker is module-level
     state and a test that inherited an open circuit would pass for the wrong
     reason."""
-    interface._circuit_breaker._failures.clear()
-    interface._circuit_breaker._open_since.clear()
+    router.reset_circuit_breaker()
     yield
-    interface._circuit_breaker._failures.clear()
-    interface._circuit_breaker._open_since.clear()
+    router.reset_circuit_breaker()
 
 
 # --- the type ------------------------------------------------------------------
@@ -54,7 +52,7 @@ def test_the_valid_list_is_optional():
 
 def test_a_bad_indicator_name_raises_with_the_valid_names_in_it():
     with pytest.raises(BadVendorArgumentError) as caught:
-        interface.route_to_vendor("get_indicators", "AAPL", "macd_histogram", "2026-09-01", 30)
+        router.route_to_vendor("get_indicators", "AAPL", "macd_histogram", "2026-09-01", 30)
 
     assert "macdh" in str(caught.value)
     assert "macdh" in caught.value.valid
@@ -66,28 +64,28 @@ def test_a_bad_argument_never_opens_the_circuit():
     it. yfinance was healthy the whole time."""
     for _ in range(6):  # twice the threshold
         with pytest.raises(BadVendorArgumentError):
-            interface.route_to_vendor("get_indicators", "AAPL", "nonsense", "2026-09-01", 30)
+            router.route_to_vendor("get_indicators", "AAPL", "nonsense", "2026-09-01", 30)
 
-    assert interface._circuit_breaker.is_open("yfinance") is False
-    assert interface._circuit_breaker._failures == {}
+    assert router._circuit_breaker.is_open("yfinance") is False
+    assert router._circuit_breaker._failures == {}
 
 
 def test_a_transient_failure_still_opens_the_circuit(monkeypatch):
     """The breaker must keep working for what it is actually for."""
     def always_throttled(*a, **kw):
-        raise VendorRateLimitError("slow down")
+        raise VendorUnavailableError("slow down")
 
-    monkeypatch.setattr(interface, "_try_vendor", always_throttled)
-    monkeypatch.setattr(interface, "_resolve_vendor_chain", lambda *a, **kw: ["yfinance"])
+    monkeypatch.setitem(router.VENDOR_METHODS, "get_indicators", {"yfinance": always_throttled})
+    monkeypatch.setattr(router, "get_vendor", lambda *a, **kw: "yfinance")
 
     for _ in range(3):
         # A chain where every vendor is throttled reports the vendors, not the
         # instrument (upstream v0.5.0). That answer is not what this test is
         # about — the breaker's count is — but it must not be an exception.
-        out = interface.route_to_vendor("get_indicators", "AAPL", "rsi", "2026-09-01", 30)
+        out = router.route_to_vendor("get_indicators", "AAPL", "rsi", "2026-09-01", 30)
         assert out.startswith("DATA_UNAVAILABLE")
 
-    assert interface._circuit_breaker.is_open("yfinance") is True
+    assert router._circuit_breaker.is_open("yfinance") is True
 
 
 def test_a_bad_argument_is_not_retried_against_other_vendors(monkeypatch):
@@ -95,16 +93,18 @@ def test_a_bad_argument_is_not_retried_against_other_vendors(monkeypatch):
     requests and buries the message that says what the valid values are."""
     tried = []
 
-    def record(vendor, method, args, kwargs):
-        tried.append(vendor)
-        raise BadVendorArgumentError("no such thing", valid=["real"])
+    def record(vendor):
+        def call(*a, **kw):
+            tried.append(vendor)
+            raise BadVendorArgumentError("no such thing", valid=["real"])
+        return call
 
-    monkeypatch.setattr(interface, "_try_vendor", record)
-    monkeypatch.setattr(interface, "_resolve_vendor_chain",
-                        lambda *a, **kw: ["yfinance", "alpha_vantage", "local"])
+    chain = ["yfinance", "alpha_vantage", "local"]
+    monkeypatch.setitem(router.VENDOR_METHODS, "get_indicators", {v: record(v) for v in chain})
+    monkeypatch.setattr(router, "get_vendor", lambda *a, **kw: ",".join(chain))
 
     with pytest.raises(BadVendorArgumentError):
-        interface.route_to_vendor("get_indicators", "AAPL", "bogus", "2026-09-01", 30)
+        router.route_to_vendor("get_indicators", "AAPL", "bogus", "2026-09-01", 30)
 
     assert tried == ["yfinance"]
 
@@ -137,7 +137,9 @@ def test_every_tool_node_hands_errors_back(monkeypatch):
     tool, which is the whole failure being fixed here."""
     import inspect
 
-    from tradingagents.graph import trading_graph
+    from tradingagents.graph import setup
 
-    src = inspect.getsource(trading_graph.TradingAgentsGraph._create_tool_nodes)
-    assert src.count("ToolNode(") == src.count("handle_tool_errors=")
+    # Since v0.5.2 each analyst runs in a graph of its own, and that graph
+    # builds the analyst's one tool node.
+    src = inspect.getsource(setup._analyst_graph)
+    assert src.count("ToolNode(") == src.count("handle_tool_errors=") == 1

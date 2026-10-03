@@ -29,7 +29,7 @@ import logging
 import math
 
 import yfinance as yf
-from tradingagents.dataflows.stockstats_utils import yf_retry
+from tradingagents.dataflows.vendors.yahoo.common import yf_retry
 
 from backend.services import quotes
 

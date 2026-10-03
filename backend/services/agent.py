@@ -3004,7 +3004,7 @@ def describe_news(ticker: str, days: int) -> str:
     """
     if not ticker:
         return "news needs a ticker."
-    from tradingagents.agents.utils.news_data_tools import get_news
+    from tradingagents.agents.tools import get_news
 
     today = market_clock.now_et().date()
     start = today - datetime.timedelta(days=days)
