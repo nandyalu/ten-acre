@@ -2797,9 +2797,14 @@ def _invoke(llm, prompt: str) -> tuple[str, str | None, int, int]:
                     ],
                 )
             message = raw.choices[0].message
-            thinking = getattr(message, "reasoning", None) or (
-                message.model_extra or {}
-            ).get("reasoning")
+            # Ollama sends the thinking as "reasoning". llama-server sends it
+            # as "reasoning_content".
+            extra = message.model_extra or {}
+            thinking = (
+                getattr(message, "reasoning", None)
+                or extra.get("reasoning")
+                or extra.get("reasoning_content")
+            )
             usage = raw.usage
             return (
                 message.content or "",

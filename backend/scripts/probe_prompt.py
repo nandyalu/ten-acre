@@ -364,7 +364,9 @@ def ask(base_url: str, system: str, user: str, tools=None, prose: bool = False) 
                   {"role": "user", "content": user}],
     )
     message = raw.choices[0].message
-    thinking = getattr(message, "reasoning", None) or (message.model_extra or {}).get("reasoning") or ""
+    # Ollama sends the thinking as "reasoning". llama-server sends it as "reasoning_content".
+    extra = message.model_extra or {}
+    thinking = getattr(message, "reasoning", None) or extra.get("reasoning") or extra.get("reasoning_content") or ""
     return {
         "seconds": round(time.monotonic() - started, 1),
         "prompt_tokens": raw.usage.prompt_tokens,

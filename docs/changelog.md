@@ -6,6 +6,10 @@ Changes to what the agent does, what it is shown, or what its record contains go
 
 Entries are one or two lines: what changed, and why. Newest first.
 
+## 2026-10-04
+
+- **Tooling** — `agent._invoke` and `probe_prompt.py` also read the thinking from `reasoning_content`, the name `llama-server` uses. Ollama sends `reasoning`, so nothing changes on a deployed model. Without the second read, a run served by `llama-server` directly would lose its thinking from the record without an error. A test covers it.
+
 ## 2026-10-03
 
 - **Analysis** — Each analysis gets the agent's book (`analysis.portfolio_context()`: holdings with quantity and average cost, and the free cash) through `propagate(portfolio=...)`. The yfinance override for statements is gone, so they come from SEC EDGAR as filed, and the fundamentals analyst also fetches insider transactions.
