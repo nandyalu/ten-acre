@@ -45,6 +45,7 @@ from backend.services import decision_schema, fundamentals, llm_gemini
 from backend.services.positions import get_current_price
 from backend.services.sizing import get_atr, suggest_position
 from backend.notifications.embed import Color, Embed
+from tradingagents.llm_clients import request_label
 
 log = logging.getLogger("ten-acre.agent")
 
@@ -2785,13 +2786,16 @@ def _invoke(llm, prompt: str) -> tuple[str, str | None, int, int]:
             # the graph, so it needs the throttle attached here too — attaching
             # is idempotent, so asking twice costs nothing.
             llm_throttle.attach(llm)
-            raw = client.create(
-                model=llm.model_name,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-            )
+            # The decision pass is not a graph node, so it names itself for
+            # the local pool's dashboard.
+            with request_label.node("agent"):
+                raw = client.create(
+                    model=llm.model_name,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
             message = raw.choices[0].message
             thinking = getattr(message, "reasoning", None) or (
                 message.model_extra or {}

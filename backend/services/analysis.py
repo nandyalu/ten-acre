@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.llm_clients.openai_client import OPENAI_COMPATIBLE_PROVIDERS
+from tradingagents.llm_clients import request_label
 from tradingagents.portfolio import PortfolioContext, Position
 
 from backend.database import db
@@ -380,6 +381,14 @@ def portfolio_context() -> PortfolioContext:
     )
 
 
+def request_label() -> str:
+    """The app's name in the X-Pool-Label header on each request to an
+    OpenAI-compatible endpoint. The local pool's dashboard shows it with the
+    graph node that sent the request. TRADINGAGENTS_LLM_REQUEST_LABEL
+    overrides it; Google and the other native providers never send it."""
+    return DEFAULT_CONFIG.get("llm_request_label") or "ten-acre"
+
+
 def _build_graph(
     model: str | None = None,
     tracker: llm_usage.UsageTracker | None = None,
@@ -412,6 +421,7 @@ def _build_graph(
     """
     config = DEFAULT_CONFIG.copy()
     config["deep_think_llm"] = config["quick_think_llm"] = model or get_model()
+    config["llm_request_label"] = request_label()
     if provider:
         config["llm_provider"] = provider
     # A Google request that never answers must fail, not wait forever. The
@@ -1059,17 +1069,18 @@ async def run_analyses(
 def answer_question(context: str, question: str) -> str:
     """One-shot Q&A over stored analysis text using the shared quick-think
     LLM client. Blocking — run from a thread."""
-    response = _quick_think_llm().invoke(
-        [
-            (
-                "system",
-                "You answer questions about a previously generated stock analysis. "
-                "Use ONLY the analysis text provided; if it doesn't contain the answer, "
-                "say so plainly. Be concise.",
-            ),
-            ("human", f"{context}\n\n---\nQuestion: {question}"),
-        ]
-    )
+    with request_label.node("ask_analyst"):
+        response = _quick_think_llm().invoke(
+            [
+                (
+                    "system",
+                    "You answer questions about a previously generated stock analysis. "
+                    "Use ONLY the analysis text provided; if it doesn't contain the answer, "
+                    "say so plainly. Be concise.",
+                ),
+                ("human", f"{context}\n\n---\nQuestion: {question}"),
+            ]
+        )
     content = response.content
     if isinstance(content, list):  # some providers return content blocks
         content = " ".join(str(part) for part in content)
