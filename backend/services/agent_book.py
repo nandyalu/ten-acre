@@ -81,6 +81,11 @@ class Book:
     # feeds market value and the holdings table, so understating it there
     # would misstate equity, not just what remains sellable. See `validate`.
     reserved_shares: dict[str, float] = field(default_factory=dict)
+    # The cost of pending limit buys. Already deducted from `cash`, so a later
+    # pass cannot spend it twice — but the money has not left the account, so
+    # it still counts in equity. Without that, a resting limit buy showed as a
+    # loss of its whole cost.
+    reserved_cash: float = 0.0
 
     @property
     def invested(self) -> float:
@@ -97,7 +102,7 @@ class Book:
 
     @property
     def equity(self) -> float:
-        return self.cash + self.market_value
+        return self.cash + self.reserved_cash + self.market_value
 
     @property
     def return_pct(self) -> float:
@@ -232,6 +237,7 @@ def build_book(price_lookup=None) -> Book:
         holdings=holdings,
         research_spent=researched,
         reserved_shares=reserved_shares,
+        reserved_cash=reserved,
     )
 
 
