@@ -68,6 +68,30 @@ Every multi-ticker caller must go through `analysis.run_analyses()`, which dispa
 
 To check which backends served a run: `docker logs --since 24h ollama-pool-a | grep "starting runner"` (an idle backend has no recent entries), or `curl localhost:11435/healthz`.
 
+## llama-server flags through Ollama (measured 2026-10-03, Ollama 0.35.1)
+
+**Ollama runs upstream `llama-server` and gives it the container's environment** (`cmd.Env = os.Environ()` in Ollama's `llm/llama_server.go`). `llama-server` reads each flag that is not on its command line from a `LLAMA_ARG_*` env var. So a flag that Ollama does not pass can be set in the pool's compose env. A flag that Ollama passes (`-c`, `-np`, `-b`/`-ub`, `--cache-type-*`, `-t`, `--host`, `--port`) cannot be changed this way, because the command line wins. `--poll` and `-tb` have no env var.
+
+**`LLAMA_ARG_ENDPOINT_METRICS=1` turns on `/metrics`.** The proxy reads it through a Docker exec in each container, because `llama-server` listens on a random port on `127.0.0.1`. See `ollama-stack/ollama-pool/proxy/README.md` and the scoped exec rules in `ollama-stack/ollama-pool/socket-proxy/haproxy.cfg.template`.
+
+**Since 2026-10-04 the dashboard takes each request's tokens and times from `llama-server`'s timing block in the container log**, through a scoped `GET /containers/ollama-pool-[a-g]/logs` rule in the same template. The response body is the fallback. This makes `/v1` write speeds exact, where before they were estimates. The routing facts (queue wait, affinity, which card) still come only from the proxy, because only the proxy knows them.
+
+None of the speed flags helped. These were measured on riser card `-f` (PCI `0000:18:00.0`, named card c in `llama-pool` since 2026-10-06), alone, with a synthetic 8,850-token analysis prompt with a new prefix on each run, Gemma's own sampling and `num_predict 512`. Each config had one warm-up and three runs:
+
+| Config | Read tok/s | Write tok/s | Drafts accepted |
+|---|---|---|---|
+| Baseline | 943.5 | 31.56 | - |
+| `LLAMA_ARG_SPEC_TYPE=ngram-simple` | 939.5 | 31.33 | 4.2% |
+| `LLAMA_ARG_SPEC_TYPE=ngram-map-k` | 939.2 | 31.42 | 2.1% |
+| `LLAMA_ARG_SPEC_TYPE=ngram-mod` | 938.6 | 31.12 | 6.0% |
+| `LLAMA_ARG_MMPROJ_OFFLOAD=0` | 938.8 | 31.50 | - |
+| `MMPROJ_OFFLOAD=0` and `LLAMA_ARG_OVERRIDE_TENSOR=per_layer_token_embd.weight=ROCm0` | 1,003.9 | **22.03** | - |
+
+- **N-gram speculation finds almost nothing to copy.** A report quotes single numbers, not runs of 12 or more tokens, so the drafts are few and most are rejected.
+- **Moving the per-layer embeddings to the GPU makes writing 19-30% slower.** It reads 6% faster and moves 2.2 GiB from host RAM to VRAM (`CPU_Mapped` 2,730 to 525 MiB). Writing is about 90% of model time, so the total is a loss. This was one card alone. When all seven cards compete for host RAM, the result can differ, but the write loss is large enough that the test is not worth doing again unless the pool goes back to many analyses at once.
+- **Moving the vision projector to the CPU costs nothing** and gives back about 1.15 GiB of VRAM on each card. The analysts send no images. Use it if a model ever needs the VRAM.
+- **Not tested:** `LLAMA_ARG_SWA_FULL` and `LLAMA_ARG_CTX_CHECKPOINTS`. They can help only a follow-up turn that shares a prompt with an earlier one, so they need a multi-turn probe. The ceiling is about 10% (see the affinity notes above).
+
 ## Custom context builds (`ollama/`)
 
 `ollama/*.Modelfile` plus `ollama/build.sh`. **An earlier note here said a model has to be installed on every backend or the proxy sends some analyses to one that lacks it. That was wrong**: the pool shares one models directory, so building once reaches all of them. The script builds on the first backend and then checks the rest can see it, which is cheap and catches the day somebody gives a container its own volume. See `ollama/README.md` for the numbers.
