@@ -49,11 +49,8 @@ frontend/.angular/
 # Deployed-stack compose files — local only, not tracked.
 dockge/
 
-# The Ollama pool's own stack, plus the model benchmark harness under
-# ollama-stack/bench/. Both are specific to this machine — seven named
-# containers, their docker-bridge IPs, and 8 GiB cards — so neither would run
-# anywhere else. What the benchmarks *found*, and the method traps that apply
-# to any rig, are in ollama/README.md, which is tracked.
+# The GPU pool moved to its own project, ~/projects/ollama-stack, on 2026-10-10.
+# Listed so a stray copy never lands back here.
 ollama-stack/
 
 # Working notes, kept locally and out of the published repo. Each was

@@ -46,7 +46,7 @@ Today the app asks for structured output through **function calling**: it binds 
 The experiment is small:
 
 1. Set `preferred_structured_method="json_schema"` for the local-model pattern in `capabilities.py`.
-2. Re-run the tool-calling test from `ollama-stack/bench/` on a rejected model.
+2. Re-run the tool-calling test from `bench/` in the separate `ollama-stack` project on a rejected model.
 3. Compare the structured-output failure count against the same model's previous run.
 
 `lfm2.5:8b` failed at four stages in each of two runs. If constrained decoding takes that to zero, the model is worth re-testing on everything else — and it is the fastest model that has ever fit this hardware.
@@ -248,7 +248,7 @@ So training means renting an NVIDIA GPU. A LoRA run on this dataset size is hour
 
 ## How to know whether any of it worked
 
-The harness already exists, in `ollama-stack/bench/`, and it is four steps in increasing cost. Run them in order and stop at the first failure.
+The harness already exists, in `bench/` of the separate `ollama-stack` project on this machine, and it is four steps in increasing cost. Run them in order and stop at the first failure.
 
 | Step | Script | Question |
 |---|---|---|

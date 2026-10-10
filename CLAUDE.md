@@ -58,7 +58,7 @@ A rule file loads when Claude reads a file that matches its `paths:` list, so a 
 | `agent.md` | The agent contract: what the agent is shown, the prompt rules quoted verbatim, what Python refuses, how to probe the prompt |
 | `analysis-output.md` | Tool errors, per-run cost telemetry, invented price levels |
 | `llm-providers.md` | Provider and model switching, Gemini thinking, rate limits, billing, the two naming layers |
-| `gpu-pool.md` | The seven-card Ollama pool, how Laya ran on these cards, concurrency, custom context builds |
+| `gpu-pool.md` | How many analyses run at once, how the app dispatches them, custom context builds. The pool itself is in `~/projects/ollama-stack` |
 | `deployment.md` | The compose files, the static public site, the R2 publisher, the three ways to run it, the one data directory |
 | `tradingagents-submodule.md` | The fork, its remotes, the cherry-picks, how to move the pin |
 | `market-data.md` | The bar cache, tickers that stop trading, Reddit |

@@ -63,7 +63,7 @@ docker exec ollama-pool-a sh -c "ollama run kotakneo-128k hi >/dev/null 2>&1; ol
 
 ## Benchmarking a build
 
-The scripts that produced every number in this file live in `ollama-stack/bench/`, which is **local to this machine and not tracked** — they hardcode seven container names, their docker-bridge IPs, and 8 GiB cards, so they would not run anywhere else. Four steps, cheapest first: `fit.py` (placement), `prefill.py` (read speed), `menu_choice.py` (does it use the candidate menu), `full_analysis.py` (tool-calling and real prices). That directory's README has the commands.
+The scripts that produced every number in this file live in `~/projects/ollama-stack/bench/`, a separate project that is **local to this machine and not published** — they hardcode seven container names, their docker-bridge IPs, and 8 GiB cards, so they would not run anywhere else. The pool itself (proxy, image, compose files, card topology) is in that project too. Four steps, cheapest first: `fit.py` (placement), `prefill.py` (read speed), `menu_choice.py` (does it use the candidate menu), `full_analysis.py` (tool-calling and real prices). That directory's README has the commands.
 
 The rules below are not machine-specific, which is why they are here rather than there. **Each one produced a wrong answer on this project before it was written down.**
 
