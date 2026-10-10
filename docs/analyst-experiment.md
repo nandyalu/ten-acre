@@ -2,7 +2,7 @@
 
 This page is history, not the current agent. It records a second deployment that ran from 2026-08-26 to 2026-08-29, on the sandbox's margin account, beside the live agent from [the two-book experiment](https://github.com/nandyalu/ten-acre/blob/main/docs/two-book-experiment.md). It is the direct ancestor of the agent that runs today: it was the first to choose its own tickers, pay for its own research, and drop names it no longer wanted.
 
-**Both deployments ended on 2026-09-01** and merged into the single agent — see [JOURNEY.md](https://github.com/nandyalu/ten-acre/blob/main/JOURNEY.md) for its current, real-time record.
+**Both deployments ended on 2026-09-01** and merged into the single agent of experiment 1 — see [the experiment 1 journey](https://github.com/nandyalu/ten-acre/blob/main/docs/experiment-1-journey.md) for its record.
 
 The entries below keep their original two forms: short changelog lines first, newest first, the same as the current journal; then the longer day-by-day story of the same period, oldest first, written as it happened.
 

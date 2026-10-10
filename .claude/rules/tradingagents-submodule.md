@@ -101,7 +101,7 @@ The agent prompts for a US stock are the same on both versions. Two merges were 
 
 ## Pull requests to watch
 
-**TauricResearch#1076** adds engine host and streaming APIs behind a FastAPI/SSE backend. It is open since July 2026 with no activity, so treat it as dormant. Its one useful finding is already replaced here. Its runs execute on a single-worker pool, and `docs/gpu-concurrency.md` measures what concurrency gives on this hardware.
+**TauricResearch#1076** adds engine host and streaming APIs behind a FastAPI/SSE backend. It is open since July 2026 with no activity, so treat it as dormant. Its one useful finding is already replaced here. Its runs execute on a single-worker pool, and `docs/gpu-concurrency.md` in `~/projects/ollama-stack` measures what concurrency gives on this hardware.
 
 ## After a change inside the submodule
 

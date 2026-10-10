@@ -145,11 +145,37 @@ def _fetch_history(
     None only when neither source could: Webull unconfigured or empty, and
     yfinance's own request failing outright.
     """
+    from backend.services import corporate_actions, market_feed
+
     today = today or datetime.date.today()
+    answer = market_feed.ask("daily", ticker=ticker, start=start.isoformat(), today=today.isoformat())
+    if answer is market_feed.MISSING:
+        found = fetch_raw(ticker, start, today)
+    elif answer is None:
+        found = None
+    else:
+        found = answer["source"], [
+            {**row, "date": datetime.date.fromisoformat(row["date"])} for row in answer["rows"]
+        ]
+    if found is None:
+        return None
+    source, bars = found
+    # Webull's history is raw: a split shows as a jump. Yahoo's arrives
+    # adjusted already. See corporate_actions.
+    return corporate_actions.adjust_raw(ticker, bars) if source == "webull" else bars
+
+
+def fetch_raw(
+    ticker: str, start: datetime.date, today: datetime.date
+) -> tuple[str, list[dict]] | None:
+    """The source's name and its bars as it gave them: Webull's raw, Yahoo's
+    adjusted. The market container serves this, and each book applies its own
+    splits (``market_feed``)."""
     bars = _fetch_from_webull(ticker, start, today)
     if bars is not None:
-        return bars
-    return _fetch_from_yfinance(ticker, start)
+        return "webull", bars
+    bars = _fetch_from_yfinance(ticker, start)
+    return None if bars is None else ("yfinance", bars)
 
 
 def refresh(ticker: str, start: datetime.date, today: datetime.date | None = None) -> int:

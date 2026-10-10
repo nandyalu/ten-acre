@@ -555,6 +555,29 @@ def day_gainers(top: int) -> list[str]:
     return [row["symbol"] for row in body.get("gainers", []) if row.get("symbol")]
 
 
+def corporate_actions(tickers: list[str], start: datetime.date, end: datetime.date) -> list[dict]:
+    """Splits, reverse splits and spin-offs with an ex-date in [start, end],
+    one dict each, with ``type`` set to Alpaca's key for its kind."""
+    symbols = [t for t in tickers if _SYMBOL.match(t)]
+    out: list[dict] = []
+    for i in range(0, len(symbols), 100):
+        token = None
+        while True:
+            params = {
+                "symbols": ",".join(symbols[i:i + 100]), "start": start.isoformat(),
+                "end": end.isoformat(), "types": "forward_split,reverse_split,spin_off",
+            }
+            if token:
+                params["page_token"] = token
+            body = _market_data("/v1/corporate-actions", **params) or {}
+            for kind, rows in (body.get("corporate_actions") or {}).items():
+                out += [{**row, "type": kind} for row in rows or []]
+            token = body.get("next_page_token")
+            if not token:
+                break
+    return out
+
+
 def get_snapshots(tickers: list[str]) -> list[dict]:
     """One batched snapshot, in the row shape of Webull's screener.
 

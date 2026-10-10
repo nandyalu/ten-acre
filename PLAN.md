@@ -22,38 +22,38 @@ Written 2026-10-02. Agreed with the maintainer. Not started.
 
 Each step can merge while the live book runs.
 
-1. **A simulated broker, behind `BROKER=sim`.** It is a third module beside the Webull and Alpaca modules, and it supplies the same functions that `broker.py` exposes.
+1. **A simulated broker, behind `BROKER=sim`. Built 2026-10-02**, and checked against real Alpaca minute bars the same day. It is a third module beside the Webull and Alpaca modules, and it supplies the same functions that `broker.py` exposes.
    - **Why.** Many JOURNEY.md entries are broker defects, not agent behaviour: a sell that looked like a reversal (2026-09-05), a cancel that was accepted but not yet done (2026-09-08), combo orders, the holiday clock. A paper broker does not give real fills either. A simulator is also the base for steps 3 and 4.
    - **Fills.** A market order fills at the live quote from `quotes.py`, plus a fixed slippage in basis points that is a setting. A limit order, a resting stop and a resting target fill when a later price crosses them. A stop fills at the worse of its own price and the price that crossed it, so a gap down costs what it costs on a real exchange.
    - **Rules.** Long only, whole shares, no more cash than the book holds. A closed market refuses a buy or a sell and accepts an `adjust`, as now. Python refuses and never resizes, as now.
-   - **Splits.** Do item 9 under "Later" first. A simulator that reads raw bars reads a split as a loss.
+   - **Splits.** Handled by `corporate_actions` (item 9 under "Later"), which moves the simulator's orders to the new units with everything else.
    - **A fifth guard.** The sim module imports no broker SDK and opens no network connection. A test checks both. Add the guard to `CLAUDE.md` beside the four.
    - **Done when** a test drives a bracket buy, an `adjust`, a stop hit, a target hit and a sell through `BROKER=sim`.
-2. **Replay.** This is item 1 under "Later", moved here.
+2. **Replay. Built 2026-10-02** (`backend/scripts/replay.py`). This is item 1 under "Later", moved here.
    - Store every input of each pass: the prompt, every fetch result, every quote it read.
    - Stamp each pass with a hash of its system prompt and with the exact model ID.
    - A replay runs a stored pass again with a different prompt or a different model, and serves each fetch from the store. A fetch that the store does not hold returns "not available in replay", and the replay records the call.
    - Replay only dates after the knowledge cutoff of the model under test. Before that date, the model can know the outcome.
    - **Done when** it answers the first question that waits for it: does the 2026-09-19 prompt buy INTC on 2026-09-14 at $100?
-3. **A `book_id` on every table.** No table has one now. This is the largest step, and the one step that migrates the live database.
-   - The migration gives the new column a default of 1, so every existing row stays in book 1.
-   - Each book has its own cash, positions, wakeups, memory notes, research charges and reflection.
-   - The books do not see each other. No book reads another book's passes, notes or positions.
-   - The throttle counts requests across all books, because the books share one API key.
-   - The dashboard and the site show each book and the mean of all books.
-4. **Random control books.** No LLM. They cost nothing to run.
+3. **One container per book. Built 2026-10-02, in place of a `book_id` on every table.** `compose.experiment2.example.yaml` runs four containers from one image, each with its own data volume. Each book therefore has its own database, cash, positions, wakeups, memory notes, research charges and evening review, and no book can read another, by construction. No table changes and the live database is not migrated. The books share one API key, and each throttle counts only its own book's requests, so the per-day brake is per book. Each container has its own dashboard; `backend/scripts/experiment2_report.py` reads all of them for the result.
+4. **Random control books. Built 2026-10-02** (`backend/scripts/experiment2_report.py`, which also applies the success test). No LLM. They cost nothing to run.
    - Build them after the fact, from the bar cache, for the same dates as the agent books. They live through the same market, so market luck cancels out of the comparison, and what remains is selection.
    - Each random book makes the same number of trades as the mean agent book. It takes its tickers from the candidate list of that day, and its holding periods from the distribution of the agent books. It holds no more cash than an agent book.
-   - Store the candidate list of each day if it is not stored yet. A random book needs it.
+   - Every screen is stored in `candidatescreen` since 2026-10-02, before the watchlist is taken out, so every book of one day draws from one list.
    - A random trade enters and exits at the daily close. The agent trades at intraday quotes. Report this difference beside the result. Do not correct for it.
    - Build at least 500.
-5. **Fetches for raw data.** The agent has `read`, `candidates`, `fundamentals`, `watchlist`, `track_record` and `ask_analyst`. Each of these gives it what someone else concluded, or a list. Add:
+5. **Fetches for raw data. Built 2026-10-02.** The agent has `read`, `candidates`, `fundamentals`, `watchlist`, `track_record` and `ask_analyst`. Each of these gives it what someone else concluded, or a list. Add:
    - `bars`: the daily history of a ticker, through `bars.get_bars()`.
    - `news`: the items from Google News, Finnhub and SEC 8-K that `news_sources.py` already fetches for the analysis.
    - The TradingAgents analysis stays as research the agent may buy. It is no longer the only way to look at a stock.
    - A fetch is a prompt change. Write the JOURNEY.md entry, update `.claude/rules/agent.md`, and run `probe-the-prompt`, as `CLAUDE.md` says.
-6. **Choose the model.** See "The model" below.
-7. **Write the test, freeze, start.** Copy "The success test" below into a JOURNEY.md entry, word for word. Set a new `EXPERIMENT_START_DATE`. From that date to the measurement date, the prompt and the model do not change. A defect fix that does not change what the agent sees is permitted, with a JOURNEY.md entry.
+6. **One source of market data. Built 2026-10-02** (`backend/services/market_feed.py`). The same image runs as a market container with `MARKET_MODE=1`. It holds the Webull keys and runs no agent. Each book sets `MARKET_DATA_URL` and takes its quotes, daily and minute bars, candidate screens and corporate actions from it.
+   - **Why.** The same input for every book. Without it, two books can see two prices for one ticker at one moment, and the books without Webull keys fall back to Yahoo's delayed close. Fewer vendor calls are a side effect, not the reason.
+   - The market container keeps each answer for a short time (30 seconds for a quote, 5 minutes for a screen), so books that ask at nearly the same moment get the same answer.
+   - A book that cannot reach it fetches its own data, and counts the fetch in `marketfetch`. The report lists those days for each book.
+   - Not routed through it: `news`, `fundamentals` and the regime figures. Real-time alerts wait for evidence that the 15-minute poll costs something.
+7. **Choose the model.** See "The model" below.
+8. **Write the test, freeze, start.** Copy "The success test" below into a JOURNEY.md entry, word for word. Set a new `EXPERIMENT_START_DATE`. From that date to the measurement date, the prompt and the model do not change. A defect fix that does not change what the agent sees is permitted, with a JOURNEY.md entry.
 
 ### The success test, written before the start
 
@@ -278,7 +278,7 @@ Use the paraphrase test from the `probe-the-prompt` skill for the third count. A
 7. **The watchlist ageing rule.** Nine names of thirty. Not pressing.
 8. **Built 2026-09-26: Alpaca paper, behind `BROKER=alpaca`.** Proved on paper with the market closed; fills and an OCO on a real position wait for `backend/scripts/alpaca_paper_check.py` during a session. See `.claude/rules/alpaca.md`. **A broker a self-hoster can sign up for.** Webull OpenAPI needs a funded brokerage account, a separate access application, and one of three regions. That is a real barrier for anyone who wants to run their own experiment, and the reason to move is portability, not risk. Alpaca paper keys need an email address and nothing else. The 12 functions in `backend/services/sandbox_broker.py` are already the interface, so a second module with the same names and an env selector is the whole change. Three things are not free: the four guards are Webull-specific and Alpaca needs its own written into CLAUDE.md, not a deletion; `place_bracket_order` and `place_exit_bracket` must be checked against Alpaca OTOCO on a paper cash account before this is committed to; and `compose.example.yaml`, the Webull block in `backend/services/setup_check.py`, and `docs/` move with it.
 
-9. **Split-adjusted bars, or a break guard in every reader of the bar cache.** **This blocks the simulated broker in Experiment 2.** The cache stores raw bars. CTVA read $77.65 on 2026-09-30 and $12.57 on 2026-10-01, and the four stock cells showed it as `DOWN: 50d -84.3%` until `trend._break` learned to withhold a row across a one-session break. The ATR stop, the range since purchase and the grading read the same bars and do not know. Found by the probe of 2026-10-01; see `.claude/rules/agent-probes.md`.
+9. **Built 2026-10-02 as `corporate_actions`, on the experiment-2 branch: splits and spin-offs are applied to bars, ledger, simulated orders and signals.** Split-adjusted bars, or a break guard in every reader of the bar cache. The cache stores raw bars. CTVA read $77.65 on 2026-09-30 and $12.57 on 2026-10-01, and the four stock cells showed it as `DOWN: 50d -84.3%` until `trend._break` learned to withhold a row across a one-session break. The ATR stop, the range since purchase and the grading read the same bars and do not know. Found by the probe of 2026-10-01; see `.claude/rules/agent-probes.md`.
 
 ## Rejected on 2026-09-19. Do not reopen without new evidence.
 

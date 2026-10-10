@@ -1,0 +1,120 @@
+# Experiment 2 — four books, one agent each, the same prompt and the same model.
+#
+# PLAN.md has the design and the success test. Each book is its own container
+# with its own data volume, so it has its own database, cash, positions,
+# wakeups, memory and research charges, and no book can read another. That is
+# the whole multi-book mechanism: there is no book_id in the code.
+#
+# The broker is BROKER=sim, inside each container. No order leaves the
+# process, so no broker account or account number is needed.
+#
+# Build the image from the experiment-2 branch under its OWN tag. Experiment 1
+# runs on ten-acre:local, and a rebuild of that tag would change it:
+#   docker build -t ten-acre:exp2 .
+#
+# Every book reads the same .env. Do not give one book a value the others do
+# not have: a difference between books is a difference in the experiment.
+#
+# The market container is the same image with MARKET_MODE=1. It holds the
+# Webull keys and gives every book the same quotes, daily and minute bars,
+# candidate screens and corporate actions (backend/services/market_feed.py).
+# It runs no agent. A book that cannot reach it fetches its own data, and
+# counts each such fetch in its `marketfetch` table; the report shows them.
+
+x-book: &book
+  image: ten-acre:exp2
+  restart: unless-stopped
+  stop_grace_period: 20s
+  depends_on: [ten-acre-market]
+  environment:
+    # --- market data: one source for every book -------------------------------
+    - MARKET_DATA_URL=http://ten-acre-market:8080
+    # --- the broker -----------------------------------------------------------
+    - BROKER=sim
+    # Fill slippage in basis points, on a market order and on a stop.
+    - SIM_SLIPPAGE_BPS=${SIM_SLIPPAGE_BPS:-5}
+    # Market data only, used when the market container does not answer. No
+    # ALPACA_ACCOUNT_NUMBER, so no Alpaca order can be placed even by mistake.
+    - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+    - ALPACA_API_SECRET=${ALPACA_API_SECRET:-}
+
+    # --- the model: one pinned model for every book ---------------------------
+    - TRADINGAGENTS_LLM_PROVIDER=google
+    - GOOGLE_API_KEY=${GOOGLE_API_KEY_PAID:-}
+    - TRADINGAGENTS_DEEP_THINK_LLM=${EXPERIMENT2_MODEL:-gemini-3.8-flash}
+    - TRADINGAGENTS_QUICK_THINK_LLM=${EXPERIMENT2_MODEL:-gemini-3.8-flash}
+    - TRADINGAGENTS_GOOGLE_THINKING_LEVEL=high
+    - TRADINGAGENTS_GOOGLE_SEARCH_GROUNDING=false
+    - TRADINGAGENTS_MAX_DEBATE_ROUNDS=1
+    - TRADINGAGENTS_MAX_RISK_ROUNDS=1
+    - TRADINGAGENTS_MAX_CONCURRENT_ANALYSES=1
+    # A brake on spending, per book. The books share one key, and each counts
+    # only its own requests.
+    - LLM_REQUESTS_PER_DAY=${EXPERIMENT2_REQUESTS_PER_DAY:-500}
+    - LLM_DAY_TIMEZONE=America/Los_Angeles
+
+    # --- the experiment's own numbers -----------------------------------------
+    - AGENT_BUDGET=10000
+    - RESEARCH_PRICE_USD=0.05
+    # The same date for every book: the day experiment 2 starts.
+    - EXPERIMENT_START_DATE=${EXPERIMENT2_START_DATE:-}
+
+    # --- shared data sources --------------------------------------------------
+    - FRED_API_KEY=${FRED_API_KEY:-}
+    - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
+    - LLM_TRACE_DIR=/app/data/tradingagents/traces
+    - TRADINGAGENTS_MEMORY_LOG_PATH=/app/data/tradingagents/memory/trading_memory.md
+    - TRADINGAGENTS_RESULTS_DIR=/app/data/tradingagents/logs
+    - TRADINGAGENTS_CACHE_DIR=/app/data/tradingagents/cache
+    # No DISCORD_WEBHOOK_URL: four books in one channel cannot be told apart.
+
+services:
+  ten-acre-market:
+    image: ten-acre:exp2
+    container_name: ten-acre-market
+    restart: unless-stopped
+    stop_grace_period: 20s
+    ports: ["8130:8080"]
+    volumes: ["market_data:/app/data"]
+    environment:
+      - MARKET_MODE=1
+      # No order flow runs here, and BROKER=sim makes sure of it.
+      - BROKER=sim
+      # Quotes, bars and screens. No WEBULL_ACCOUNT_ID: this container places
+      # no order. The pace in quotes.py counts only this container's
+      # requests, not those of another deployment on the same key.
+      - WEBULL_SANDBOX=1
+      - WEBULL_APP_KEY=${WEBULL_APP_KEY:-}
+      - WEBULL_APP_SECRET=${WEBULL_APP_SECRET:-}
+      - WEBULL_OPENAPI_TOKEN_DIR=/app/data/webull
+      # Corporate actions, and the minute bars and screens when Webull fails.
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - ALPACA_API_SECRET=${ALPACA_API_SECRET:-}
+
+  ten-acre-b1:
+    <<: *book
+    container_name: ten-acre-b1
+    ports: ["8131:8080"]
+    volumes: ["book1_data:/app/data"]
+  ten-acre-b2:
+    <<: *book
+    container_name: ten-acre-b2
+    ports: ["8132:8080"]
+    volumes: ["book2_data:/app/data"]
+  ten-acre-b3:
+    <<: *book
+    container_name: ten-acre-b3
+    ports: ["8133:8080"]
+    volumes: ["book3_data:/app/data"]
+  ten-acre-b4:
+    <<: *book
+    container_name: ten-acre-b4
+    ports: ["8134:8080"]
+    volumes: ["book4_data:/app/data"]
+
+volumes:
+  market_data:
+  book1_data:
+  book2_data:
+  book3_data:
+  book4_data:

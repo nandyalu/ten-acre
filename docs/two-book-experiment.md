@@ -2,7 +2,7 @@
 
 This page is history, not the current agent. It records the agent that ran from 2026-08-13 to 2026-08-25, as one half of what this project called the two-book experiment: a real-portfolio book that mirrored a live Webull account, run beside this agent, which traded a fixed watchlist it did not choose for itself.
 
-**Both books ended on 2026-09-01.** The commit before that removal is tagged `v1-two-book-experiment`. The agent below merged with [the analyst experiment](https://github.com/nandyalu/ten-acre/blob/main/docs/analyst-experiment.md) into the single agent that runs today — see [JOURNEY.md](https://github.com/nandyalu/ten-acre/blob/main/JOURNEY.md) for its current, real-time record.
+**Both books ended on 2026-09-01.** The commit before that removal is tagged `v1-two-book-experiment`. The agent below merged with [the analyst experiment](https://github.com/nandyalu/ten-acre/blob/main/docs/analyst-experiment.md) into the single agent of experiment 1 — see [the experiment 1 journey](https://github.com/nandyalu/ten-acre/blob/main/docs/experiment-1-journey.md) for its record.
 
 Newest first, the same as the current journal.
 

@@ -23,6 +23,8 @@ The prompt may lie to the model. The code MUST never lie to itself. The reasonin
 
 **With `BROKER=alpaca` the same four hold in Alpaca's terms**, in `backend/services/alpaca_broker.py`. The module knows only the paper host, and `_assert_sandbox()` checks the host before every order. The account number MUST carry the `PA` prefix. The class is resolved from the account's own margin multiplier, and shorting MUST be off. `ALPACA_ACCOUNT_NUMBER` names the one account, and an unset value stops order flow. The reasoning is in `.claude/rules/alpaca.md`.
 
+**With `BROKER=sim` there is no broker to guard, and a fifth guard keeps it that way.** `backend/services/sim_broker.py` fills orders inside the process for experiment 2. It MUST NOT import a network library, a broker SDK, `sandbox_broker` or `alpaca_broker`, and it MUST NOT hold a URL. `test_the_simulator_cannot_reach_a_broker` checks this. NEVER give the simulator a way out of the process.
+
 ## Invariants for every change
 
 - **NEVER add a manual control.** No slash command, and no button that adds a ticker, starts an analysis or places a trade. To correct something, write an entry in `JOURNEY.md` that says what and why, then make the change by hand. `POST /api/agent/exits/{ticker}` is the one write endpoint left, and it decides nothing.

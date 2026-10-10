@@ -37,7 +37,7 @@ import urllib.request
 from dataclasses import dataclass
 
 from backend.database import db
-from backend.services import alpaca_broker, listings, quotes
+from backend.services import alpaca_broker, listings, market_feed, quotes
 
 log = logging.getLogger("ten-acre.candidates")
 
@@ -257,8 +257,24 @@ def _listed() -> dict[str, tuple[str, bool]]:
     return listed
 
 
-def fetch_candidates() -> list[Candidate]:
-    """Screened names not already tracked.
+def _record_screen(screened: list[Candidate]) -> None:
+    """Keep what the screens offered, before the watchlist is taken out, for
+    Experiment 2's random control books. A failure here never costs the menu."""
+    try:
+        db.record_candidate_screen([
+            {"ticker": c.ticker, "source": c.source, "price": c.price, "volume": c.volume}
+            for c in screened
+        ])
+    except Exception:
+        log.warning("Could not record the candidate screen", exc_info=True)
+
+
+def screen() -> list[Candidate]:
+    """Every name the screens offer now, before this book's own watchlist is
+    taken out.
+
+    In experiment 2 each book takes this list from the market container, so
+    the books of one moment draw from one list (``market_feed``).
 
     Two broker screens, deliberately: the most active gives liquid names that
     are simply busy, and the day's gainers give names that are moving. Two
@@ -273,6 +289,9 @@ def fetch_candidates() -> list[Candidate]:
     liquid of its own names first; the broker screens fill the rest, most
     liquid first.
     """
+    answer = market_feed.ask("screen")
+    if answer is not market_feed.MISSING:
+        return [Candidate(**row) for row in answer or []]
     client = quotes.get_api_client()
     if client is not None:
         from webull.data.quotes.screener import Screener
@@ -344,7 +363,13 @@ def fetch_candidates() -> list[Candidate]:
             candidate = _to_candidate(row, source) if source else None
             if candidate:
                 found[candidate.ticker] = candidate
+    return list(found.values())
 
+
+def fetch_candidates() -> list[Candidate]:
+    """Screened names not already tracked, most liquid first, with
+    ``_RESERVED_SLOTS`` kept for each text source. See ``screen``."""
+    screened = screen()
     # The watchlist covers every holding too: the agent may not untrack a
     # position it still owns, and Python refuses the attempt. So one set is
     # enough here — a held name is a tracked name.
@@ -353,8 +378,12 @@ def fetch_candidates() -> list[Candidate]:
     # An ETF has no earnings or filings for the analysts to read, and a
     # leveraged one decays over a one-to-two-week hold.
     listed = _listed()
+    _record_screen([
+        c for c in screened
+        if c.ticker not in inactive and not listed.get(c.ticker, ("", False))[1]
+    ])
     fresh = [
-        c for c in found.values()
+        c for c in screened
         if c.ticker not in tracked and c.ticker not in inactive
         and not listed.get(c.ticker, ("", False))[1]
     ]

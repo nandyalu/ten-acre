@@ -1,6 +1,7 @@
 ---
 paths:
-  - "backend/services/{bars,listings,positions,quotes,intraday,watchdog}.py"
+  - "backend/services/{bars,listings,positions,quotes,intraday,watchdog,market_feed,candidates,corporate_actions}.py"
+  - "backend/api/routes/market.py"
   - "backend/scripts/backfill_intraday_bars.py"
   - "TradingAgents/tradingagents/dataflows/**"
 ---
@@ -12,6 +13,15 @@ paths:
 **Webull first, yfinance as fallback (2026-09-08).** `bars._fetch_history` tries `_fetch_from_webull` (the same history-bar endpoint `backend/services/intraday.py` uses for 1-minute bars, called here with `Timespan.D`) and falls through to `_fetch_from_yfinance` only when that returns `None` — Webull not configured, the call failing, or coming back empty. Confirmed live: the endpoint pages back daily bars with no real depth ceiling, over 2,000 bars deep in testing. yfinance is not removed — it is what already produces this app's "possibly delisted" false positives and 429s, and a Webull outage must not take the whole daily cache down with it.
 
 Three legitimate direct yfinance uses remain, none of them history: `positions.get_current_price` (a live quote, Webull's fallback), `watchdog.get_next_earnings_date` (the calendar), and `fundamentals.describe` (`Ticker.info` and the quarterly income statement, for the agent's `fundamentals` fetch, since 2026-09-19). The last one is on yfinance because the Webull sandbox host has no route for its `/openapi/fundamentals/` family: every call answered "404 Route Not Found". Do not add a client against Webull's production host for it; that would be the first live-host code in the repo, and nobody has approved a production call.
+
+**Splits and spin-offs are applied once, by `corporate_actions` (2026-10-02, experiment 2).** The sources disagree across one: Webull's daily history is raw, Yahoo's arrives adjusted (CTVA's 2026-09-30 close read $103.95 from Webull and $77.65 from Yahoo), so the cache alone cannot be made consistent. Applying an action drops that ticker's cached daily bars so they refetch, and `_fetch_history` passes every Webull answer through `corporate_actions.adjust_raw`, which puts a raw row from before an applied ex-date into the new units. A Yahoo row is left as it arrives. The stored minute bars, the ledger, the simulated broker's orders, the signal levels and the cached price are moved in the same transaction. The events come from Alpaca's corporate-actions feed (`alpaca_broker.corporate_actions`), and from `yf.Ticker(...).splits` without Alpaca keys, a fourth direct yfinance use that is not history. **A spin-off's factor is the parent's share of the combined value at the ex-date's close**, so it waits for that close; checked live on CTVA and VYLR, 0.156. `trend._break` stays as the guard for a break no feed reports.
+
+**In experiment 2 every book takes its market data from one market container (2026-10-02).** `backend/services/market_feed.py` has the reason: the same input for every book. Five entry points ask it first when `MARKET_DATA_URL` is set: `positions.get_current_price`, `bars._fetch_history`, `intraday.fetch_bars` (minutes only), `candidates.screen` and `corporate_actions.fetch`. Rules a later edit must keep:
+
+- **An answer of "nothing" is an answer.** The book uses it and does not fetch its own. Else one book can take a Yahoo price that the others never saw. Only an unreachable market container or an error sends a book to its own fetch, and each such fetch is counted as "own" in `marketfetch`.
+- **Daily bars cross the wire as the source gave them, with the source's name.** Each book applies its own splits to Webull's raw rows with `adjust_raw`, because only the book knows which actions it has applied. The market container holds no positions, so it applies none.
+- **A new fetch entry point that the agent's inputs depend on needs the same branch**, or the books stop seeing one market.
+- **Running the app from a worktree reads the main checkout's `.env`.** `TradingAgents/__init__.py` calls `find_dotenv(usecwd=True)`, which walks up the directories. A local market-mode check on 2026-10-02 used the live Webull key that way. Run a check from a directory with no `.env` above it, or in a container.
 
 Non-obvious rules the cache depends on:
 

@@ -533,3 +533,111 @@ class TickerPrice(SQLModel, table=True):
     source: str | None = None  # "webull" | "yfinance", for debugging
 
 
+
+
+class SimOrder(SQLModel, table=True):
+    """One order at the in-process simulated broker, ``BROKER=sim``.
+
+    This table is the simulated broker's own state: what rests, what filled,
+    and at what price. It is not the agent's ledger. ``AgentTrade`` stays the
+    book of record, and it learns of a fill the same way it does from Webull or
+    Alpaca, by asking ``get_order_detail``.
+
+    ``status`` uses the words the callers test for: ``HELD`` for an exit leg
+    whose entry has not filled, ``SUBMITTED`` for an order that is working,
+    then ``FILLED``, ``CANCELLED``, ``EXPIRED`` or ``REJECTED``.
+
+    ``checked_through`` is the time up to which the price path has been read
+    for this order. A fill is decided from the bars after it and never from a
+    bar before the order existed.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    client_order_id: str = Field(unique=True, index=True)
+    ticker: str = Field(index=True)
+    side: str  # "BUY" | "SELL"
+    order_type: str  # "market" | "limit" | "stop"
+    quantity: float
+    limit_price: float | None = None
+    stop_price: float | None = None
+    time_in_force: str = "DAY"  # "DAY" | "GTC"
+    status: str = Field(default="SUBMITTED", index=True)
+    # The entry a bracket leg waits on, and the group whose other legs one
+    # fill cancels (one-cancels-other).
+    parent_id: str | None = Field(default=None, index=True)
+    group_id: str | None = Field(default=None, index=True)
+    placed_at: datetime.datetime
+    checked_through: datetime.datetime
+    filled_at: datetime.datetime | None = None
+    filled_price: float | None = None
+    filled_quantity: float | None = None
+
+
+class CandidateScreen(SQLModel, table=True):
+    """One name a candidate screen returned, and when.
+
+    Experiment 2 builds random control books from these rows: a random trade
+    picks its ticker from what the screens offered that day (PLAN.md). The
+    rows are what the market screens returned, before the agent's own
+    watchlist was taken out, so every book of one day draws from one list.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    screened_at: datetime.datetime = Field(index=True)
+    ticker: str = Field(index=True)
+    source: str
+    price: float
+    volume: float
+
+
+class SystemPrompt(SQLModel, table=True):
+    """Each distinct system message a decision turn was sent, once.
+
+    A turn records only ``system_sha``. The text changes when the fixed rules
+    change, which is rare, so storing it on every turn would repeat 9,000
+    characters a turn for nothing. A replay looks the text up here.
+    """
+
+    sha: str = Field(primary_key=True)
+    text: str
+    first_seen: datetime.datetime
+
+
+class CorporateAction(SQLModel, table=True):
+    """A split or a spin-off, and whether this deployment has applied it.
+
+    Applied once, the way a broker applies one: every price, share count and
+    resting order of the ticker from before ``ex_date`` moves to the new
+    units. ``corporate_actions.apply`` does it, and ``applied_at`` keeps it
+    from happening twice.
+    """
+
+    id: str = Field(primary_key=True)  # the vendor's id for the action
+    ticker: str = Field(index=True)
+    kind: str  # "split" | "spin_off"
+    ex_date: datetime.date = Field(index=True)
+    # A split: new shares per old share (10 for NVDA's 10-for-1, 0.1 for a
+    # 1-for-10 reverse split). A spin-off: child shares per parent share.
+    ratio: float
+    child: str | None = None  # the spun-off ticker
+    # What a price from before ex_date is multiplied by: 1/ratio for a split,
+    # the parent's share of the combined value for a spin-off. Set on apply.
+    price_factor: float | None = None
+    applied_at: datetime.datetime | None = None
+    note: str | None = None
+
+
+class MarketFetch(SQLModel, table=True):
+    """How many fetches of one kind each source answered on one day.
+
+    Experiment 2 gives every book its market data from one market container,
+    so that all books see the same prices and the same screens. A book that
+    cannot reach it fetches its own data, and its inputs can then differ from
+    the inputs of the other books. ``source`` is "market" or "own". The report
+    reads these rows to show where that happened.
+    """
+
+    day: datetime.date = Field(primary_key=True)
+    kind: str = Field(primary_key=True)  # "quote" | "daily" | "minutes" | "screen" | "corporate_actions"
+    source: str = Field(primary_key=True)
+    count: int = 0

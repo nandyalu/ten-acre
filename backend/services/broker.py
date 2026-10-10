@@ -1,6 +1,7 @@
-"""The broker this deployment trades through: Webull's sandbox or Alpaca paper.
+"""The broker this deployment trades through: Webull's sandbox, Alpaca paper, or
+the in-process simulator.
 
-``BROKER`` picks it: ``webull`` (the default) or ``alpaca``. Both modules have
+``BROKER`` picks it: ``webull`` (the default), ``alpaca`` or ``sim``. Both modules have
 the same public names and return the same shapes, so a caller imports this
 module and never learns which one it has. The guards live in each module and
 run there, before every order; this module adds none and removes none.
@@ -10,13 +11,13 @@ can patch one of them the ordinary way.
 """
 import os
 
-from backend.services import alpaca_broker, quotes, sandbox_broker
+from backend.services import alpaca_broker, quotes, sandbox_broker, sim_broker
 
-_BROKERS = ("webull", "alpaca")
+_BROKERS = ("webull", "alpaca", "sim")
 
 
 def name() -> str:
-    """``webull`` or ``alpaca``. A typo in ``BROKER`` fails here, not at an order."""
+    """``webull``, ``alpaca`` or ``sim``. A typo in ``BROKER`` fails here, not at an order."""
     chosen = (os.environ.get("BROKER") or "webull").strip().lower()
     if chosen not in _BROKERS:
         raise ValueError(f"BROKER must be one of {_BROKERS}, got {chosen!r}")
@@ -24,16 +25,19 @@ def name() -> str:
 
 
 def _impl():
-    return alpaca_broker if name() == "alpaca" else sandbox_broker
+    return {"alpaca": alpaca_broker, "sim": sim_broker}.get(name(), sandbox_broker)
 
 
 def is_paper() -> bool:
     """True when orders can only reach a simulated account.
 
     For Webull that is ``WEBULL_SANDBOX=1``. For Alpaca it is keys that are set
-    and a module that knows only the paper host.
+    and a module that knows only the paper host. The simulator has no broker to
+    reach, so it is always true.
     """
-    return alpaca_broker.is_paper() if name() == "alpaca" else quotes.is_sandbox()
+    if name() == "webull":
+        return quotes.is_sandbox()
+    return _impl().is_paper()
 
 
 def configured_account(): return _impl().configured_account()
@@ -56,5 +60,9 @@ def get_order_detail(client_order_id): return _impl().get_order_detail(client_or
 
 
 def no_account_errors() -> tuple[type[Exception], ...]:
-    """Both modules' "no account named" error, for a caller that catches it."""
-    return (sandbox_broker.NoAccountConfiguredError, alpaca_broker.NoAccountConfiguredError)
+    """Every module's "no account named" error, for a caller that catches it."""
+    return (
+        sandbox_broker.NoAccountConfiguredError,
+        alpaca_broker.NoAccountConfiguredError,
+        sim_broker.NoAccountConfiguredError,
+    )

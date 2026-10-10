@@ -801,6 +801,16 @@ def earnings_check() -> None:
         _maybe_run_agent("Earnings")
 
 
+def corporate_actions_check() -> None:
+    """Apply every split and spin-off now due. See corporate_actions."""
+    from backend.services import corporate_actions
+
+    try:
+        corporate_actions.check()
+    except Exception:
+        log.exception("The corporate-actions check failed")
+
+
 def morning_regime() -> None:
     """Pre-market context post (12:45 UTC, before the earnings task): VIX,
     SPY vs 200-day, yield curve — rule-based, no LLM."""
@@ -852,6 +862,9 @@ def register_jobs() -> None:
     scheduler.add_task(task_name="daily_signals", func=daily_signals, interval=86400, run_at=_next_utc_time(21, 30))
     scheduler.add_task(task_name="earnings_check", func=earnings_check, interval=86400, run_at=_next_utc_time(13, 0))
     scheduler.add_task(task_name="morning_regime", func=morning_regime, interval=86400, run_at=_next_utc_time(12, 45))
+    # Hourly, so a split or spin-off is applied in the hours before its
+    # ex-date's open, whenever the container started. Applying is idempotent.
+    scheduler.add_task(task_name="corporate_actions", func=corporate_actions_check, interval=3600)
     scheduler.add_task(task_name="weekly_digest", func=weekly_digest, interval=86400, run_at=_next_utc_time(23, 0))
     # Last, so the agent's task is added only once everything it may need is
     # registered — a restored wakeup can be due immediately.

@@ -46,6 +46,7 @@ The `probe-the-prompt` skill's "sample size" warning carries this number now. **
 | The levels line on a read | 4 of 4 | **Read** |
 | The four analyst-report tables | 0 of 4 | **Unconfirmed.** Kept |
 | The two full plans on a read | 2 of 4 | **Read**, and they caught a real contradiction |
+| The `bars` and `news` fetches (experiment 2) | `news` called in 2 of 4, `bars` in 0 of 4; no news item quoted | **Called, unconfirmed as read.** Re-probe on a market-hours prompt |
 | What a Hold means, rewritten 2026-09-19 | 4 of 4 | **Read**, and acted on |
 | Size a position from its stop | 4 of 4 | **Read**, with one wrinkle |
 | Limit orders, unannounced | 0 of 8, two models | **Unconfirmed** |
@@ -152,6 +153,20 @@ The markers were not hand-picked: every number appearing in the whole prompt **e
 **The fence makes no difference to whether the analysis is read**, so the choice falls to what else it buys: a hard boundary around a document that carries its own markdown, on top of the demotion. Kept on that ground, not on a reading improvement.
 
 **The one thing to watch is orders, not reading.** 3 of 7 to 0 of 7 is at the floor and cannot be attributed — the floor run itself swung "ordered research" from 3 to 1 on identical code, and the consolidation probe showed the same 3-to-0 pattern. But a read exists to be acted on, so if the live book starts reading and not acting, unfence first and probe again before looking anywhere else.
+
+## The `bars` and `news` fetches: news is called, nothing from it is quoted (2026-10-02, experiment 2)
+
+**What was probed:** the experiment-2 branch, with the two raw-data fetches declared and named in the fixed rule, through `probe_prompt.py --turn turn1 --samples 4 --parallel`, in a throwaway container on a copy of the live book (AMZN and NVDA held, $5,707 cash), `gemini-3.8-flash` at thinking level high on the paid key. The clock read Friday 5:18 PM ET, market closed until Monday. Result in the session scratchpad, `probe-exp2/probe/turn1-20261002T211839.json`.
+
+| Check | Result |
+|---|---|
+| Samples that called `news` | 2 of 4, 3 calls, all on the two held names, 3 days back |
+| Samples that called `bars` | 0 of 4 |
+| What `news` returned | 15 items each: Google News, then Finnhub and 8-K; Yahoo said its coverage starts today |
+| A news item in the reasoning or the answer | 0 of 2. Sample 3 planned to "scan any after-hours or late-session reports" and went on to the wakeup without naming one |
+| Research ordered | 0 of 4. Every sample deferred to a Monday pre-open wakeup, as the Friday-evening samples on main did |
+
+**Verdict: called, unconfirmed as read**, the status `fundamentals` has. The reason to call it was stated and sound (weekend developments on the holdings). A closed-market Friday evening asks nothing that daily bars answer, so 0 of 4 for `bars` says little. **Re-probe both on a market-hours prompt**, the first morning experiment 2 runs.
 
 ## A filled stop and a multi-lot Stop cell are read, 1 of 1 and 2 of 2 (2026-09-23)
 

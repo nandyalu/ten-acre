@@ -332,6 +332,38 @@ FETCHES: list[dict] = [
         "parameters_json_schema": _ONE_TICKER,
     },
     {
+        "name": "bars",
+        "description": (
+            "A ticker's completed daily sessions: date, open, high, low, close and "
+            "volume, oldest first. 60 sessions unless you ask for up to 250. Raw "
+            "prices from the market data, not from an analysis."
+        ),
+        "parameters_json_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": _TICKER,
+                "sessions": {"type": "integer", "description": "How many sessions, 1 to 250."},
+            },
+            "required": ["ticker"],
+        },
+    },
+    {
+        "name": "news",
+        "description": (
+            "The news about a ticker from the last 7 days, or up to 30 if you ask: "
+            "Yahoo, Google News, Finnhub and the company's SEC 8-K filings. The same "
+            "items the analysis's news analyst reads, not a summary of them."
+        ),
+        "parameters_json_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": _TICKER,
+                "days": {"type": "integer", "description": "How many days back, 1 to 30."},
+            },
+            "required": ["ticker"],
+        },
+    },
+    {
         "name": "watchlist",
         "description": (
             "Every ticker you track, with its price now, its trend against its 50-day "

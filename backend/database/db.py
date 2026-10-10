@@ -9,6 +9,9 @@ from backend.database.engine import read_session, write_session
 from backend.database.models import (
     AgentTrade,
     Alert,
+    CandidateScreen,
+    MarketFetch,
+    SystemPrompt,
     BotSetting,
     DailyBar,
     IntradayBar,
@@ -984,3 +987,62 @@ def get_reflections(limit: int | None = None, *, _session: Session = None) -> li
 def get_latest_reflection() -> AgentReflection | None:
     rows = get_reflections(limit=1)
     return rows[0] if rows else None
+
+
+# --- Candidate screens ----------------------------------------------------------
+
+
+@write_session
+def record_candidate_screen(rows: list[dict], *, _session: Session = None) -> None:
+    """One row per name a screen returned: ticker, source, price, volume."""
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    for row in rows:
+        _session.add(CandidateScreen(screened_at=now, **row))
+    _session.commit()
+
+
+@write_session
+def count_market_fetch(kind: str, source: str, *, _session: Session = None) -> None:
+    """Add one to today's count of ``kind`` fetches that ``source`` answered."""
+    from sqlalchemy.dialects.sqlite import insert
+
+    # One statement, so two threads that count at once cannot both insert.
+    _session.execute(
+        insert(MarketFetch)
+        .values(day=datetime.date.today(), kind=kind, source=source, count=1)
+        .on_conflict_do_update(
+            index_elements=["day", "kind", "source"], set_={"count": MarketFetch.count + 1}
+        )
+    )
+    _session.commit()
+
+
+@read_session
+def get_candidate_screens(
+    start: datetime.datetime, end: datetime.datetime, *, _session: Session = None
+) -> list[CandidateScreen]:
+    return list(_session.exec(
+        select(CandidateScreen)
+        .where(CandidateScreen.screened_at >= start, CandidateScreen.screened_at < end)
+        .order_by(CandidateScreen.screened_at)
+    ).all())
+
+
+# --- System prompts ------------------------------------------------------------
+
+
+@write_session
+def remember_system_prompt(sha: str, text: str, *, _session: Session = None) -> None:
+    """Store a system message once, by its hash. A second call does nothing."""
+    if _session.get(SystemPrompt, sha) is None:
+        _session.add(SystemPrompt(
+            sha=sha, text=text,
+            first_seen=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+        ))
+        _session.commit()
+
+
+@read_session
+def get_system_prompt(sha: str, *, _session: Session = None) -> str | None:
+    row = _session.get(SystemPrompt, sha)
+    return row.text if row else None

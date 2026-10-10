@@ -19,6 +19,7 @@ from backend.api.routes import (
     alerts,
     digest,
     jobs,
+    market,
     regime,
     scorecard,
     settings,
@@ -28,7 +29,7 @@ from backend.api.routes import (
     watchlist,
 )
 from backend.notifications import notify as notifier
-from backend.services import publish, trade_stream
+from backend.services import market_feed, publish, trade_stream
 from backend.tasks.scheduler import register_jobs, scheduler
 
 log = logging.getLogger("ten-acre.app")
@@ -68,6 +69,11 @@ async def lifespan(app: FastAPI):
     """
     if publish.is_public():
         log.info("PUBLIC_MODE — serving reads only: no scheduler, no Discord, no trade stream")
+        yield
+        return
+
+    if market_feed.is_server():
+        log.info("MARKET_MODE — serving market data to the books: no agent, no scheduler, no Discord, no trade stream")
         yield
         return
 
@@ -160,6 +166,8 @@ app.include_router(setup.router)
 app.include_router(alerts.router)
 app.include_router(jobs.router)
 app.include_router(agent.router)
+if market_feed.is_server():
+    app.include_router(market.router)
 
 if _SITE_DIR.is_dir():
     app.mount("/docs", StaticFiles(directory=_SITE_DIR, html=True), name="docs")

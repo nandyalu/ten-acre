@@ -69,9 +69,9 @@ def test_the_declaration_production_sends_is_the_tool_channel_one():
     }
 
 
-def test_the_fetches_are_the_six_the_rules_name():
+def test_the_fetches_are_the_eight_the_rules_name():
     assert decision_schema.FETCH_NAMES == [
-        "read", "ask_analyst", "candidates", "fundamentals", "watchlist", "track_record"
+        "read", "ask_analyst", "candidates", "fundamentals", "bars", "news", "watchlist", "track_record"
     ]
     rule = next(r[True] for r in agent._FIXED_RULES if isinstance(r, dict) and "Fetch what you need" in r[True])
     assert all(name in rule for name in decision_schema.FETCH_NAMES)
@@ -79,6 +79,8 @@ def test_the_fetches_are_the_six_the_rules_name():
     assert by_name["read"]["parameters_json_schema"]["required"] == ["ticker"]
     assert "date" in by_name["read"]["parameters_json_schema"]["properties"]
     assert by_name["fundamentals"]["parameters_json_schema"]["required"] == ["ticker"]
+    assert by_name["bars"]["parameters_json_schema"]["required"] == ["ticker"]
+    assert by_name["news"]["parameters_json_schema"]["required"] == ["ticker"]
     assert by_name["ask_analyst"]["parameters_json_schema"]["required"] == ["ticker", "question"]
     # A fetch with nothing to say declares no parameters at all: the API
     # refuses an object schema with no properties.
@@ -138,3 +140,23 @@ def test_only_the_safe_subset_of_json_schema_is_used():
     _walk(decision_schema.DECIDE["parameters_json_schema"])
     for fetch in decision_schema.FETCHES:
         _walk(fetch.get("parameters_json_schema") or {}, (fetch["name"],))
+
+
+def test_bars_returns_completed_sessions_oldest_first_and_bounds_the_count(monkeypatch):
+    from types import SimpleNamespace
+
+    rows = [
+        SimpleNamespace(date=f"2026-09-{d:02d}", open=10.0, high=11.0, low=9.0, close=10.5, volume=1_000_000)
+        for d in range(1, 31)
+    ]
+    asked = {}
+
+    def get_bars(ticker, start):
+        asked["ticker"] = ticker
+        return rows
+
+    monkeypatch.setattr(agent.bars, "get_bars", get_bars)
+    text = agent.describe_bars("INTC", 3)
+    assert asked["ticker"] == "INTC"
+    assert "| 2026-09-28 |" in text and "| 2026-09-30 |" in text and "2026-09-27" not in text
+    assert agent._bounded(900, 60, 250) == 250 and agent._bounded("x", 60, 250) == 60
