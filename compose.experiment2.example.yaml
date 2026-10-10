@@ -8,8 +8,8 @@
 # The broker is BROKER=sim, inside each container. No order leaves the
 # process, so no broker account or account number is needed.
 #
-# Build the image from the experiment-2 branch under its OWN tag. Experiment 1
-# runs on ten-acre:local, and a rebuild of that tag would change it:
+# Build the image from main under its OWN tag. Experiment 1 runs on
+# ten-acre:local until it stops, and a rebuild of that tag would change it:
 #   docker build -t ten-acre:exp2 .
 #
 # Every book reads the same .env. Do not give one book a value the others do

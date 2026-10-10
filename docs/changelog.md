@@ -10,6 +10,7 @@ Everything before experiment 2 is on [the experiment 1 changelog](experiment-1-c
 
 ## 2026-10-10
 
+- **Deployment** — `compose.experiment2.example.yaml` tells you to build the experiment 2 image from `main`, not from the `experiment-2` branch. The branch is merged. The image keeps its own tag `ten-acre:exp2`, so a rebuild does not change experiment 1.
 - **Dependencies** — The TradingAgents fork is rebased onto upstream v0.6.0, and the pin moves to `6cb8d7b`. The lock adds `markdown-it-py` 4.0 or later, which the fork needs for its HTML report. `create_tier_client` keeps the request-label callbacks beside the caller's callbacks. What changes in an analysis is in the journey.
 
 ## 2026-10-04
