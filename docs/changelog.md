@@ -8,6 +8,14 @@ Entries are one or two lines: what changed, and why. Newest first.
 
 Everything before experiment 2 is on [the experiment 1 changelog](experiment-1-changelog.md).
 
+## 2026-10-10
+
+- **Dependencies** — The TradingAgents fork is rebased onto upstream v0.6.0, and the pin moves to `6cb8d7b`. The lock adds `markdown-it-py` 4.0 or later, which the fork needs for its HTML report. `create_tier_client` keeps the request-label callbacks beside the caller's callbacks. What changes in an analysis is in the journey.
+
+## 2026-10-04
+
+- **Tooling** — `agent._invoke` and `probe_prompt.py` also read the thinking from `reasoning_content`, the name `llama-server` uses. Ollama sends `reasoning`, so nothing changes on a deployed model. Without the second read, a run served by `llama-server` directly would lose its thinking from the record without an error. A test covers it.
+
 ## 2026-10-03
 
 - **Analysis** — Each analysis gets the agent's book (`analysis.portfolio_context()`: holdings with quantity and average cost, and the free cash) through `propagate(portfolio=...)`. The yfinance override for statements is gone, so they come from SEC EDGAR as filed, and the fundamentals analyst also fetches insider transactions.

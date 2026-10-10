@@ -18,11 +18,11 @@ paths:
 
 ## The branch
 
-**The checked-out branch is `trading-helper-custom`, rebased onto upstream tag `v0.5.2` on 2026-10-03.** `git log v0.5.2..trading-helper-custom` lists only our commits, and `git diff v0.5.2 trading-helper-custom` is our whole delta. `fork/main` is an old ancestor at v0.3.1, so compare against the upstream tag, not `fork/main`.
+**The checked-out branch is `trading-helper-custom`, rebased onto upstream tag `v0.6.0` on 2026-10-10.** `git log v0.6.0..trading-helper-custom` lists only our commits, and `git diff v0.6.0 trading-helper-custom` is our whole delta. `fork/main` is an old ancestor at v0.3.1, so compare against the upstream tag, not `fork/main`.
 
-**The branch before the rebase is kept.** The tag `pre-v052-rebase` (`f4d67ab`) and the fork branch `archive/pre-v052-2026-10` hold it. Parent-repo commits before 2026-10-03 point at SHAs on that history, so never delete either one.
+**The branch before each rebase is kept.** The tag `pre-v052-rebase` (`f4d67ab`) and the fork branch `archive/pre-v052-2026-10` hold the history before 2026-10-03. The tag `pre-v060-rebase` (`6521a46`) and the fork branch `archive/pre-v060-2026-10` hold the v0.5.2-based history. Parent-repo commits point at SHAs on those histories, so never delete them.
 
-The rebase put our changes on top as eight commits, grouped by area, then a comment fix and a README trim. The eight came from one merge, so only the last of them is known to pass the suite. The message of each commit names the old SHAs it ports.
+The v0.5.2 rebase put our changes on top as eight commits, grouped by area, then a comment fix and a README trim. Four commits followed before the v0.6.0 rebase: insider transactions, the shared reports first in prompts, and two for the request label. The eight came from one merge, so only the last of them is known to pass the suite. The message of each commit names the old SHAs it ports.
 
 | Commit | Area | What it carries |
 |---|---|---|
@@ -68,9 +68,9 @@ The second line is the check that matters: compare the file you edited. `--extra
 
 ```
 cd TradingAgents && git fetch origin --tags
-git log --oneline v0.5.2..<new-tag> --no-merges     # what upstream added
-git tag pre-<new-tag>-rebase trading-helper-custom
-git rebase --onto <new-tag> v0.5.2 trading-helper-custom
+git log --oneline v0.6.0..<new-tag> --no-merges     # what upstream added
+git tag -a pre-<new-tag>-rebase -m "before the <new-tag> rebase" trading-helper-custom
+git rebase --onto <new-tag> v0.6.0 trading-helper-custom
 ```
 
 Read `git log --stat` for each upstream commit before you start. For each conflict, apply our intent to upstream's new code; do not restore our old code over theirs. After the rebase, check what reaches a live run: compare `DEFAULT_CONFIG` key by key, compare every agent prompt for one fixed state, and compare each tool's output for one ticker on the two versions. Then update this file, `JOURNEY.md` and `docs/changelog.md`.
@@ -86,7 +86,18 @@ Read `git log --stat` for each upstream commit before you start. For each confli
 
 Tool output on the live path was identical on both versions for NVDA on 2026-10-03, apart from float rounding in the indicators.
 
-**The backtester and past-date code are in the base now** (`tradingagents/backtest.py`, `portfolio.py`, `memory/settlement.py`, the `date_window` withhold rules). No live run uses them, because every analysis here is dated today.
+**v0.6.0 changed these things in a live run, and the rebase kept them** (2026-10-10):
+
+- **The memory log settles every ticker, not only the one analysed.** A "Memory Log" node runs beside the analysts and calls `settle_all_pending`: every decision whose five-day window has traded gets its return and a reflection from the quick model. Before, a run settled only its own ticker, so a ticker the agent did not analyse again stayed pending for good. On 2026-10-10 that was 30 of 36 pending entries on this machine and 16 of 24 on nebula. The first run after the deploy settles that backlog, about one reflection call each, inside that run. A failed settlement is a note in the report header, not a failed run.
+- **Yahoo company news falls back to Yahoo search** when the quote feed is empty, which it was for NVDA, AMD, APH and MRVL on 2026-10-10. Search returns articles that Yahoo tags with the symbol. About half were on-topic for AMD, APH and MRVL, including analyst price-target changes; for NVDA most were not. When search has no tagged article either, the Yahoo block reads as unavailable, and `get_news` still adds Google News, Finnhub and SEC 8-K.
+- **A `start_date` that is not a date goes back to the model** from `get_news` and `get_stock_data`, as `start_date '…' is not a date; give it as YYYY-MM-DD`.
+- **The Yahoo fundamentals overview names the currency** of each money figure, so a US stock reads `Market Cap: … USD`.
+- **The free-text rating parser ignores another party's rating**, such as "Consensus rating: Buy". Only the Portfolio Manager's fallback path uses it, when its structured output fails.
+- **A Gemini call has a 600-second default timeout.** The backend sets `llm_timeout` for Gemini, so it does not change.
+
+The agent prompts for a US stock are the same on both versions. Two merges were not mechanical. `create_tier_client` (upstream #1440) merges the request-label callbacks with the caller's callbacks; without that, both arrive as `callbacks` and the call fails. The crypto subreddits from upstream #1461 apply only when `REDDIT_MULTIREDDIT_URL` is `off`, because the default feed replaces the subreddit list.
+
+**The backtester and past-date code are in the base now** (`tradingagents/backtest.py`, `portfolio.py`, the `date_window` withhold rules). No live run uses them, because every analysis here is dated today. `memory/settlement.py` is different: every live run settles past decisions through it.
 
 ## Pull requests to watch
 

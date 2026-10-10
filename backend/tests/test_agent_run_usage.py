@@ -164,6 +164,25 @@ def test_the_thinking_is_captured(monkeypatch):
     assert answer.completion_tokens == 1595
 
 
+def test_the_thinking_is_captured_from_llama_server(monkeypatch):
+    """llama-server sends the thinking as ``reasoning_content``, not
+    ``reasoning``. Without this read the record would lose it silently."""
+
+    class _LlamaServerClient(_RawClient):
+        def create(self, model, messages):
+            raw = super().create(model, messages)
+            message = raw.choices[0].message
+            message.reasoning = None
+            message.model_extra = {"reasoning_content": self._reasoning}
+            return raw
+
+    monkeypatch.setattr(agent.analysis, "_quick_think_llm", lambda: _Llm(client=_LlamaServerClient()))
+
+    answer = agent._ask("a prompt")
+
+    assert answer.thinking == "Here's a thinking process:"
+
+
 def test_the_system_prompt_still_goes_with_it(monkeypatch):
     """The raw path builds its own message list, so it has to carry the same
     system message ``llm.invoke`` was given."""

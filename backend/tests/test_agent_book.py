@@ -94,6 +94,8 @@ def test_a_pending_gtc_limit_buy_reserves_its_cost(book_of):
     ])
 
     assert book.cash == pytest.approx(1000.0 - 5 * 90.0)
+    # Reserved, not spent: the money is still in the account.
+    assert book.equity == pytest.approx(1000.0)
 
 
 def test_a_pending_limit_sell_reserves_its_shares(book_of):
